@@ -19,7 +19,7 @@ Page({
 
   async refresh() {
     const app = getApp();
-    this.setData({ isAdmin: app.globalData.user.role === 'admin', loading: true });
+    this.setData({ isAdmin: ['admin', 'super_admin'].includes(app.globalData.user.role), loading: true });
     try {
       const period = await request('/api/periods/current');
       if (!period) {

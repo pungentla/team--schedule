@@ -77,6 +77,41 @@ function allDates(start, end) {
 
 test.beforeEach(() => resetShifts());
 
+test('主副岗位保留可配置总人数，优化后仍遵守每人的报名角色', () => {
+  const choices = ['primary', 'deputy', 'primary', 'both'];
+  const employees = choices.map((dutyRole, i) => makeEmployee(i + 1, [WT.FRONT], { workTypes: [{ workTypeId: WT.FRONT, priority: 1, dutyRole }] }));
+  const slots = makeSlots({ dates: ['2025-01-06'], shiftId: 10, workTypeId: WT.FRONT, needCount: 4 }).map((s) => ({ ...s, requiresRoles: true }));
+  for (const seed of [1, 42, 99]) {
+    const input = { period: makePeriod(), employees, slots, seed };
+    const result = generateSchedule(input);
+    assert.equal(result.assignments.length, 4);
+    assert.ok(result.assignments.some((a) => a.dutyRole === 'primary'));
+    assert.ok(result.assignments.some((a) => a.dutyRole === 'deputy'));
+    assert.equal(new Set(result.assignments.map((a) => a.userId)).size, 4);
+    for (const a of result.assignments) assert.ok(choices[a.userId - 1] === 'both' || choices[a.userId - 1] === a.dutyRole);
+    assert.deepEqual(generateSchedule(input).assignments, result.assignments);
+  }
+});
+
+test('主副皆可的两名员工优先配齐主副，缺口只留在额外名额', () => {
+  const result = generateSchedule({ period: makePeriod(), seed: 42,
+    employees: [1, 2].map((id) => makeEmployee(id, [WT.FRONT], { workTypes: [{ workTypeId: WT.FRONT, priority: 1, dutyRole: 'both' }] })),
+    slots: makeSlots({ dates: ['2025-01-06'], shiftId: 10, workTypeId: WT.FRONT, needCount: 3 }).map((s) => ({ ...s, requiresRoles: true })),
+  });
+  assert.deepEqual(result.assignments.map((a) => a.dutyRole).sort(), ['deputy', 'primary']);
+  assert.equal(result.gaps.totalGap, 1);
+  assert.equal(result.gaps.byDateShift[0].items[0].dutyRole, 'either');
+});
+
+test('一个人不能同时填主副两个名额', () => {
+  const result = generateSchedule({ period: makePeriod(), seed: 42,
+    employees: [makeEmployee(1, [WT.FRONT], { workTypes: [{ workTypeId: WT.FRONT, priority: 1, dutyRole: 'both' }] })],
+    slots: makeSlots({ dates: ['2025-01-06'], shiftId: 10, workTypeId: WT.FRONT, needCount: 2 }).map((s) => ({ ...s, requiresRoles: true })),
+  });
+  assert.equal(result.assignments.length, 1);
+  assert.equal(result.gaps.totalGap, 1);
+});
+
 // ---------------------------------------------------------------------------
 // 1. 简单场景：需求能被完全满足
 // ---------------------------------------------------------------------------

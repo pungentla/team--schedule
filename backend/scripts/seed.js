@@ -4,7 +4,7 @@
  * 种子数据 —— 幂等（可重复执行），--reset 先清空。
  *
  * 内容：
- *   - 管理员 1 名：admin / 123456
+ *   - 超级管理员 1 名：admin / 123456
  *   - 员工 20 名：emp001 ~ emp020 / 123456
  *   - 工作类型 5 种：前台接待、后厨帮工、清洁消杀、物资整理、活动支援
  *   - 班次 3 个：早班(08:00-14:00) / 中班(14:00-20:00) / 晚班(20:00-23:00)
@@ -94,7 +94,7 @@ function main() {
     // ---------------- 管理员 ----------------
     db.run(
       `INSERT INTO users (employee_no, name, password_hash, role, status, created_at, updated_at)
-       VALUES ('admin', '管理员', ?, 'admin', 'active', ?, ?)`,
+       VALUES ('admin', '超级管理员', ?, 'super_admin', 'active', ?, ?)`,
       pwdHash, now, now
     );
     const adminId = db.pluck("SELECT id FROM users WHERE employee_no = 'admin'");
@@ -299,7 +299,7 @@ function main() {
   console.log(`  报名 ${stats.enrollments} 条 / 需求 ${stats.requirements} 条 / 历史排班 ${stats.historyAssignments} 条`);
   console.log('');
   console.log('  演示账号：');
-  console.log('    管理员  admin  / 123456');
+  console.log('    超级管理员  admin  / 123456');
   console.log('    员工    emp001 ~ emp020 / 123456');
   console.log('    邀请码  TEAM2025');
   console.log('');

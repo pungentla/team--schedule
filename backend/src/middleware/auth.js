@@ -68,7 +68,7 @@ function optionalAuth(req, res, next) {
 /** 仅管理员 */
 function requireAdmin(req, res, next) {
   if (!req.user) return next(unauthorized());
-  if (req.user.role !== 'admin') return next(forbidden('该操作仅管理员可执行'));
+  if (!['admin', 'super_admin'].includes(req.user.role)) return next(forbidden('该操作仅管理员可执行'));
   return next();
 }
 

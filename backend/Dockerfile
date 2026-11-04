@@ -17,6 +17,7 @@ WORKDIR /app
 # 只拷贝依赖清单 + 根 lock，让这一层可缓存（改业务代码不必重装依赖）
 COPY package.json package-lock.json ./
 COPY backend/package.json ./backend/package.json
+COPY h5/package.json ./h5/package.json
 
 # 只装 backend 这个 workspace 的生产依赖
 RUN npm ci --omit=dev --workspace backend --include-workspace-root=false \

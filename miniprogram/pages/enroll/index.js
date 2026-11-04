@@ -5,6 +5,7 @@ Page({
     periodId: null,
     period: null,
     workTypes: [],
+    fixedAssignments: [],
     shifts: [],
     dates: [],
     selected: {},       // workTypeId -> true
@@ -15,6 +16,7 @@ Page({
     unavailDates: {},   // date -> true
     submitting: false,
     existing: null,
+    roleOptions: ['请选择负责人角色', '主负责人', '副负责人', '主副皆可'],
   },
 
   onLoad(options) {
@@ -29,9 +31,11 @@ Page({
 
       const selected = {};
       const priorities = {};
+      const dutyRoles = {};
       (mine.workTypes || []).forEach((w) => {
         selected[w.workTypeId] = true;
         priorities[w.workTypeId] = w.priority;
+        dutyRoles[w.workTypeId] = w.dutyRole || 'member';
       });
       this.workTypesAll = ctx.workTypes;
       this.shiftsAll = ctx.shifts;
@@ -56,10 +60,11 @@ Page({
 
       this.setData({
         period: ctx.period,
-        workTypes: ctx.workTypes.map((w) => ({ ...w, selected: !!selected[w.id], priority: priorities[w.id] || 0 })),
+        fixedAssignments: (ctx.fixedAssignments || []).map((r) => ({...r, weekdayLabel: ['周日','周一','周二','周三','周四','周五','周六'][r.weekday], roleLabel: { member: '普通成员', primary: '主负责人', deputy: '副负责人' }[r.dutyRole] })),
+        workTypes: ctx.workTypes.map((w) => ({ ...w, selected: !!selected[w.id], priority: priorities[w.id] || 0, dutyRole: dutyRoles[w.id] || 'member', roleIndex: Math.max(0, ['member', 'primary', 'deputy', 'both'].indexOf(dutyRoles[w.id])) })),
         shifts: ctx.shifts,
         dates: ctx.dates,
-        maxShifts: mine.maxShifts || 6,
+        maxShifts: mine.maxShifts ?? 6,
         note: mine.note || '',
         grid,
         unavailDates,
@@ -104,6 +109,12 @@ Page({
     this.setData({ maxShifts: Number(e.detail.value) || 0 });
   },
 
+  onRole(e) {
+    const id = Number(e.currentTarget.dataset.id);
+    const roleIndex = Number(e.detail.value);
+    this.setData({ workTypes: this.data.workTypes.map((w) => w.id === id ? { ...w, roleIndex, dutyRole: ['member', 'primary', 'deputy', 'both'][roleIndex] } : w) });
+  },
+
   onNote(e) {
     this.setData({ note: e.detail.value });
   },
@@ -129,8 +140,12 @@ Page({
   async onSubmit() {
     if (this.data.submitting) return;
     const chosen = this.data.workTypes.filter((w) => w.selected);
-    if (!chosen.length) {
+    if (!chosen.length && !this.data.fixedAssignments.length) {
       wx.showToast({ title: '请至少选择一种工作类型', icon: 'none' });
+      return;
+    }
+    if (chosen.some((w) => w.requiresRoles && !['primary', 'deputy', 'both'].includes(w.dutyRole))) {
+      wx.showToast({ title: '请选择报名的主副负责人角色', icon: 'none' });
       return;
     }
 
@@ -152,7 +167,7 @@ Page({
       await request(`/api/enrollments/${this.data.periodId}`, {
         method: 'POST',
         data: {
-          workTypes: chosen.map((w) => ({ workTypeId: w.id, priority: w.priority || 3 })),
+          workTypes: chosen.map((w) => ({ workTypeId: w.id, priority: w.priority || 3, dutyRole: w.requiresRoles ? w.dutyRole : 'member' })),
           maxShifts: this.data.maxShifts,
           availability,
           unavailability,

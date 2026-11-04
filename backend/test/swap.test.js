@@ -202,6 +202,56 @@ test('exchange: 双方互换班次', () => {
   assert.equal(nowB.user_id, u1, '06-03 应换成 u1');
 });
 
+test('exchange: 个人班次已达上限时，详情应按互换后的状态允许确认', () => {
+  const { u1, u2, periodId } = ids;
+  db.run('UPDATE enrollments SET max_shifts=1 WHERE period_id=?', periodId);
+  const from = db.get("SELECT id FROM assignments WHERE user_id=? AND status='active'", u1);
+  const target = db.get("SELECT id FROM assignments WHERE user_id=? AND status='active'", u2);
+  const created = swapService.createSwap({ type: 'exchange', fromAssignmentId: from.id, toUserId: u2, toAssignmentId: target.id }, ctxFor(u1));
+  const detail = swapService.getSwapDetail(created.swap.id, ctxFor(u2).user);
+  assert.equal(detail.canConfirm, true);
+  assert.deepEqual(detail.liveProblems, []);
+  assert.equal(swapService.confirm(created.swap.id, ctxFor(u2)).applied, true);
+});
+
+test('主负责人不能转给只报名副的人，合格接班后原岗位角色保持不变', () => {
+  const { u1, u2, u3 } = ids;
+  const from = db.get("SELECT * FROM assignments WHERE user_id=? AND status='active'", u1);
+  db.run("UPDATE assignments SET duty_role='primary' WHERE id=?", from.id);
+  db.run("UPDATE enrollment_work_types SET duty_role='deputy' WHERE enrollment_id IN (SELECT id FROM enrollments WHERE user_id=?)", u2);
+  db.run("UPDATE enrollment_work_types SET duty_role='both' WHERE enrollment_id IN (SELECT id FROM enrollments WHERE user_id=?)", u3);
+  assert.throws(() => swapService.createSwap({ type: 'transfer', fromAssignmentId: from.id, toUserId: u2 }, ctxFor(u1)), (e) => e.details.problems.some((p) => p.code === 'role_mismatch'));
+  const created = swapService.createSwap({ type: 'transfer', fromAssignmentId: from.id, toUserId: u3 }, ctxFor(u1));
+  swapService.confirm(created.swap.id, ctxFor(u3));
+  const received = db.get("SELECT * FROM assignments WHERE user_id=? AND work_date=? AND shift_id=? AND status='active'", u3, from.work_date, from.shift_id);
+  assert.equal(received.duty_role, 'primary');
+});
+
+test('确认前接收人角色变化会阻止生效，并保持原班次和待确认状态', () => {
+  const { u1, u3 } = ids;
+  const from = db.get("SELECT * FROM assignments WHERE user_id=? AND status='active'", u1);
+  db.run("UPDATE assignments SET duty_role='primary' WHERE id=?", from.id);
+  db.run("UPDATE enrollment_work_types SET duty_role='both' WHERE enrollment_id IN (SELECT id FROM enrollments WHERE user_id=?)", u3);
+  const created = swapService.createSwap({ type: 'transfer', fromAssignmentId: from.id, toUserId: u3 }, ctxFor(u1));
+  db.run("UPDATE enrollment_work_types SET duty_role='deputy' WHERE enrollment_id IN (SELECT id FROM enrollments WHERE user_id=?)", u3);
+  assert.equal(swapService.getSwapDetail(created.swap.id, ctxFor(u3).user).canConfirm, false);
+  assert.throws(() => swapService.confirm(created.swap.id, ctxFor(u3)), (e) => e.code === 'SWAP_CONFLICT');
+  assert.equal(db.get('SELECT status FROM assignments WHERE id=?', from.id).status, 'active');
+  assert.equal(swapService.getSwapDetail(created.swap.id, ctxFor(u3).user).myDecision, 'pending');
+});
+
+test('发布版本被替换后，旧版本的换班不能再确认生效', () => {
+  const { u1, u2, runId } = ids;
+  const from = db.get("SELECT * FROM assignments WHERE user_id=? AND status='active'", u1);
+  const created = swapService.createSwap({ type: 'transfer', fromAssignmentId: from.id, toUserId: u2 }, ctxFor(u1));
+  db.run("UPDATE schedule_runs SET status='discarded' WHERE id=?", runId);
+  const detail = swapService.getSwapDetail(created.swap.id, ctxFor(u2).user);
+  assert.equal(detail.canConfirm, false);
+  assert.equal(detail.liveProblems[0].code, 'schedule_replaced');
+  assert.throws(() => swapService.confirm(created.swap.id, ctxFor(u2)), (e) => e.code === 'SWAP_CONFLICT');
+  assert.equal(db.get('SELECT status FROM assignments WHERE id=?', from.id).status, 'active');
+});
+
 test('rejected: 任一方拒绝则不生效', () => {
   const { u1, u2 } = ids;
   const assignment = db.get(`SELECT id FROM assignments WHERE user_id=? AND status='active'`, u1);

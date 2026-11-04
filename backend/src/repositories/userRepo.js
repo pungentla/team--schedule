@@ -36,9 +36,10 @@ function insertUser({ employeeNo, name, passwordHash, role = 'employee', phone =
   return lastInsertRowid;
 }
 
-function updateUser(id, { name, role, status, phone, passwordHash }) {
+function updateUser(id, { employeeNo, name, role, status, phone, passwordHash }) {
   const fields = [];
   const params = [];
+  if (employeeNo !== undefined) { fields.push('employee_no = ?'); params.push(employeeNo); }
   if (name !== undefined) {
     fields.push('name = ?');
     params.push(name);

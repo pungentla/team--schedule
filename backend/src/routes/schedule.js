@@ -4,14 +4,43 @@
 
 const express = require('express');
 const scheduleService = require('../services/scheduleService');
+const swapService = require('../services/swapService');
 const periodRepo = require('../repositories/periodRepo');
 const db = require('../db/db');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
-const { requireInt, optionalInt, intParam } = require('../utils/validate');
+const { requireInt, optionalInt, intParam, requireEnum } = require('../utils/validate');
 const { notFound } = require('../utils/errors');
+const { isDateString } = require('../utils/date');
+const { badRequest } = require('../utils/errors');
 
 const router = express.Router();
 const ctx = (req) => ({ user: req.user, requestId: req.requestId });
+
+router.post('/reassign', requireAuth, requireAdmin, (req, res) => {
+  const b = req.body || {};
+  const type = requireEnum(b.type, '调配方式', ['transfer', 'exchange']);
+  res.json({ data: swapService.reassignByAdmin({ type, fromAssignmentId: requireInt(b.fromAssignmentId, '原排班', { min: 1 }), toUserId: requireInt(b.toUserId, '接班员工', { min: 1 }), toAssignmentId: type === 'exchange' ? requireInt(b.toAssignmentId, '对方班次', { min: 1 }) : null, message: typeof b.message === 'string' ? b.message.slice(0, 1000) : null }, ctx(req)) });
+});
+
+function parseDraftTarget(b) {
+  if (b.assignmentId !== undefined) return { assignmentId: requireInt(b.assignmentId, '草稿安排', { min: 1 }) };
+  if (!isDateString(b.workDate)) throw badRequest('日期格式必须为 YYYY-MM-DD');
+  return { workDate: b.workDate, shiftId: requireInt(b.shiftId, '班次', { min: 1 }), workTypeId: requireInt(b.workTypeId, '工作', { min: 1 }), dutyRole: requireEnum(b.dutyRole, '岗位角色', ['member', 'primary', 'deputy']) };
+}
+
+router.get('/runs/:runId/candidates', requireAuth, requireAdmin, (req, res) => {
+  res.json({ data: scheduleService.getDraftCandidates(intParam(req.params.runId, 'runId'), parseDraftTarget(req.query)) });
+});
+
+router.post('/runs/:runId/adjust', requireAuth, requireAdmin, (req, res) => {
+  const b = req.body || {};
+  const action = requireEnum(b.action, '调配方式', ['add', 'replace', 'remove']);
+  const target = parseDraftTarget(b);
+  if (action !== 'add' && !target.assignmentId) throw badRequest('替换或移除必须指定草稿安排');
+  if (action === 'add' && target.assignmentId) throw badRequest('补人请指定日期、班次和工作');
+  const change = { ...target, action, userId: action === 'remove' ? null : requireInt(b.userId, '员工', { min: 1 }), revision: optionalInt(b.revision, '草稿调配版本', { min: 0 }) ?? undefined };
+  res.json({ data: scheduleService.adjustDraft(intParam(req.params.runId, 'runId'), change, ctx(req)) });
+});
 
 /** 生成排班（draft） */
 router.post('/periods/:periodId/generate', requireAuth, requireAdmin, (req, res) => {
@@ -25,14 +54,24 @@ router.post('/periods/:periodId/generate', requireAuth, requireAdmin, (req, res)
 router.post('/periods/:periodId/publish', requireAuth, requireAdmin, (req, res) => {
   const periodId = intParam(req.params.periodId, 'periodId');
   const runId = optionalInt(req.body?.runId, 'runId', { min: 1 });
-  res.json({ data: scheduleService.publish(periodId, runId ?? undefined, ctx(req)) });
+  const expectedRevision = optionalInt(req.body?.revision, '草稿调配版本', { min: 0 });
+  res.json({ data: scheduleService.publish(periodId, runId ?? undefined, ctx(req), { expectedRevision: expectedRevision ?? undefined, publishedRunId: optionalInt(req.body?.publishedRunId, '生效版本', { min: 0 }) ?? undefined, publishedRevision: optionalInt(req.body?.publishedRevision, '生效版本修订', { min: 0 }) ?? 0 }) });
 });
 
 /** 排班表（矩阵 + 缺口 + 指标） */
 router.get('/periods/:periodId', requireAuth, (req, res) => {
   const periodId = intParam(req.params.periodId, 'periodId');
   const runId = optionalInt(req.query.runId, 'runId', { min: 1 });
-  res.json({ data: scheduleService.getSchedule(periodId, req.user, { runId: runId ?? undefined }) });
+  const version = req.query.version === undefined ? undefined : requireEnum(req.query.version, '排班版本', ['draft', 'published']);
+  res.json({ data: scheduleService.getSchedule(periodId, req.user, { runId: runId ?? undefined, version }) });
+});
+
+/** 本人近期安排与同班同事；忽略外部 userId，身份来自登录态。 */
+router.get('/mine/recent', requireAuth, (req, res) => {
+  res.json({ data: scheduleService.getRecentSchedule(req.user.id, {
+    startDate: req.query.startDate, endDate: req.query.endDate,
+    days: optionalInt(req.query.days, '天数', { min: 1, max: 366 }) ?? 7,
+  }) });
 });
 
 /** 我的排班（跨周期） */
@@ -87,6 +126,7 @@ router.get('/assignments/:id/explain', requireAuth, requireAdmin, (req, res) => 
 
   const { buildEmployeeState } = require('../services/swapService');
   const period = periodRepo.findPeriod(row.period_id);
+  if (!period) throw notFound('排班周期不存在');
   const { emp } = buildEmployeeState(period, row.user_id);
   const { explainScore } = require('../scheduler/scoring');
 

@@ -30,10 +30,13 @@ const SWAP_SELECT = `
          fa.work_date AS from_work_date,
          fs.name AS from_shift_name, fs.seq AS from_seq,
          fw.name AS from_work_type_name, fw.color AS from_work_type_color,
+         fa.duty_role AS from_duty_role,
          ta.work_date AS to_work_date,
          ts.name AS to_shift_name, ts.seq AS to_seq,
-         tw.name AS to_work_type_name, tw.color AS to_work_type_color
+         tw.name AS to_work_type_name, tw.color AS to_work_type_color,
+         ta.duty_role AS to_duty_role
     FROM swap_requests sr
+    JOIN periods p ON p.id=sr.period_id AND p.deleted_at IS NULL
     JOIN users ru ON ru.id = sr.requester_id
     JOIN users tu ON tu.id = sr.to_user_id
     LEFT JOIN assignments fa ON fa.id = sr.from_assignment_id
@@ -54,6 +57,7 @@ function findAssignmentDetail(id) {
             s.name AS shift_name, s.seq, s.start_time, s.end_time,
             wt.name AS work_type_name, wt.color AS work_type_color
        FROM assignments a
+       JOIN periods p ON p.id=a.period_id AND p.deleted_at IS NULL
        JOIN users u ON u.id = a.user_id
        JOIN shifts s ON s.id = a.shift_id
        JOIN work_types wt ON wt.id = a.work_type_id

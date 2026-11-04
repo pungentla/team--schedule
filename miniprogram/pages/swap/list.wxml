@@ -21,7 +21,7 @@
       </view>
       <view class="i-body">
         <block wx:if="{{item.fromAssign}}">
-          <text class="i-line">{{item.dateLabel}} {{item.fromAssign.shiftName}} · {{item.fromAssign.workTypeName}}</text>
+          <text class="i-line">{{item.dateLabel}} {{item.fromAssign.shiftName}} · {{item.fromAssign.workTypeName}}{{item.fromAssign.dutyRole === 'primary' ? ' · 主负责人' : item.fromAssign.dutyRole === 'deputy' ? ' · 副负责人' : ''}}</text>
         </block>
         <text class="i-people">
           {{item.type === 'exchange'

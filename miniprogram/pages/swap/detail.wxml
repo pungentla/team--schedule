@@ -12,7 +12,7 @@
       <view class="assign-box">
         <text class="ab-label">原班次</text>
         <text class="ab-body" wx:if="{{detail.fromAssignment}}">{{detail.fromAssignment.workDate}}
-{{detail.fromAssignment.shiftName}} {{detail.fromAssignment.workTypeName}}</text>
+{{detail.fromAssignment.shiftName}} {{detail.fromAssignment.workTypeName}}{{detail.fromAssignment.dutyRole === 'primary' ? ' · 主负责人' : detail.fromAssignment.dutyRole === 'deputy' ? ' · 副负责人' : ''}}</text>
         <text class="ab-user">{{detail.fromAssignment.userName}}</text>
       </view>
       <view class="arrow" wx:if="{{detail.swap.type === 'transfer'}}">→</view>
@@ -20,7 +20,7 @@
       <view class="assign-box" wx:if="{{detail.swap.type === 'exchange'}}">
         <text class="ab-label">对方班次</text>
         <text class="ab-body">{{detail.toAssignment.workDate}}
-{{detail.toAssignment.shiftName}} {{detail.toAssignment.workTypeName}}</text>
+{{detail.toAssignment.shiftName}} {{detail.toAssignment.workTypeName}}{{detail.toAssignment.dutyRole === 'primary' ? ' · 主负责人' : detail.toAssignment.dutyRole === 'deputy' ? ' · 副负责人' : ''}}</text>
         <text class="ab-user">{{detail.toAssignment.userName}}</text>
       </view>
       <view class="assign-box" wx:else>

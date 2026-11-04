@@ -71,7 +71,7 @@ function loadSubmittedEnrollments(periodId) {
   const ids = rows.map((r) => r.enrollment_id);
   const placeholders = ids.map(() => '?').join(',');
   const wtRows = db.all(
-    `SELECT enrollment_id, work_type_id, priority
+    `SELECT enrollment_id, work_type_id, priority, duty_role
        FROM enrollment_work_types WHERE enrollment_id IN (${placeholders})`,
     ...ids
   );
@@ -82,6 +82,7 @@ function loadSubmittedEnrollments(periodId) {
     byEnrollment.get(r.enrollment_id).push({
       workTypeId: r.work_type_id,
       priority: r.priority,
+      dutyRole: r.duty_role,
     });
   }
 
@@ -94,6 +95,11 @@ function loadSubmittedEnrollments(periodId) {
     note: r.note,
     workTypes: byEnrollment.get(r.enrollment_id) || [],
   }));
+}
+
+function countSubmittedEnrollments(periodId) {
+  return db.pluck(`SELECT COUNT(*) FROM enrollments e JOIN users u ON u.id=e.user_id
+    WHERE e.period_id=? AND e.status='submitted' AND u.status='active'`, periodId);
 }
 
 /** 报名汇总（管理员视角） */
@@ -111,7 +117,7 @@ function listEnrollmentsWithDetails(periodId) {
   const ids = rows.map((r) => r.id);
   const placeholders = ids.map(() => '?').join(',');
   const wtRows = db.all(
-    `SELECT ewt.enrollment_id, ewt.work_type_id, ewt.priority, wt.name, wt.color
+    `SELECT ewt.enrollment_id, ewt.work_type_id, ewt.priority, ewt.duty_role, wt.name, wt.color
        FROM enrollment_work_types ewt
        JOIN work_types wt ON wt.id = ewt.work_type_id
       WHERE ewt.enrollment_id IN (${placeholders})
@@ -130,7 +136,7 @@ function listEnrollmentsWithDetails(periodId) {
   const wtMap = new Map();
   for (const r of wtRows) {
     if (!wtMap.has(r.enrollment_id)) wtMap.set(r.enrollment_id, []);
-    wtMap.get(r.enrollment_id).push({ workTypeId: r.work_type_id, name: r.name, color: r.color, priority: r.priority });
+    wtMap.get(r.enrollment_id).push({ workTypeId: r.work_type_id, name: r.name, color: r.color, priority: r.priority, dutyRole: r.duty_role });
   }
   const unavailMap = new Map();
   for (const r of unavailRows) {
@@ -160,10 +166,11 @@ function replaceEnrollmentWorkTypes(enrollmentId, items) {
   db.run('DELETE FROM enrollment_work_types WHERE enrollment_id = ?', enrollmentId);
   for (const it of items) {
     db.run(
-      'INSERT INTO enrollment_work_types (enrollment_id, work_type_id, priority) VALUES (?, ?, ?)',
+      'INSERT INTO enrollment_work_types (enrollment_id, work_type_id, priority, duty_role) VALUES (?, ?, ?, ?)',
       enrollmentId,
       it.workTypeId,
-      it.priority
+      it.priority,
+      it.dutyRole || 'member'
     );
   }
 }
@@ -255,6 +262,7 @@ function loadUnavailabilityMap(periodId) {
 }
 
 module.exports = {
+  countSubmittedEnrollments,
   findEnrollment,
   findEnrollmentById,
   createEnrollment,

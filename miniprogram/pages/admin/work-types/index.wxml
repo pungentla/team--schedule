@@ -17,6 +17,17 @@
       <view class="f-field"><text>名称</text><input value="{{form.name}}" data-field="name" bindinput="onForm" placeholder="如 前台接待" /></view>
       <view class="f-field"><text>颜色</text><input value="{{form.color}}" data-field="color" bindinput="onForm" /></view>
       <view class="f-field"><text>排序</text><input type="number" value="{{form.sortOrder}}" data-field="sortOrder" bindinput="onForm" /></view>
+      <view class="f-field"><text>每班至少 1 主 + 1 副</text><switch checked="{{form.requiresRoles}}" data-field="requiresRoles" bindchange="onForm" color="#2E5AAC" /></view>
+      <view class="f-field"><text>开放工作日</text><checkbox-group bindchange="onWeekdays"><label wx:for="{{weekdays}}" wx:key="value"><checkbox value="{{item.value}}" checked="{{item.checked}}" />{{item.label}}</label></checkbox-group></view>
+      <view class="f-field"><text>每班默认人数</text><input type="number" value="{{form.defaultNeed}}" data-field="defaultNeed" bindinput="onForm" /></view>
+      <view class="f-title">长期固定人员</view><view class="code">跨周期自动生效，无需重复报名。同一天可添加多位员工；到需求页应用工作日规则可补足人数。</view>
+      <view class="rule" wx:for="{{rules}}" wx:key="index" wx:for-index="ruleIndex">
+        <picker range="{{dayNames}}" value="{{item.weekday}}" data-index="{{ruleIndex}}" data-field="weekday" bindchange="onRule"><view>{{dayNames[item.weekday]}} ▾</view></picker>
+        <picker range="{{shifts}}" range-key="name" value="{{item.shiftIndex}}" data-index="{{ruleIndex}}" data-field="shiftId" bindchange="onRule"><view>{{item.shiftIndex >= 0 ? shifts[item.shiftIndex].name : '班次已停用，请重选'}} ▾</view></picker>
+        <picker range="{{employees}}" range-key="label" value="{{item.userIndex}}" data-index="{{ruleIndex}}" data-field="userId" bindchange="onRule"><view>{{item.userIndex >= 0 ? employees[item.userIndex].label : '人员已停用，请重选'}} ▾</view></picker>
+        <picker wx:if="{{form.requiresRoles}}" range="{{roleNames}}" value="{{item.roleIndex}}" data-index="{{ruleIndex}}" data-field="dutyRole" bindchange="onRule"><view>{{roleNames[item.roleIndex]}} ▾</view></picker>
+        <button size="mini" data-index="{{ruleIndex}}" bindtap="removeRule">移除此人</button>
+      </view><button disabled="{{!shifts.length || !employees.length}}" bindtap="addRule">＋ 添加固定人员</button>
       <button class="save" bindtap="onSave">保存</button>
     </view>
   </view>

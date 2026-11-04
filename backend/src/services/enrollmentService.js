@@ -6,17 +6,43 @@ const enrollmentRepo = require('../repositories/enrollmentRepo');
 const periodRepo = require('../repositories/periodRepo');
 const configRepo = require('../repositories/configRepo');
 const auditRepo = require('../repositories/auditRepo');
+const userRepo = require('../repositories/userRepo');
+const { requireArray } = require('../utils/validate');
 const db = require('../db/db');
 const { PERIOD_STATUS, ENROLLMENT_STATUS } = require('../config');
 const { badRequest, notFound, conflict, forbidden } = require('../utils/errors');
 const { isDateString } = require('../utils/date');
 
-function assertEditable(period) {
+/** 周期报名与管理员长期报名合并；固定资格仅适用于指定星期、班次和角色。 */
+function getEffectiveEnrollments(periodId) {
+  const period = periodRepo.findPeriod(periodId);
+  if (!period) throw notFound('排班周期不存在');
+  const scope = periodRepo.getScope(period);
+  const entries = new Map(enrollmentRepo.loadSubmittedEnrollments(periodId).map((e) => [e.userId, { ...e, hasSubmitted: true }]));
+  const users = new Map(db.all("SELECT id,name,employee_no FROM users WHERE status='active'").map((u) => [u.id, u]));
+  const activeShifts = new Set(configRepo.listShifts({ includeInactive: false }).filter((s) => scope.shiftIds === null || scope.shiftIds.includes(s.id)).map((s) => s.id));
+  for (const work of configRepo.listWorkTypes({ includeInactive: false }).filter((w) => scope.workTypeIds === null || scope.workTypeIds.includes(w.id))) {
+    for (const rule of JSON.parse(work.weekly_assignments_json)) {
+      const user = users.get(rule.userId);
+      if (!user || !activeShifts.has(rule.shiftId) || !JSON.parse(work.weekdays_json).includes(rule.weekday)) continue;
+      if (!entries.has(user.id)) entries.set(user.id, { userId: user.id, name: user.name, employeeNo: user.employee_no, maxShifts: null, workTypes: [], hasSubmitted: false });
+      const entry = entries.get(user.id);
+      let wt = entry.workTypes.find((w) => w.workTypeId === work.id);
+      if (!wt) { wt = { workTypeId: work.id, priority: 1, dutyRole: 'member', fixedOnly: true }; entry.workTypes.push(wt); }
+      if (!wt.fixedRules) wt.fixedRules = [];
+      wt.fixedRules.push(rule);
+    }
+  }
+  for (const e of entries.values()) e.workTypes = e.workTypes.filter((w) => scope.workTypeIds === null || scope.workTypeIds.includes(w.workTypeId));
+  return [...entries.values()].filter((e) => e.workTypes.length).sort((a, b) => a.employeeNo.localeCompare(b.employeeNo));
+}
+
+function assertEditable(period, { allowDraft = false } = {}) {
   if (!period) throw notFound('排班周期不存在');
   if (period.status === PERIOD_STATUS.PUBLISHED || period.status === PERIOD_STATUS.ARCHIVED) {
     throw conflict('PERIOD_LOCKED', '该周期排班已发布，不能再修改报名');
   }
-  if (period.status === PERIOD_STATUS.DRAFT) {
+  if (period.status === PERIOD_STATUS.DRAFT && !allowDraft) {
     throw conflict('PERIOD_NOT_OPEN', '该周期尚未开放报名');
   }
 }
@@ -27,27 +53,33 @@ function assertEditable(period) {
  *   { workTypes: [{ workTypeId, priority }], maxShifts, availability: [{workDate, shiftId}],
  *     unavailability: [{workDate, reason}], note, submit: boolean }
  */
-function saveEnrollment(periodId, userId, payload, ctx) {
+function saveEnrollment(periodId, userId, payload, ctx, { byAdmin = false } = {}) {
   const period = periodRepo.findPeriod(periodId);
-  assertEditable(period);
+  if (byAdmin) requireEnrollmentAdmin(ctx);
+  assertEditable(period, { allowDraft: byAdmin });
 
   const submit = payload.submit !== false; // 默认提交
   const workTypes = payload.workTypes || [];
 
   // ---- 校验 ----
-  const validWorkTypes = new Map(configRepo.listWorkTypes().map((w) => [w.id, w]));
+  const scope = periodRepo.getScope(period);
+  const validWorkTypes = new Map(configRepo.listWorkTypes({ includeInactive: false }).filter((w) => scope.workTypeIds === null || scope.workTypeIds.includes(w.id)).map((w) => [w.id, w]));
   const seen = new Set();
   const normalizedWt = [];
   for (const item of workTypes) {
     const wtId = Number(item.workTypeId);
-    if (!validWorkTypes.has(wtId)) throw badRequest(`工作类型 ${item.workTypeId} 不存在`);
+    if (!validWorkTypes.has(wtId)) throw badRequest(`工作类型 ${item.workTypeId} 不存在或不在本周期选择范围内`);
     if (seen.has(wtId)) throw badRequest('工作类型不能重复选择');
     seen.add(wtId);
     const priority = Number(item.priority ?? 1);
     if (![1, 2, 3].includes(priority)) throw badRequest('意愿优先级必须是 1、2 或 3');
-    normalizedWt.push({ workTypeId: wtId, priority });
+    const requiresRoles = validWorkTypes.get(wtId).requires_roles === 1;
+    const dutyRole = requiresRoles ? (item.dutyRole ?? 'member') : 'member';
+    if (!['member', 'primary', 'deputy', 'both'].includes(dutyRole)) throw badRequest('报名角色必须是主负责人、副负责人或两者皆可');
+    if (submit && requiresRoles && dutyRole === 'member') throw badRequest(`请为「${validWorkTypes.get(wtId).name}」选择主负责人、副负责人或两者皆可`);
+    normalizedWt.push({ workTypeId: wtId, priority, dutyRole });
   }
-  if (submit && normalizedWt.length === 0) throw badRequest('至少选择一种工作类型才能提交报名');
+  if (submit && normalizedWt.length === 0 && !getEffectiveEnrollments(periodId).some((e) => e.userId === userId && e.workTypes.some((w) => w.fixedRules?.length))) throw badRequest('至少选择一种工作类型才能提交报名');
 
   const maxShifts = payload.maxShifts === undefined || payload.maxShifts === null || payload.maxShifts === ''
     ? null
@@ -58,6 +90,7 @@ function saveEnrollment(periodId, userId, payload, ctx) {
 
   const availSlots = payload.availability || [];
   for (const s of availSlots) {
+    if (scope.shiftIds !== null && !scope.shiftIds.includes(Number(s.shiftId))) throw badRequest('可用班次不在本周期选择范围内');
     if (!isDateString(s.workDate)) throw badRequest(`可用日期格式错误: ${s.workDate}`);
     if (s.workDate < period.start_date || s.workDate > period.end_date) {
       throw badRequest(`可用日期 ${s.workDate} 不在周期内`);
@@ -104,8 +137,10 @@ function saveEnrollment(periodId, userId, payload, ctx) {
     entityType: 'enrollment',
     entityId: enrollmentId,
     periodId,
-    actorId: userId,
+    actorId: ctx.user.id,
     detail: {
+      targetUserId: userId,
+      submittedByAdmin: byAdmin,
       workTypes: normalizedWt,
       maxShifts,
       availabilityCount: availSlots.length,
@@ -118,8 +153,36 @@ function saveEnrollment(periodId, userId, payload, ctx) {
   return getMyEnrollment(periodId, userId);
 }
 
+function requireEnrollmentAdmin(ctx) {
+  if (!['admin', 'super_admin'].includes(ctx.user?.role)) throw forbidden('仅管理员可以代报名');
+}
+function getProxyTarget(userId) {
+  const user = userRepo.findById(userId);
+  if (!user) throw notFound('人员不存在');
+  if (user.status !== 'active') throw badRequest('该账号已停用，不能代报名');
+  return user;
+}
+function getAdminEnrollment(periodId, userId, ctx) {
+  requireEnrollmentAdmin(ctx);
+  const user = getProxyTarget(userId);
+  return { user: userRepo.publicUser(user), context: getEnrollContext(periodId, userId), enrollment: getMyEnrollment(periodId, userId) };
+}
+function saveAdminEnrollment(periodId, userId, payload, ctx) {
+  requireEnrollmentAdmin(ctx);
+  const workTypes = requireArray(payload.workTypes, '工作类型', { min: 1, max: 50 });
+  return db.tx(() => {
+    getProxyTarget(userId);
+    const previous = getMyEnrollment(periodId, userId);
+    return saveEnrollment(periodId, userId, {
+      workTypes, maxShifts: previous.maxShifts, availability: previous.availability,
+      unavailability: previous.unavailability, note: previous.note, submit: true,
+    }, ctx, { byAdmin: true });
+  });
+}
+
 /** 我的报名详情 */
 function getMyEnrollment(periodId, userId) {
+  if (!periodRepo.findPeriod(periodId)) throw notFound('排班周期不存在');
   const e = enrollmentRepo.findEnrollment(periodId, userId);
   if (!e) {
     return {
@@ -145,6 +208,7 @@ function getMyEnrollment(periodId, userId) {
       name: w.name,
       color: w.color,
       priority: w.priority,
+      dutyRole: w.duty_role,
     })),
     availability: enrollmentRepo.listAvailability(periodId, userId).map((a) => ({
       workDate: a.work_date,
@@ -162,28 +226,34 @@ function listEnrollments(periodId) {
   const period = periodRepo.findPeriod(periodId);
   if (!period) throw notFound('排班周期不存在');
   const items = enrollmentRepo.listEnrollmentsWithDetails(periodId);
-  const totalEmployees = db.pluck(`SELECT COUNT(*) FROM users WHERE status = 'active' AND role = 'employee'`);
+  const totalEmployees = db.pluck(`SELECT COUNT(*) FROM users WHERE status = 'active'`);
   return {
     periodId,
     totalEmployees,
-    submittedCount: items.filter((i) => i.status === 'submitted').length,
+    submittedCount: enrollmentRepo.countSubmittedEnrollments(periodId),
+    effectiveCount: getEffectiveEnrollments(periodId).length,
     items,
   };
 }
 
 /** 报名配置页所需的上下文：可选工作类型、班次、日期 */
-function getEnrollContext(periodId) {
+function getEnrollContext(periodId, userId) {
   const period = periodRepo.findPeriod(periodId);
   if (!period) throw notFound('排班周期不存在');
+  const scope = periodRepo.getScope(period);
   return {
     period: periodRepo.toPeriodDto(period),
-    workTypes: configRepo.listWorkTypes({ includeInactive: false }).map(configRepo.toWorkTypeDto),
-    shifts: configRepo.listShifts({ includeInactive: false }).map(configRepo.toShiftDto),
+    workTypes: configRepo.listWorkTypes({ includeInactive: false }).filter((w) => scope.workTypeIds === null || scope.workTypeIds.includes(w.id)).map(configRepo.toWorkTypeDto),
+    shifts: configRepo.listShifts({ includeInactive: false }).filter((s) => scope.shiftIds === null || scope.shiftIds.includes(s.id)).map(configRepo.toShiftDto),
     dates: periodRepo.listSlots(periodId).map((s) => s.work_date).filter((v, i, a) => a.indexOf(v) === i),
+    fixedAssignments: getEffectiveEnrollments(periodId).find((e) => e.userId === userId)?.workTypes.flatMap((w) => (w.fixedRules || []).map((r) => ({ ...r, workTypeId: w.workTypeId, workTypeName: configRepo.findWorkType(w.workTypeId).name, shiftName: configRepo.findShift(r.shiftId).name }))) || [],
   };
 }
 
 module.exports = {
+  getAdminEnrollment,
+  saveAdminEnrollment,
+  getEffectiveEnrollments,
   saveEnrollment,
   getMyEnrollment,
   listEnrollments,

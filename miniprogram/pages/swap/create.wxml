@@ -18,7 +18,7 @@
   <view class="section" wx:if="{{!loading}}">
     <view class="sec-title">{{mode === 'transfer' ? '选择接收人' : '选择交换对象'}}</view>
     <view
-      class="cand {{item.canTake ? '' : 'off'}} {{selectedUser && selectedUser.userId === item.userId ? 'sel' : ''}}"
+      class="cand {{(mode === 'transfer' ? item.canTake : item.theirAssignments.length) ? '' : 'off'}} {{selectedUser && selectedUser.userId === item.userId ? 'sel' : ''}}"
       wx:for="{{candidates}}"
       wx:key="userId"
       data-id="{{item.userId}}"
@@ -46,6 +46,7 @@
       bindtap="selectSwapTarget"
     >
       {{item.workDate}} {{item.shiftName}} · {{item.workTypeName}}
+      {{item.dutyRole === 'primary' ? '· 主负责人' : item.dutyRole === 'deputy' ? '· 副负责人' : ''}}
     </view>
     <view class="empty-tip" wx:if="{{!selectedUser.theirAssignments.length}}">对方名下没有班次，无法互换</view>
   </view>

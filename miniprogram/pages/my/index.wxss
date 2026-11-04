@@ -143,3 +143,10 @@
   font-size: 22rpx;
   color: #8A94A6;
 }
+
+.password-field { margin-bottom: 24rpx; font-size: 28rpx; }
+.password-field input { margin-top: 12rpx; border: 1rpx solid #E5E7EB; border-radius: 12rpx; min-height: 88rpx; padding: 0 20rpx; }
+.password-help, .password-error { display: block; font-size: 26rpx; margin-bottom: 20rpx; }
+.password-help { color: #6B7280; }
+.password-error { color: #C0392B; }
+.password-field + button, form > button { margin-top: 20rpx; }

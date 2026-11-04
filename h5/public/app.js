@@ -5,6 +5,7 @@
  * 纯 DOM 操作，无框架依赖。
  */
 
+function isAdminUser(user = state.user) { return ['admin', 'super_admin'].includes(user?.role); }
 const TOKEN_TTL_NOTE = '登录态 30 天有效';
 
 const state = {
@@ -12,6 +13,8 @@ const state = {
   period: null,
   schedule: null,
   lastRunId: null,
+  draftSchedule: null,
+  publishedSchedule: null,
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -78,14 +81,32 @@ async function doLogin() {
 }
 
 async function doLogout() {
-  try {
-    await API.logout();
-  } catch {
-    /* 忽略：本地清除即可 */
-  }
+  if (!window.confirm('确定退出登录？')) return;
+  const button = $('#btn-logout');
+  button.disabled = true;
+  try { await API.logout(); } catch { /* 清除本地会话即可 */ }
+  finally { clearLocalSession(); button.disabled = false; }
+}
+
+function clearLocalSession() {
+  resetPasswordForm();
+  $('#help-dialog').close();
   API.clearSession();
+  $('#login-pwd').value = '';
   state.user = null;
   state.schedule = null;
+  state.period = null;
+  state.lastRunId = null;
+  state.draftSchedule = null;
+  state.publishedSchedule = null;
+  $('#publish-dialog').close();
+  $('#admin-adjust-dialog').close();
+  resetAdminEnrollment();
+  resetPeriodTrash();
+  resetWorkflow();
+  resetRecentSchedule();
+  resetScheduleViews();
+  resetEmployee();
   showView('login');
 }
 
@@ -99,11 +120,14 @@ function showView(name) {
 async function enterMain() {
   showView('main');
   const u = state.user || API.getUser();
-  const isAdmin = u && u.role === 'admin';
-  $('#tb-user').textContent = `${u.name}（${u.employeeNo}${isAdmin ? ' · 管理员' : ''}）`;
+  const isAdmin = isAdminUser(u);
+  $('#tb-user').textContent = `${u.name}（${u.employeeNo}${isAdmin ? (u.role === 'super_admin' ? ' · 超级管理员' : ' · 管理员') : ''}）`;
   $('#tb-tab-admin').classList.toggle('hidden', !isAdmin);
+  $('#tb-tab-config').classList.toggle('hidden', !isAdmin);
+  $$('.employee-tab').forEach((el) => el.classList.remove('hidden'));
+  $('.main-nav').classList.toggle('has-admin-nav', isAdmin);
 
-  if (!isAdmin) switchTab('schedule');
+  switchTab('schedule');
 
   await loadPeriod();
   await renderSchedule();
@@ -112,8 +136,7 @@ async function enterMain() {
 
 function switchTab(tab) {
   $$('.tb-tab').forEach((el) => el.classList.toggle('on', el.dataset.tab === tab));
-  $('#tab-schedule').classList.toggle('hidden', tab !== 'schedule');
-  $('#tab-admin').classList.toggle('hidden', tab !== 'admin');
+  $$('.tabpane').forEach((el) => el.classList.toggle('hidden', el.id !== `tab-${tab}`));
 }
 
 async function loadPeriod() {
@@ -125,21 +148,36 @@ async function loadPeriod() {
 async function renderSchedule() {
   const box = $('#matrix');
   const banner = $('#gap-banner');
+  $('#schedule-view').value = scheduleView.mode;
+  $('#recent-controls').classList.toggle('hidden', scheduleView.mode !== 'recent');
+  $('.schedule-controls').classList.toggle('hidden', scheduleView.mode === 'recent' || !state.period);
+  $('#schedule-daily-option').disabled = !isAdminUser();
+  $('#schedule-daily-option').hidden = !isAdminUser();
+  if (scheduleView.mode === 'recent') { banner.classList.add('hidden'); return renderRecentSchedule(); }
+  recentView.request++;
 
   if (!state.period) {
+    state.schedule = null;
+    $('#schedule-period-label').textContent = '暂无排班周期';
+    $('.schedule-controls').classList.add('hidden');
     box.innerHTML = '<div class="empty-tip">还没有排班周期</div>';
     banner.classList.add('hidden');
     return;
   }
 
   let data;
+  const periodId = state.period.id;
   try {
-    data = await API.schedule(state.period.id);
+    const result = await Promise.all([API.schedule(periodId, 'published'), API.listPeriods()]);
+    if (!state.user || state.period?.id !== periodId) return;
+    data = result[0];
+    state.periods = result[1];
   } catch (err) {
     box.innerHTML = `<div class="empty-tip">${escapeHtml(err.message)}</div>`;
     return;
   }
   state.schedule = data;
+  $('.schedule-controls').classList.remove('hidden');
 
   // 缺口 banner
   const gaps = data.gaps;
@@ -155,11 +193,11 @@ async function renderSchedule() {
     banner.innerHTML = `✅ 本周期 ${data.run.totalFilled}/${data.run.totalNeeded} 岗位已全部排满${data.run.status === 'draft' ? '（草稿未发布）' : ''}`;
   }
 
-  if (!data.matrix || !data.matrix.length) {
-    box.innerHTML = `<div class="empty-tip">${escapeHtml(data.message || '该周期还没有生成排班')}</div>`;
-    return;
-  }
+  renderScheduleViews(data);
+}
 
+function scheduleMatrixHtml(data) {
+  if (!data?.matrix?.length) return '<div class="empty-tip">暂无排班明细</div>';
   const myId = (state.user || API.getUser() || {}).id;
   const html = data.matrix
     .map((day) => {
@@ -172,8 +210,8 @@ async function renderSchedule() {
                   const cls = ['person'];
                   if (p.userId === myId) cls.push('mine');
                   if (p.source === 'swap') cls.push('swap');
-                  const tip = p.source === 'swap' ? '（换班后）' : '';
-                  return `<span class="${cls.join(' ')}" title="${escapeHtml(p.employeeNo)}${tip}">${escapeHtml(p.name)}</span>`;
+                  const tip = p.isFixed ? '（固定）' : p.source === 'manual' ? '（管理员调配）' : p.source === 'swap' ? '（换班后）' : '';
+                  return `<span class="${cls.join(' ')}" title="${escapeHtml(p.employeeNo)}${tip}">${escapeHtml(p.name)}${tip}${p.dutyRole && p.dutyRole !== 'member' ? ` · ${dutyRoleLabels[p.dutyRole]}` : ''}</span>`;
                 })
                 .join('');
 
@@ -184,7 +222,7 @@ async function renderSchedule() {
 
               return `<div class="wt-row">
                 <div class="wt-name"><span class="dot" style="background:${escapeHtml(wt.workTypeColor || '#999')}"></span>${escapeHtml(wt.workTypeName)}</div>
-                <div class="wt-people">${people || '<span class="count-tag">无人</span>'}${countTag}</div>
+                <div class="wt-people">${people || '<span class="count-tag">无人</span>'}${countTag}${(wt.roleGaps || []).map((role) => `<span class="gap-badge">缺${dutyRoleLabels[role]}</span>`).join('')}</div>
               </div>`;
             })
             .join('');
@@ -205,66 +243,96 @@ async function renderSchedule() {
     })
     .join('');
 
-  box.innerHTML = html || '<div class="empty-tip">暂无数据</div>';
+  return html || '<div class="empty-tip">暂无数据</div>';
 }
 
 // ------------------------------ 管理后台 ------------------------------
 
 async function renderAdmin() {
-  await Promise.all([renderStats(), renderGenResult(), renderMetrics(), renderSwaps(), renderAudit()]);
+  await renderWorkflow();
+  await Promise.all([loadAdminSchedules(), renderSwaps(), renderAudit()]);
+  await renderStats();
+  renderGenResult();
+  renderMetrics();
+}
+
+async function loadAdminSchedules() {
+  state.draftSchedule = null;
+  state.publishedSchedule = null;
+  state.scheduleError = null;
+  $('#btn-publish').disabled = true;
+  if (!state.period) return;
+  const id = state.period.id;
+  try {
+    const [draft, published] = await Promise.all([API.schedule(id, 'draft'), API.schedule(id, 'published')]);
+    if (!isAdminUser() || state.period?.id !== id) return;
+    state.draftSchedule = draft;
+    state.publishedSchedule = published;
+  } catch (err) { state.scheduleError = err.message; }
 }
 
 async function renderStats() {
   const el = $('#admin-stats');
+  if (!state.period) { el.innerHTML = ''; return; }
   try {
-    const d = await API.dashboard();
-    const p = d.currentPeriod || {};
-    const run = d.publishedRun;
+    const d = await API.get(`/enrollments/${state.period.id}`);
+    const run = state.publishedSchedule?.run;
     const fillRate = run ? `${(run.fillRate * 100).toFixed(0)}%` : '—';
 
     el.innerHTML = `
-      <div class="stat"><span class="v">${d.enrollment.submitted}/${d.enrollment.total}</span><span class="l">报名人数</span></div>
+      <div class="stat"><span class="v">${d.effectiveCount ?? d.submittedCount}/${d.totalEmployees}</span><span class="l">参与排班人数</span></div>
       <div class="stat"><span class="v">${run ? `${run.totalFilled}/${run.totalNeeded}` : '—'}</span><span class="l">已排 / 需求</span></div>
       <div class="stat"><span class="v">${fillRate}</span><span class="l">填充率</span></div>
-      <div class="stat"><span class="v">${d.pendingSwaps}</span><span class="l">待确认换班</span></div>
+      <div class="stat"><span class="v">${state.pendingPeriodSwaps || 0}</span><span class="l">待确认换班</span></div>
     `;
 
-    if (p.id) {
-      state.period = p;
-      $('#gen-seed').value = run ? 42 : 42;
-    }
   } catch (err) {
     el.innerHTML = `<div class="empty-tip">${escapeHtml(err.message)}</div>`;
   }
 }
 
 function renderGenResult() {
-  const run = state.schedule && state.schedule.run;
+  const draft = state.draftSchedule;
+  const published = state.publishedSchedule;
+  const run = draft?.run;
   const box = $('#gen-result');
+  $('#draft-panel').classList.toggle('hidden', !run);
+  $('#published-panel').classList.toggle('hidden', !published?.run);
+  $('#draft-preview').innerHTML = run ? scheduleMatrixHtml(draft) : '<p class="empty-tip">还没有待发布草稿，请先生成。</p>';
+  $('#published-preview').innerHTML = published?.run ? scheduleMatrixHtml(published) : '<p class="empty-tip">该周期尚未发布，员工暂时看不到本周期排班。</p>';
+  $('#published-summary').textContent = published?.run ? `生效版本 #${published.run.id} · 已安排 ${published.assignments.length} 人次` : '';
+  if (state.scheduleError) {
+    box.innerHTML = `<p class="form-error" role="alert">${escapeHtml(state.scheduleError)}，请刷新后重试。</p>`;
+    $('#btn-publish').classList.add('hidden');
+    return;
+  }
 
   if (!run) {
-    box.innerHTML = '<div class="empty-tip">该周期还没有排班草稿，点「生成排班」开始</div>';
+    box.innerHTML = '';
     $('#btn-publish').classList.add('hidden');
     $('#btn-regen').classList.add('hidden');
     return;
   }
 
-  const isDraft = run.status === 'draft';
+  const fixedConflicts = draft.gaps?.fixedConflicts || [];
+  const roleGaps = draft.matrix.flatMap((day) => day.shifts.flatMap((shift) => shift.workTypes.flatMap((w) => w.roleGaps || [])));
   box.innerHTML = `
-    <div class="gap-item" style="background:#F8FAFF">
-      run #${run.id} · ${run.status === 'published' ? '已发布' : '草稿'} · 种子 ${run.seed} · 填充 ${run.totalFilled}/${run.totalNeeded}（${(run.fillRate * 100).toFixed(1)}%）
-      <span class="reason">算法 ${escapeHtml(run.algoVersion)} · ${run.rounds} 轮迭代 · ${run.durationMs}ms · hash ${escapeHtml(run.inputHash)}</span>
-    </div>
+    <p class="notice">草稿 #${run.id}：已安排 <b>${run.totalFilled}</b> 人次，需求 <b>${run.totalNeeded}</b> 人次，缺口 <b>${run.totalNeeded - run.totalFilled}</b> 人次。尚未生效。</p>
+    ${fixedConflicts.length ? `<p class="form-error">固定名单冲突：</p><ul>${fixedConflicts.map((c) => `<li>${escapeHtml(c.workDate)} ${escapeHtml(c.name || '')}：${escapeHtml(c.message)}</li>`).join('')}</ul>` : ''}
+    ${roleGaps.length ? '<p class="form-error">主副负责人未配齐，暂不可发布。</p>' : ''}
   `;
-  $('#btn-publish').classList.toggle('hidden', !isDraft);
+  $('#btn-publish').classList.remove('hidden');
+  $('#btn-publish').disabled = roleGaps.length > 0 || fixedConflicts.length > 0;
   $('#btn-regen').classList.remove('hidden');
+  $('#btn-regen').disabled = !flow.preparation?.canGenerate;
 }
 
 async function renderMetrics() {
   const box = $('#metrics-detail');
-  const m = state.schedule && state.schedule.metrics;
+  const m = (state.draftSchedule?.run ? state.draftSchedule : state.publishedSchedule)?.metrics;
+  $('#metrics-panel').classList.toggle('hidden', !m);
   if (!m) {
-    box.textContent = '生成排班后这里会显示每个工作类型的轮转分布';
+    box.textContent = '暂无统计';
     return;
   }
 
@@ -335,6 +403,7 @@ async function renderSwaps() {
 
   try {
     const list = await API.adminSwaps(state.period.id);
+    state.pendingPeriodSwaps = list.filter((s) => s.status === 'pending').length;
     if (!list.length) {
       box.innerHTML = '<div class="empty-tip">暂无换班记录</div>';
       return;
@@ -380,6 +449,9 @@ async function renderAudit() {
 
 async function onGenerate() {
   if (!state.period) return toast('没有可排班的周期', true);
+  const ready = await refreshWorkflowPreparation();
+  if (!ready) return;
+  if (!ready.canGenerate) { await openWorkflow(ready.nextStep); return; }
   const seed = Number($('#gen-seed').value) || 42;
   const btn = $('#btn-gen');
   btn.disabled = true;
@@ -393,24 +465,50 @@ async function onGenerate() {
   } catch (err) {
     toast(err.message, true);
   } finally {
-    btn.disabled = false;
-    btn.textContent = '生成排班';
+    btn.disabled = !flow.preparation?.canGenerate;
+    btn.textContent = '生成草稿';
   }
 }
 
 async function onPublish() {
-  if (!state.period) return;
-  const btn = $('#btn-publish');
+  await loadAdminSchedules();
+  renderGenResult();
+  const draft = state.draftSchedule;
+  if (!draft?.run || $('#btn-publish').disabled) return;
+  const published = state.publishedSchedule;
+  const key = (a) => `${a.workDate}|${a.shiftId}|${a.workTypeId}|${a.dutyRole || 'member'}|${a.userId}`;
+  const oldKeys = new Set((published?.assignments || []).map(key));
+  const newKeys = new Set(draft.assignments.map(key));
+  const added = draft.assignments.filter((a) => !oldKeys.has(key(a)));
+  const removed = (published?.assignments || []).filter((a) => !newKeys.has(key(a)));
+  const changeList = (title, list) => `<h3>${title}（${list.length} 人次）</h3>${list.length ? `<ul class="participant-list">${list.map((a) => `<li>${escapeHtml(assignmentLabel(a))}：${escapeHtml(a.name)}</li>`).join('')}</ul>` : '<p class="form-help">无</p>'}`;
+  state.reviewedRunId = draft.run.id;
+  state.reviewedRevision = draft.run.revision;
+  state.reviewedPublishedRunId = published?.run?.id || 0;
+  state.reviewedPublishedRevision = published?.run?.revision || 0;
+  state.reviewedPeriodId = state.period.id;
+  $('#publish-review-content').innerHTML = `<p class="notice">周期：${escapeHtml(state.period.name)}<br>本次发布草稿 #${draft.run.id}，共 ${draft.assignments.length} 人次。${published?.run ? `将替换当前生效版本 #${published.run.id}。` : '这是本周期首次发布。'}</p>
+
+    ${draft.run.totalNeeded > draft.run.totalFilled ? `<p class="form-error">草稿仍有 ${draft.run.totalNeeded - draft.run.totalFilled} 人次缺口，发布后这些岗位仍为空缺。</p>` : ''}
+    ${changeList('新增 / 调整', added)}${changeList('移出', removed)}<p class="form-help">不变：${draft.assignments.length - added.length} 人次。</p>`;
+  $('#publish-error').textContent = '';
+  $('#publish-dialog').showModal();
+}
+
+async function confirmPublish() {
+  const btn = $('#btn-publish-confirm');
+  if (btn.disabled || !state.reviewedRunId) return;
   btn.disabled = true;
   try {
-    const runId = state.lastRunId || (state.schedule && state.schedule.run ? state.schedule.run.id : undefined);
-    const res = await API.publish(state.period.id, runId);
+    const res = await API.publish(state.reviewedPeriodId, state.reviewedRunId, state.reviewedRevision, state.reviewedPublishedRunId, state.reviewedPublishedRevision);
+    $('#publish-dialog').close();
+    state.lastRunId = null;
     toast(res.alreadyPublished ? '该排班已发布过' : `发布成功，共 ${res.filled} 条排班生效`);
-    await loadPeriod();
+    state.period = (await API.listPeriods()).find((p) => p.id === state.period.id) || state.period;
     await renderSchedule();
     await renderAdmin();
   } catch (err) {
-    toast(err.message, true);
+    $('#publish-error').textContent = err.message;
   } finally {
     btn.disabled = false;
   }
@@ -437,14 +535,32 @@ function bindEvents() {
 
   $$('.tb-tab').forEach((el) => {
     el.addEventListener('click', () => {
+      if (!confirmWorkflowLeave()) return;
       switchTab(el.dataset.tab);
       if (el.dataset.tab === 'admin') renderAdmin();
+      if (el.dataset.tab === 'config') renderWorkConfig();
+      if (el.dataset.tab === 'enroll') renderEnrollment();
+      if (el.dataset.tab === 'swaps') renderEmployeeSwaps();
+      if (el.dataset.tab === 'schedule') renderSchedule();
     });
   });
 
   $('#btn-gen').addEventListener('click', onGenerate);
   $('#btn-publish').addEventListener('click', onPublish);
   $('#btn-regen').addEventListener('click', onRegen);
+  $('#btn-publish-cancel').addEventListener('click', () => $('#publish-dialog').close());
+  $('#btn-publish-confirm').addEventListener('click', confirmPublish);
+  bindEmployeeEvents();
+  bindWorkConfigEvents();
+  bindWorkflowEvents();
+  bindPeriodTrashEvents();
+  bindAdminEnrollmentEvents();
+  bindHelpEvents();
+  bindPasswordEvents();
+  bindAccountEvents();
+  bindAdminScheduleEvents();
+  bindScheduleViewEvents();
+  bindRecentScheduleEvents();
 }
 
 async function boot() {

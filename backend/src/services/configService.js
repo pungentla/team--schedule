@@ -6,6 +6,29 @@ const configRepo = require('../repositories/configRepo');
 const auditRepo = require('../repositories/auditRepo');
 const db = require('../db/db');
 const { badRequest, conflict } = require('../utils/errors');
+const { requireArray, requireInt, requireEnum } = require('../utils/validate');
+
+function validateWeeklyAssignments(items, requiresRoles, weekdays) {
+  const seen = new Set();
+  const counts = new Map();
+  return requireArray(items, '每周固定名单', { max: 1000 }).map((item) => {
+    const weekday = requireInt(item.weekday, '固定星期', { min: 0, max: 6 });
+    const shiftId = requireInt(item.shiftId, '固定班次', { min: 1 });
+    const userId = requireInt(item.userId, '固定员工', { min: 1 });
+    const dutyRole = requireEnum(item.dutyRole || 'member', '固定岗位角色', requiresRoles ? ['primary', 'deputy'] : ['member']);
+    if (!weekdays.includes(weekday)) throw badRequest('固定名单的星期必须在该工作的开放工作日内');
+    if (!configRepo.findShift(shiftId)?.active) throw badRequest('固定班次不存在或已停用');
+    const user = db.get('SELECT role,status FROM users WHERE id=?', userId);
+    if (!user || user.status !== 'active') throw badRequest('固定人员必须是已启用的账号');
+    const key = `${weekday}|${shiftId}|${userId}`;
+    if (seen.has(key)) throw badRequest('同一员工在同一个星期和班次的固定名单中不能重复');
+    seen.add(key);
+    const cell = `${weekday}|${shiftId}`;
+    counts.set(cell, (counts.get(cell) || 0) + 1);
+    if (counts.get(cell) > 99) throw badRequest('同一个星期和班次的固定人数不能超过 99 人');
+    return { weekday, shiftId, userId, dutyRole };
+  });
+}
 
 // ---------------------------- 工作类型 ----------------------------
 
@@ -21,7 +44,9 @@ function listWorkTypes(ctx) {
   }));
 }
 
-function createWorkType({ code, name, description, color, sortOrder }, ctx) {
+function createWorkType({ code, name, description, color, sortOrder, requiresRoles, weekdays, defaultNeed, weeklyAssignments = [] }, ctx) {
+  weeklyAssignments = validateWeeklyAssignments(weeklyAssignments, requiresRoles, weekdays || [0, 1, 2, 3, 4, 5, 6]);
+  if (requiresRoles && defaultNeed === 1) throw badRequest('主副工作默认人数必须为 0 或至少 2 人');
   if (configRepo.findWorkTypeByCode(code)) {
     throw conflict('WORK_TYPE_CODE_TAKEN', `工作类型编码 ${code} 已存在`);
   }
@@ -32,6 +57,10 @@ function createWorkType({ code, name, description, color, sortOrder }, ctx) {
     color: color || '#4A90D9',
     sortOrder: sortOrder ?? 0,
     active: 1,
+    requiresRoles,
+    weekdays,
+    defaultNeed,
+    weeklyAssignments,
   });
   auditRepo.log({
     action: auditRepo.ACTIONS.WORK_TYPE_CREATE,
@@ -47,6 +76,13 @@ function createWorkType({ code, name, description, color, sortOrder }, ctx) {
 function updateWorkType(id, fields, ctx) {
   const existing = configRepo.findWorkType(id);
   if (!existing) throw badRequest('工作类型不存在');
+  if (fields.weeklyAssignments !== undefined || fields.requiresRoles !== undefined || fields.weekdays !== undefined) {
+    fields.weeklyAssignments = validateWeeklyAssignments(fields.weeklyAssignments ?? JSON.parse(existing.weekly_assignments_json), fields.requiresRoles ?? existing.requires_roles === 1, fields.weekdays ?? JSON.parse(existing.weekdays_json));
+  }
+  if ((fields.requiresRoles ?? existing.requires_roles) && (fields.defaultNeed ?? existing.default_need) === 1) {
+    if (fields.defaultNeed === undefined) fields.defaultNeed = 2;
+    else throw badRequest('主副工作默认人数必须为 0 或至少 2 人');
+  }
   configRepo.updateWorkType(id, fields);
   auditRepo.log({
     action: auditRepo.ACTIONS.WORK_TYPE_UPDATE,

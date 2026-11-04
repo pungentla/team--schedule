@@ -12,8 +12,9 @@ const {
   requireArray,
   intParam,
   requireBoolean,
+  requireEnum,
 } = require('../utils/validate');
-const { isDateString, today } = require('../utils/date');
+const { isDateString, today, periodEndDate, diffDays } = require('../utils/date');
 const { badRequest } = require('../utils/errors');
 
 const router = express.Router();
@@ -33,6 +34,25 @@ router.get('/current', requireAuth, (req, res) => {
   res.json({ data: periodService.findCurrentPeriod(list, today()) });
 });
 
+router.get('/range', requireAuth, requireAdmin, (req, res) => {
+  const startDate = parseDate(req.query.startDate, '开始日期');
+  const duration = requireEnum(req.query.duration, '周期长度', ['week', 'month', 'bimonth', 'quarter', 'halfyear', 'year']);
+  const endDate = periodEndDate(startDate, duration);
+  res.json({ data: { startDate, endDate, days: diffDays(startDate, endDate) + 1 } });
+});
+
+router.get('/deleted', requireAuth, requireAdmin, (req, res) => {
+  res.json({ data: periodService.listDeletedPeriods(ctx(req)) });
+});
+
+router.delete('/:id', requireAuth, requireAdmin, (req, res) => {
+  res.json({ data: periodService.deletePeriod(intParam(req.params.id, 'id'), ctx(req)) });
+});
+
+router.post('/:id/restore', requireAuth, requireAdmin, (req, res) => {
+  res.json({ data: periodService.restorePeriod(intParam(req.params.id, 'id'), ctx(req)) });
+});
+
 router.get('/:id', requireAuth, (req, res) => {
   res.json({ data: periodService.getPeriod(intParam(req.params.id, 'id')) });
 });
@@ -48,6 +68,9 @@ router.post('/', requireAuth, requireAdmin, (req, res) => {
       maxShiftsPerWeek: optionalInt(b.maxShiftsPerWeek, '每周最多班次', { min: 1, max: 21 }),
       forbidConsecutive: b.forbidConsecutive === undefined ? undefined : requireBoolean(b.forbidConsecutive, '禁止连续班次'),
       enrollmentDeadline: b.enrollmentDeadline || null,
+      workTypeIds: b.workTypeIds,
+      shiftIds: b.shiftIds,
+      initializeRequirements: b.initializeRequirements === undefined ? false : requireBoolean(b.initializeRequirements, '自动准备需求'),
     },
     ctx(req)
   );
@@ -78,6 +101,13 @@ router.post('/:id/status', requireAuth, requireAdmin, (req, res) => {
   res.json({ data: periodService.changeStatus(id, status, ctx(req)) });
 });
 
+router.get('/:id/preparation', requireAuth, requireAdmin, (req, res) => {
+  res.json({ data: require('../services/periodWorkflowService').getPreparation(intParam(req.params.id, 'id')) });
+});
+router.post('/:id/prepare', requireAuth, requireAdmin, (req, res) => {
+  res.json({ data: periodService.prepareRequirements(intParam(req.params.id, 'id'), ctx(req)) });
+});
+
 /** 生成需求格子 */
 router.post('/:id/slots/generate', requireAuth, requireAdmin, (req, res) => {
   const id = intParam(req.params.id, 'id');
@@ -100,9 +130,13 @@ router.get('/:id/requirements', requireAuth, (req, res) => {
 });
 
 /** 批量设置需求人数 */
+router.post('/:id/requirements/apply-rules', requireAuth, requireAdmin, (req, res) => {
+  res.json({ data: periodService.applyWorkRules(intParam(req.params.id, 'id'), ctx(req)) });
+});
+
 router.put('/:id/requirements', requireAuth, requireAdmin, (req, res) => {
   const id = intParam(req.params.id, 'id');
-  const items = requireArray(req.body?.items, 'items', { min: 1, max: 2000 });
+  const items = requireArray(req.body?.items, 'items', { min: 1, max: 20000 });
   const normalized = items.map((it) => ({
     workDate: parseDate(it.workDate, '日期'),
     shiftId: requireInt(it.shiftId, '班次', { min: 1 }),

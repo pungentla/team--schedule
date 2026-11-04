@@ -80,6 +80,18 @@ function diffDays(a, b) {
   return Math.round((toUtcMs(b) - toUtcMs(a)) / 86400000);
 }
 
+/** 从开始日期计算含首尾的周期；月份不足时，结束日期取该月最后一天。 */
+function periodEndDate(startDate, duration) {
+  if (!isDateString(startDate)) throw new RangeError('无效的开始日期');
+  if (duration === 'week') return addDays(startDate, 6);
+  const months = { month: 1, bimonth: 2, quarter: 3, halfyear: 6, year: 12 }[duration];
+  if (!months || !isDateString(startDate)) throw new RangeError('无效的周期或开始日期');
+  const [year, month, day] = startDate.split('-').map(Number);
+  const target = new Date(Date.UTC(year, month - 1 + months, 1));
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  return fromUtcMs(Date.UTC(target.getUTCFullYear(), target.getUTCMonth(), day === 1 ? 0 : Math.min(day - 1, lastDay)));
+}
+
 /** 是否 a <= d <= b */
 function inRange(d, a, b) {
   return d >= a && d <= b;
@@ -148,6 +160,7 @@ module.exports = {
   nowIso,
   addDays,
   diffDays,
+  periodEndDate,
   inRange,
   dateRange,
   weekday,

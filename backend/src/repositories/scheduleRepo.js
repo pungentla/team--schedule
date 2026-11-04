@@ -79,8 +79,8 @@ function bulkInsertAssignments(runId, periodId, items) {
   const now = nowIso();
   const stmt = db.getDb().prepare(
     `INSERT INTO assignments
-       (run_id, period_id, work_date, shift_id, work_type_id, user_id, status, source, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)`
+       (run_id, period_id, work_date, shift_id, work_type_id, user_id, status, source, duty_role, is_fixed, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)`
   );
   for (const it of items) {
     stmt.run(
@@ -91,6 +91,8 @@ function bulkInsertAssignments(runId, periodId, items) {
       it.workTypeId,
       it.userId,
       it.source || 'algo',
+      it.dutyRole || 'member',
+      it.isFixed ? 1 : 0,
       now
     );
   }
@@ -120,13 +122,13 @@ function findAssignment(id) {
   return db.get('SELECT * FROM assignments WHERE id = ?', id);
 }
 
-function listActiveEmployees() {
+function listActiveParticipants() {
   return db.all(
     `SELECT id, name, employee_no FROM users WHERE status = 'active' ORDER BY employee_no`
   );
 }
 
-function listActiveEmployeeCount() {
+function listActiveParticipantCount() {
   return db.pluck(`SELECT COUNT(*) FROM users WHERE status = 'active'`);
 }
 
@@ -156,17 +158,19 @@ function releaseAssignment(id) {
 }
 
 /** 插入一条换班产生的分配 */
-function insertSwapAssignment({ runId, periodId, workDate, shiftId, workTypeId, userId }) {
+function insertSwapAssignment({ runId, periodId, workDate, shiftId, workTypeId, userId, dutyRole = 'member', source = 'swap' }) {
   const { lastInsertRowid } = db.run(
     `INSERT INTO assignments
-       (run_id, period_id, work_date, shift_id, work_type_id, user_id, status, source, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'active', 'swap', ?)`,
+       (run_id, period_id, work_date, shift_id, work_type_id, user_id, status, source, duty_role, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
     runId,
     periodId,
     workDate,
     shiftId,
     workTypeId,
     userId,
+    source,
+    dutyRole,
     nowIso()
   );
   return lastInsertRowid;
@@ -183,8 +187,8 @@ module.exports = {
   countAssignments,
   listAssignmentsWithUser,
   findAssignment,
-  listActiveEmployees,
-  listActiveEmployeeCount,
+  listActiveParticipants,
+  listActiveParticipantCount,
   listUserAssignmentsInPeriod,
   releaseAssignment,
   insertSwapAssignment,

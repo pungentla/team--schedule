@@ -14,10 +14,10 @@
     <div class="login-box">
       <div class="logo">排班宝</div>
       <div class="sub">TeamShift · 团队轮值排班</div>
-      <input id="login-no" placeholder="工号（admin / emp001）" />
-      <input id="login-pwd" type="password" placeholder="密码（123456）" />
+      <input id="login-no" placeholder="请输入登录账号" autocomplete="username" />
+      <input id="login-pwd" type="password" placeholder="请输入密码" autocomplete="current-password" />
       <button id="btn-login" class="btn-primary">登 录</button>
-      <div class="hint">演示账号：admin/123456（管理员）、emp001~emp020/123456</div>
+      <div class="hint">请使用已配置的账号登录，账号与密码由管理员分配。</div>
     </div>
   </div>
 
@@ -25,36 +25,95 @@
   <div id="view-main" class="view hidden">
     <header class="topbar">
       <span class="brand">排班宝</span>
-      <span id="tb-user" class="tb-user"></span>
-      <span id="tb-tab-schedule" class="tb-tab on" data-tab="schedule">排班表</span>
-      <span id="tb-tab-admin" class="tb-tab" data-tab="admin">管理后台</span>
+      <button type="button" id="btn-account" class="account-button" aria-label="个人账号与修改密码"><span id="tb-user" class="tb-user"></span><span aria-hidden="true">⌄</span></button>
+      <nav class="main-nav" aria-label="主导航">
+      <button id="tb-tab-schedule" class="tb-tab on" data-tab="schedule">排班表</button>
+      <button class="tb-tab hidden employee-tab" data-tab="enroll">我的报名</button>
+      <button class="tb-tab hidden employee-tab" data-tab="swaps">我的换班</button>
+      <button id="tb-tab-admin" class="tb-tab" data-tab="admin">安排排班</button>
+      <button id="tb-tab-config" class="tb-tab hidden" data-tab="config">基础设置</button>
+      </nav>
       <button id="btn-logout" class="btn-ghost-sm">退出</button>
     </header>
 
     <!-- 排班表 -->
     <section id="tab-schedule" class="tabpane">
+      <div class="panel"><h2>排班表 <button type="button" class="help-button" data-help="recent" aria-label="查看近期安排说明">ⓘ</button></h2><p id="schedule-period-label" class="form-help"></p>
+        <label class="field">查看<select id="schedule-view" aria-label="排班查看方式"><option value="recent">我的近期安排</option><option value="matrix">排班矩阵</option><option value="daily" id="schedule-daily-option">按人员日表</option><option value="calendar">月历</option></select></label>
+        <div id="recent-controls"><form id="recent-filter-form" class="row"><label>时间范围<select id="recent-range"><option value="7">未来7天（含今天）</option><option value="30">未来30天</option><option value="custom">自定义</option></select></label><label class="recent-custom hidden">开始<input type="date" id="recent-start" required></label><label class="recent-custom hidden">结束<input type="date" id="recent-end" required></label><button type="submit" class="btn-ghost recent-custom hidden">查看</button></form><p id="recent-error" class="form-error" role="alert"></p></div>
+        <div class="row schedule-controls hidden"><label>排班周期<select id="schedule-period" aria-label="查看排班周期"></select></label><label>人员<select id="schedule-person" aria-label="排班人员"></select></label><label id="schedule-day-field">日期<input id="schedule-day" type="date" aria-label="排班日期"></label></div>
+      </div>
       <div id="gap-banner" class="gap-banner hidden"></div>
       <div id="matrix" class="matrix"></div>
     </section>
 
+    <section id="tab-enroll" class="tabpane hidden">
+      <div class="panel">
+        <div class="section-heading"><h2>我的报名 <button type="button" class="help-button" data-help="enroll" aria-label="查看我的报名说明">ⓘ</button></h2><button id="btn-enroll-refresh" class="btn-ghost">刷新</button></div>
+        <label class="field">排班周期<select id="enroll-period" aria-label="报名周期"></select></label>
+        <div id="enroll-content" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <section id="tab-swaps" class="tabpane hidden">
+      <div class="panel">
+        <div class="section-heading"><h2>发起换班 <button type="button" class="help-button" data-help="swaps" aria-label="查看发起换班说明">ⓘ</button></h2><button id="btn-swaps-refresh" class="btn-ghost">刷新</button></div>
+
+        <div id="swap-create-content" aria-live="polite"></div>
+      </div>
+      <div class="panel"><h2>待我确认 <span id="swap-inbox-count" class="count-tag">0</span></h2><div id="swap-inbox" aria-live="polite"></div></div>
+      <div class="panel"><h2>我发起的</h2><div id="swap-mine" aria-live="polite"></div></div>
+    </section>
+
+    <dialog id="swap-dialog" aria-labelledby="swap-dialog-title">
+      <div class="section-heading"><h2 id="swap-dialog-title">换班详情</h2><button id="btn-swap-close" class="btn-ghost" aria-label="关闭换班详情">关闭</button></div>
+      <div id="swap-detail-content" aria-live="polite"></div>
+    </dialog>
+
+    <section id="tab-config" class="tabpane hidden">
+      <div class="panel"><div class="section-heading"><h2>基础设置</h2><button data-return-workflow class="btn-ghost">返回安排排班</button><button id="btn-config-refresh" class="btn-ghost">刷新</button></div>
+        <div class="config-nav" role="tablist" aria-label="配置分类"><button data-config-tab="worktypes" role="tab" aria-controls="config-worktypes" aria-selected="true">工作类型</button><button data-config-tab="shifts" role="tab" aria-controls="config-shifts" aria-selected="false">班次时间</button><button data-config-tab="accounts" role="tab" aria-controls="config-accounts" aria-selected="false">账号管理</button></div>
+
+      </div>
+      <div id="config-worktypes" class="panel config-panel" data-config-panel="worktypes" role="tabpanel"><h2>工作类型 <button type="button" class="help-button" data-help="worktypes" aria-label="查看工作类型说明">ⓘ</button></h2><div id="worktype-config" aria-live="polite"></div></div>
+      <div id="config-shifts" class="panel config-panel hidden" data-config-panel="shifts" role="tabpanel"><h2>班次时间 <button type="button" class="help-button" data-help="shifts" aria-label="查看班次时间说明">ⓘ</button></h2><div id="shift-config" aria-live="polite"></div></div>
+      <div id="config-accounts" class="panel config-panel hidden" data-config-panel="accounts" role="tabpanel"><h2>账号管理 <button type="button" class="help-button" data-help="accounts" aria-label="查看账号管理说明">ⓘ</button></h2><div id="account-config" aria-live="polite"></div></div>
+    </section>
+
     <!-- 管理后台 -->
     <section id="tab-admin" class="tabpane hidden">
-      <div id="admin-stats" class="stat-grid"></div>
+      <div class="panel workflow-heading"><div class="section-heading"><h2>安排排班</h2><button type="button" id="btn-flow-new" class="btn-success">新建排班</button><button id="btn-flow-refresh" class="btn-ghost">刷新进度</button></div>
+        <div class="field period-picker"><div class="period-caption"><label for="requirements-period">当前排班周期</label><div class="period-actions" aria-label="周期操作"><button type="button" id="btn-period-trash" class="btn-ghost hidden" data-open-period-trash>回收站</button><button type="button" id="btn-flow-delete" class="btn-ghost btn-danger" disabled>删除本周期</button></div></div><select id="requirements-period" aria-label="当前排班周期"></select></div>
+        <p id="flow-period-status" class="form-help"></p>
+        <nav class="workflow-steps" aria-label="安排排班步骤"><button type="button" data-flow-step="period" aria-current="false"><b>1</b><span>设置周期</span></button><button type="button" data-flow-step="requirements" aria-current="false"><b>2</b><span>确认需求</span></button><button type="button" data-flow-step="people" aria-current="false"><b>3</b><span>参与人员</span></button><button type="button" data-flow-step="generate" aria-current="false"><b>4</b><span>生成发布</span></button></nav>
+        <p id="flow-progress" class="form-help" aria-live="polite"></p>
+      </div>
+      <p id="flow-error" class="form-error" role="alert"></p>
+      <div id="flow-period" data-flow-panel="period" class="hidden"><div class="panel"><div class="section-heading"><div class="title-with-help"><h2 id="flow-period-title">1. 设置周期</h2><button type="button" class="help-button" data-help="period" aria-label="查看排班周期说明">ⓘ</button></div><button type="button" id="btn-flow-cancel-create" class="btn-ghost hidden">取消</button></div><button type="button" id="period-recycle-empty" class="btn-ghost hidden" data-open-period-trash>打开周期回收站</button><p id="flow-period-intro" class="form-help"></p><div id="period-create"></div><div id="period-config"></div></div></div>
+      <div id="flow-requirements" data-flow-panel="requirements" class="hidden"><div class="panel"><h2>2. 确认需求 <button type="button" class="help-button" data-help="requirements" aria-label="查看2. 确认需求说明">ⓘ</button></h2><div id="requirements-config" aria-live="polite"></div></div></div>
+      <div id="flow-people" data-flow-panel="people" class="hidden"><div class="panel"><h2>3. 确认参与人员 <button type="button" class="help-button" data-help="participants" aria-label="查看3. 确认参与人员说明">ⓘ</button></h2><div id="flow-participants" aria-live="polite"></div></div><div id="admin-stats" class="stat-grid"></div></div>
+      <div id="flow-generate" data-flow-panel="generate" class="hidden">
+      <div id="generation-readiness" class="panel" aria-live="polite"></div>
 
       <div class="panel">
-        <h3>排班生成与发布</h3>
+        <h2>4. 生成与发布 <button type="button" class="help-button" data-help="generation" aria-label="查看4. 生成与发布说明">ⓘ</button></h2>
+        <p class="form-help">生成草稿 → 检查调配 → 发布生效。</p>
+
         <div class="row">
-          <label>种子 <input id="gen-seed" type="number" value="42" style="width:90px"></label>
-          <button id="btn-gen" class="btn-primary">生成排班</button>
-          <button id="btn-publish" class="btn-success hidden">发布排班</button>
-          <button id="btn-regen" class="btn-ghost hidden">换种子重试</button>
+          <button id="btn-gen" class="btn-success">生成草稿</button>
+          <button id="btn-publish" class="btn-success hidden">检查并发布这份草稿</button>
         </div>
+
+        <details><summary>尝试其他安排</summary><p class="form-help">换个种子可尝试其他安排。</p><label class="field">随机种子<input id="gen-seed" type="number" min="0" max="2147483647" value="42"></label><button id="btn-regen" class="btn-ghost hidden">重新生成（覆盖草稿）</button></details>
         <div id="gen-result"></div>
       </div>
 
-      <div class="panel">
-        <h3>公平度指标</h3>
-        <div id="metrics-detail">生成排班后这里会显示每个工作类型的轮转分布</div>
+      <div class="panel preview-panel" id="draft-panel"><h2>待发布草稿 <button type="button" class="help-button" data-help="draft" aria-label="查看待发布草稿说明">ⓘ</button></h2><button id="btn-adjust-draft" class="btn-ghost">手工调配草稿</button><div id="draft-preview" class="matrix"></div></div>
+      <div class="panel preview-panel" id="published-panel"><h2>当前已发布排班 <button type="button" class="help-button" data-help="published" aria-label="查看当前已发布排班说明">ⓘ</button></h2><button id="btn-adjust-published" class="btn-ghost">直接调整已发布排班</button><div id="published-summary"></div><div id="published-preview" class="matrix"></div></div>
+
+      <div class="panel" id="metrics-panel">
+        <h3>公平度 <button type="button" class="help-button" data-help="fairness" aria-label="查看公平度说明">ⓘ</button></h3>
+        <div id="metrics-detail">暂无统计</div>
       </div>
 
       <div class="panel">
@@ -66,13 +125,32 @@
         <h3>操作日志（最近 15 条）</h3>
         <div id="audit-list" class="audit"></div>
       </div>
+      </div>
     </section>
+    <dialog id="password-dialog" aria-labelledby="password-title"><div class="section-heading"><h2 id="password-title">修改密码</h2><button type="button" id="btn-password-close" class="btn-ghost">关闭</button></div><p id="password-account" class="form-help"></p><form id="password-form"><label class="field">原密码<input name="oldPassword" type="password" autocomplete="current-password" maxlength="128" required></label><label class="field">新密码<input name="newPassword" type="password" autocomplete="new-password" minlength="6" maxlength="128" required placeholder="6–128 位"></label><label class="field">确认新密码<input name="confirmPassword" type="password" autocomplete="new-password" minlength="6" maxlength="128" required></label><p class="form-help">修改后需重新登录。</p><p id="password-error" class="form-error" role="alert"></p><button type="submit" class="btn-success">保存新密码</button></form></dialog>
+    <dialog id="period-trash-dialog" aria-labelledby="period-trash-title"><div class="section-heading"><h2 id="period-trash-title">周期回收站 <button type="button" class="help-button" data-help="trash" aria-label="查看回收站说明">ⓘ</button></h2><button type="button" id="btn-trash-close" class="btn-ghost">关闭</button></div><div id="period-trash-content"></div></dialog>
+    <dialog id="help-dialog" aria-labelledby="help-title"><div class="section-heading"><h2 id="help-title">说明</h2><button type="button" id="btn-help-close" class="btn-ghost">关闭</button></div><p id="help-content"></p></dialog>
+    <dialog id="admin-enroll-dialog" aria-labelledby="admin-enroll-title"><div class="section-heading"><h2 id="admin-enroll-title">管理员代报名 <button type="button" class="help-button" data-help="proxy" aria-label="查看代报名说明">ⓘ</button></h2><button type="button" id="btn-admin-enroll-close" class="btn-ghost">关闭</button></div><div id="admin-enroll-content"></div></dialog>
+    <dialog id="publish-dialog" aria-labelledby="publish-dialog-title"><h2 id="publish-dialog-title">确认本次发布内容</h2><div id="publish-review-content"></div><p class="form-error" id="publish-error" role="alert"></p><div class="form-actions"><button id="btn-publish-cancel" class="btn-ghost">返回检查草稿</button><button id="btn-publish-confirm" class="btn-success">确认发布并生效</button></div></dialog>
+    <dialog id="admin-adjust-dialog" aria-labelledby="admin-adjust-title"><div class="section-heading"><h2 id="admin-adjust-title">管理员调配</h2><button type="button" id="btn-adjust-close" class="btn-ghost">关闭</button></div><div id="admin-adjust-content"></div></dialog>
+    <dialog id="calendar-day-dialog" class="day-dialog" aria-labelledby="calendar-day-title"><div class="section-heading"><h2 id="calendar-day-title">当天排班</h2><button id="btn-calendar-close" class="btn-ghost" aria-label="关闭当天排班">关闭</button></div><div id="calendar-day-content"></div></dialog>
   </div>
 </div>
 
-<div id="toast" class="toast hidden"></div>
+<div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
 <script src="api.js"></script>
+<script src="help.js"></script>
+<script src="password.js"></script>
 <script src="app.js"></script>
+<script src="employee.js"></script>
+<script src="work-config.js"></script>
+<script src="workflow.js"></script>
+<script src="period-trash.js"></script>
+<script src="schedule-views.js"></script>
+<script src="recent.js"></script>
+<script src="accounts.js"></script>
+<script src="admin-schedule.js"></script>
+<script src="admin-enrollment.js"></script>
 </body>
 </html>

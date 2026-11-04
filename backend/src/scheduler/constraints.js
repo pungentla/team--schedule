@@ -16,10 +16,12 @@
  * 约束编号会出现在缺口归因里，便于前端解释"为什么没人能补"。
  */
 
-const { isoWeekKey } = require('../utils/date');
+const { isoWeekKey, weekday } = require('../utils/date');
+const roleMatches = (choice, role) => !role || role === 'member' || choice === 'both' || choice === role || (role === 'either' && ['primary', 'deputy'].includes(choice));
 
 const REASON = Object.freeze({
   NOT_ENROLLED: 'not_enrolled',           // H2 未报名该工作类型
+  ROLE_MISMATCH: 'role_mismatch',         // 未报名岗位要求的主/副角色
   UNAVAILABLE_DATE: 'unavailable_date',   // H3 当日请假
   NOT_AVAILABLE_SLOT: 'not_available_slot', // H4 不在可用时段内
   DAILY_LIMIT: 'daily_limit',             // H5 超过每日上限
@@ -31,6 +33,7 @@ const REASON = Object.freeze({
 
 const REASON_LABELS = Object.freeze({
   [REASON.NOT_ENROLLED]: '未报名该工作',
+  [REASON.ROLE_MISMATCH]: '未报名该负责人角色',
   [REASON.UNAVAILABLE_DATE]: '当日请假',
   [REASON.NOT_AVAILABLE_SLOT]: '不在可用时段',
   [REASON.DAILY_LIMIT]: '已达当日班次上限',
@@ -57,6 +60,9 @@ class EmployeeState {
 
     /** 工作类型 → 意愿优先级（1 最高） */
     this.workTypes = new Map(emp.workTypes.map((w) => [w.workTypeId, w.priority]));
+    this.dutyRoles = new Map(emp.workTypes.map((w) => [w.workTypeId, w.dutyRole || 'member']));
+    this.fixedOnly = new Set(emp.workTypes.filter((w) => w.fixedOnly).map((w) => w.workTypeId));
+    this.fixedRules = new Map(emp.workTypes.map((w) => [w.workTypeId, w.fixedRules || []]));
     /** Set<'date'> 整日不可用 */
     this.unavailableDates = emp.unavailableDates ? new Set(emp.unavailableDates) : new Set();
     /** Set<'date|shiftId'> 精细可用；空集合表示"不限" */
@@ -78,6 +84,13 @@ class EmployeeState {
   }
 
   /** 该工作类型的历史次数 */
+  matchesWork(slot) {
+    if (!this.workTypes.has(slot.workTypeId)) return false;
+    if (!this.fixedOnly.has(slot.workTypeId) && roleMatches(this.dutyRoles.get(slot.workTypeId), slot.dutyRole)) return true;
+    return (this.fixedRules.get(slot.workTypeId) || []).some((r) => roleMatches(r.dutyRole, slot.dutyRole)
+      && (slot.manualOverride || (r.weekday === weekday(slot.workDate) && r.shiftId === slot.shiftId)));
+  }
+
   historyCount(workTypeId) {
     return this.historyByWorkType.get(workTypeId) || 0;
   }
@@ -133,6 +146,9 @@ class EmployeeState {
     c.periodCap = this.periodCap;
     c.effectiveCap = this.effectiveCap;
     c.workTypes = new Map(this.workTypes);
+    c.dutyRoles = new Map(this.dutyRoles);
+    c.fixedOnly = new Set(this.fixedOnly);
+    c.fixedRules = new Map(this.fixedRules);
     c.unavailableDates = new Set(this.unavailableDates);
     c.availability = new Set(this.availability);
     c.byDate = new Map([...this.byDate].map(([k, v]) => [k, [...v]]));
@@ -157,6 +173,8 @@ function checkSlot(emp, slot, period) {
   if (!emp.workTypes.has(workTypeId)) {
     return { code: REASON.NOT_ENROLLED, message: REASON_LABELS[REASON.NOT_ENROLLED] };
   }
+
+  if (!emp.matchesWork(slot)) return { code: REASON.ROLE_MISMATCH, message: '未报名该岗位角色，或长期报名不包含这个星期和班次' };
 
   // H3 整日请假
   if (emp.unavailableDates.has(workDate)) {

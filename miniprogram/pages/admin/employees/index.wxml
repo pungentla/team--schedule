@@ -1,18 +1,28 @@
 <view class="page">
-  <view class="sec-title">员工（{{users.length}}）</view>
+  <view class="sec-title">账号管理（{{users.length}}）</view><view class="meta">管理员管理员工；超级管理员可管理管理员和员工。重置密码后需重新登录。</view><button class="add" bindtap="openAccount">+ 新建账号</button>
   <view class="user" wx:for="{{users}}" wx:key="id">
     <view class="info">
       <text class="name">{{item.name}}</text>
-      <text class="meta">{{item.employeeNo}} · {{item.role === 'admin' ? '管理员' : '员工'}}</text>
+      <text class="meta">{{item.employeeNo}} · {{item.roleLabel}}</text>
     </view>
-    <view class="ops">
-      <view class="op" data-id="{{item.id}}" bindtap="toggleRole">{{item.role === 'admin' ? '降为员工' : '设为管理员'}}</view>
-      <view class="op {{item.status === 'active' ? 'danger' : 'ok'}}" data-id="{{item.id}}" bindtap="toggleStatus">
+    <view class="ops" wx:if="{{item.canEdit}}">
+      <view class="op" data-id="{{item.id}}" bindtap="openAccount">编辑账号</view>
+      <view class="op" data-id="{{item.id}}" bindtap="resetPassword">重置密码</view>
+      <view wx:if="{{item.role !== 'super_admin'}}" class="op {{item.status === 'active' ? 'danger' : 'ok'}}" data-id="{{item.id}}" bindtap="toggleStatus">
         {{item.status === 'active' ? '停用' : '启用'}}
       </view>
     </view>
   </view>
 
+  <view class="mask" wx:if="{{showAccount}}" bindtap="closeAccount"><view class="form" catchtap="">
+    <view class="f-title">{{accountId ? '编辑账号' : '新建账号'}}</view>
+    <view class="f-field"><text>登录账号</text><input value="{{accountForm.employeeNo}}" data-field="employeeNo" bindinput="onAccountInput" maxlength="32" /></view>
+    <view class="f-field"><text>姓名</text><input value="{{accountForm.name}}" data-field="name" bindinput="onAccountInput" maxlength="32" /></view>
+    <view class="f-field"><text>手机号</text><input value="{{accountForm.phone}}" data-field="phone" bindinput="onAccountInput" maxlength="32" /></view>
+    <view class="f-field" wx:if="{{!accountId}}"><text>初始密码</text><input password value="{{accountForm.password}}" data-field="password" bindinput="onAccountInput" maxlength="128" /></view>
+    <view class="f-field" wx:if="{{isSuper && accountForm.role !== 'super_admin'}}"><text>设为管理员</text><switch checked="{{accountForm.role === 'admin'}}" bindchange="onAccountRole" /></view>
+    <button class="save" bindtap="saveAccount">保存账号</button>
+  </view></view>
   <view class="sec-title mt">邀请码</view>
   <button class="add" bindtap="openInviteForm">+ 生成邀请码</button>
   <view class="invite" wx:for="{{invites}}" wx:key="id" data-id="{{item.id}}" bindtap="copyInvite">

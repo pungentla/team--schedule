@@ -21,7 +21,7 @@ const config = {
   sessionTtlDays: intEnv('SESSION_TTL_DAYS', 30),
   defaultSeed: intEnv('SCHEDULE_SEED', 42),
   historyPeriods: intEnv('HISTORY_PERIODS', 6),
-  algoVersion: '1.0.0',
+  algoVersion: '1.2.0',
   // 排班迭代优化上限与最小改进阈值（保证收敛）
   maxOptimizeRounds: intEnv('MAX_OPTIMIZE_ROUNDS', 30),
   minImprovement: 1.0,
@@ -46,6 +46,7 @@ const config = {
 
 /** 角色 */
 const ROLES = Object.freeze({
+  SUPER_ADMIN: 'super_admin',
   ADMIN: 'admin',
   EMPLOYEE: 'employee',
 });

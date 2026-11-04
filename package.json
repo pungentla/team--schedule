@@ -20,6 +20,7 @@
     "test": "npm run test --workspace backend",
     "verify": "npm run verify --workspace backend",
     "verify:mp": "npm run verify:mp --workspace backend",
-    "test:mp": "node miniprogram/test/env.test.js"
+    "test:mp": "node miniprogram/test/env.test.js",
+    "test:deploy": "node --test deploy/deploy.test.js"
   }
 }

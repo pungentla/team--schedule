@@ -52,9 +52,7 @@ router.post('/password', requireAuth, (req, res) => {
   authService.changePassword(req.user.id, {
     oldPassword: body.oldPassword,
     newPassword: body.newPassword,
-  });
-  // 修改密码后吊销全部会话，强制重新登录
-  userRepo.deleteUserSessions(req.user.id);
+  }, { requestId: req.requestId });
   res.json({ data: { ok: true } });
 });
 

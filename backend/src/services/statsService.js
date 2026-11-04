@@ -43,7 +43,7 @@ function getPeriodStats(periodId) {
   const historyRows = db.all(
     `SELECT a.user_id, a.work_type_id, COUNT(*) AS cnt
        FROM assignments a
-       JOIN periods p ON p.id = a.period_id
+       JOIN periods p ON p.id = a.period_id AND p.deleted_at IS NULL
        JOIN schedule_runs r ON r.id = a.run_id AND r.status = 'published'
       WHERE a.status = 'active' AND p.start_date < ?
       GROUP BY a.user_id, a.work_type_id`,
@@ -121,6 +121,7 @@ function getEmployeeHistory(userId) {
             MIN(a.work_date) AS first_date, MAX(a.work_date) AS last_date
        FROM assignments a
        JOIN work_types wt ON wt.id = a.work_type_id
+       JOIN periods p ON p.id = a.period_id AND p.deleted_at IS NULL
        JOIN schedule_runs r ON r.id = a.run_id AND r.status = 'published'
       WHERE a.user_id = ? AND a.status = 'active'
       GROUP BY wt.id

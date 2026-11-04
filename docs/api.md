@@ -1,6 +1,8 @@
 # 接口清单
 
-Base URL：`http://<host>:3000/api`
+Base URL：部署后为 `http://服务器IP/api`；本地后端直连为 `http://<host>:3000/api`。页面使用说明见 [H5 使用指南](h5-usage.md)。
+
+文中的管理员权限包含 `admin` 和 `super_admin`；仅标注超级管理员的操作要求 `super_admin`。
 
 ## 通用约定
 
@@ -120,7 +122,7 @@ draft → enrolling → scheduling → published → archived
          ↑____________|
 ```
 
-`published` 只能进 `archived`（如需重排，把状态改回 `scheduling` 重新生成发布）。
+`published` 的显式状态变更只能进入 `archived`；需要重排时直接生成新草稿、检查并发布，原生效版本在新草稿发布前保留。
 
 > `GET /periods/current` 的判定口径：优先"日期范围覆盖今天"的周期，其次"最近一个未开始"，再其次"最近结束"，最后兜底最新一条。**不按 status 挑**——历史周期也是 `published`，按状态挑会错选中上一周。
 
@@ -141,20 +143,24 @@ draft → enrolling → scheduling → published → archived
 {
   "maxShifts": 6,
   "workTypes": [
-    { "workTypeId": 1, "preference": 1 },
-    { "workTypeId": 3, "preference": 2 }
+    { "workTypeId": 1, "priority": 1, "dutyRole": "member" },
+    { "workTypeId": 3, "priority": 2, "dutyRole": "primary" }
   ],
   "availability": [
     { "workDate": "2026-11-05", "shiftId": 1 },
     { "workDate": "2026-11-05", "shiftId": 2 }
   ],
-  "unavailableDates": ["2026-11-08"]
+  "unavailability": [{ "workDate": "2026-11-08", "reason": "请假" }],
+  "submit": true
 }
 ```
 
-- `preference`：1 最想去 / 2 可以 / 3 凑合，影响评分加成
+- `priority`：1 最想去 / 2 可以 / 3 凑合，影响评分加成
+- `dutyRole`：普通工作用 member；主副工作用 primary / deputy / both
+- `submit`：false 保存草稿；默认 true 正式提交
+- `maxShifts`：null 不限，0 本期不接班
 - `availability`：可工作的时间段（日期 + 班次）
-- `unavailableDates`：整天不可用，优先级高于 availability
+- `unavailability`：整天不可用，优先级高于 availability
 
 ---
 
@@ -300,19 +306,20 @@ draft → enrolling → scheduling → published → archived
 
 ## 九、管理 `/admin`
 
-整个分组需要管理员权限。
+整个分组需要管理员权限。普通管理员仅可创建、修改、重置员工账号；超级管理员可管理管理员和员工。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/admin/users` | 员工列表（`?keyword=`、`?includeDisabled=0`） |
-| PATCH | `/admin/users/:id` | 改姓名/角色/状态/手机号 |
+| POST | `/admin/users` | 创建账号（employeeNo/name/password/role/phone） |
+| GET | `/admin/users` | 人员列表（`?keyword=`、`?includeDisabled=0`） |
+| PATCH | `/admin/users/:id` | 改账号/姓名/角色/状态/手机号 |
 | POST | `/admin/users/:id/password` | 重置密码 |
 | GET | `/admin/invites` | 邀请码列表（含已用次数） |
 | POST | `/admin/invites` | 生成邀请码（maxUses / expiresInDays） |
 | GET | `/admin/audit-logs` | 审计日志（page / pageSize / periodId / action / actorId） |
 | GET | `/admin/swaps` | 某周期全部换班（`?periodId=` 必填，`?status=`） |
 
-**保护规则**：不允许把最后一个启用状态的管理员降级或停用（返回 `409 LAST_ADMIN`）。
+**保护规则**：超级管理员不可降级或停用，不能修改其他超级管理员账号。修改账号、角色、状态或重置密码会吊销该账号所有会话。
 
 ---
 
@@ -323,11 +330,13 @@ draft → enrolling → scheduling → published → archived
 | action | 含义 |
 |---|---|
 | `AUTH_REGISTER` / `AUTH_LOGIN` / `AUTH_LOGOUT` | 注册 / 登录 / 登出 |
+| `AUTH_PASSWORD_CHANGE` | 本人改密 |
 | `USER_UPDATE` | 员工信息变更、重置密码 |
 | `INVITE_CREATE` | 生成邀请码 |
 | `WORK_TYPE_CREATE` / `WORK_TYPE_UPDATE` | 工作类型维护 |
 | `SHIFT_CREATE` / `SHIFT_UPDATE` | 班次维护 |
 | `PERIOD_CREATE` / `PERIOD_UPDATE` | 周期新建 / 修改 |
+| `PERIOD_DELETE` / `PERIOD_RESTORE` | 周期删除 / 恢复 |
 | `SLOTS_GENERATE` | 生成需求格子 |
 | `REQUIREMENT_UPDATE` | 批量设置需求人数 |
 | `ENROLL_SUBMIT` | 提交报名 |
@@ -338,3 +347,40 @@ draft → enrolling → scheduling → published → archived
 | `SWAP_APPLY` | 换班全部同意后实际生效 |
 
 > 生效失败（冲突回滚）时额外写入 `SWAP_APPLY_FAILED`，用于排查"为什么换班没成功"。
+
+## 扩展配置与排班操作
+
+- 工作配置新增 `requiresRoles`、`weekdays`（0=周日，1–6=周一至周六）、`defaultNeed` 和 `weeklyAssignments:[{weekday,shiftId,userId,dutyRole}]`。长期名单可包含所有启用角色；主副工作每班需求为 0 或至少 2 人，发布时必须覆盖主、副各一人。
+- 新建周期支持 `workTypeIds`、`shiftIds`（明确选择时各至少一项）与 `initializeRequirements:true`，创建时原子初始化所选项目的默认需求；周期最长 366 天。未传选择时保持旧客户端的全部启用项行为。
+- 所有启用角色均可本人报名或进入固定名单；生成仍检查工作资格、主副角色、可用时间、请假和班次上限。提交个人草稿不会改变有效报名。
+- 排班返回 `dutyRole`、主副缺口和固定人员冲突；管理员可用 `version=draft` 或 `version=published` 指定视图。员工仅可读取已发布版本。
+
+| 方法与路径（前缀 /api） | 行为 |
+|---|---|
+| GET /periods/range | 管理员；startDate 与 duration=week/month/bimonth/quarter/halfyear/year，计算周期结束日期 |
+| GET /periods/:id/preparation | 管理员；就绪状态、参与人员与下一步 |
+| POST /periods/:id/prepare | 管理员；补齐未准备的班次需求，保留已有手工人数和 0 |
+| POST /periods/:id/requirements/apply-rules | 管理员；按默认工作日、人数和固定名单重新填充 |
+| GET /schedule/runs/:runId/candidates | 管理员；assignmentId，或 workDate/shiftId/workTypeId/dutyRole 指定草稿岗位 |
+| POST /schedule/runs/:runId/adjust | 管理员；action=add/replace/remove、岗位目标、userId、revision，手工调配草稿 |
+| POST /schedule/reassign | 管理员；type=transfer/exchange、fromAssignmentId、toUserId，互换还需 toAssignmentId；已发布排班立即调配，无需员工确认 |
+
+发布可携带 `revision`、`publishedRunId`、`publishedRevision`，防止检查期间草稿或生效版本变化。需求、报名或有效配置变化后，旧草稿须重新生成。
+
+## 代报名、近期安排与周期回收站
+
+
+所有接口需 Bearer 登录令牌，成功返回 `{data}`，错误返回 `{error:{code,message}}`。
+
+| 方法与路径（前缀 /api） | 权限与行为 |
+|---|---|
+| GET /enrollments/:periodId/users/:userId | 管理员：目标人员、报名上下文与已有报名 |
+| POST /enrollments/:periodId/users/:userId | 管理员代报：`{workTypes:[{workTypeId,priority,dutyRole}]}`；角色为 member / primary / deputy / both，须符合工作配置；直接提交并保留原个人限制，已发布或归档周期锁定 |
+| GET /schedule/mine/recent | 所有用户，本人身份取自登录态；`days` 默认 7，或 `startDate`、`endDate`（YYYY-MM-DD，最多 366 天）；返回日期范围、assignments 及各项 coworkers（userId、name、dutyRole） |
+| DELETE /periods/:id | 管理员、超级管理员：软删除，返回 `{id,deleted:true}`，重复操作幂等 |
+| GET /periods/deleted | 仅超级管理员：回收站周期、原状态、deletedAt、deletedBy、deletedByName |
+| POST /periods/:id/restore | 仅超级管理员：恢复原周期 DTO，重复操作幂等；不自动重新生成或发布 |
+
+数据库版本 v7，periods 新增可空 deleted_at、deleted_by。既有数据迁移后默认可见；删除不会改变关联数据或版本状态。
+
+`POST /auth/password` 请求 `{oldPassword,newPassword}`。原密码须正确，新密码为 6–128 位且不能与原密码相同；更新密码与撤销本人全部会话处于同一事务。返回 `{data:{ok:true}}` 后当前令牌也失效，客户端返回登录页。审计不保存密码。

@@ -34,7 +34,7 @@ npm run h5
 
 | 角色 | 工号 | 密码 |
 |---|---|---|
-| 管理员 | `admin` | `123456` |
+| 超级管理员 | `admin` | `123456` |
 | 员工 | `emp001` ~ `emp020` | `123456` |
 
 邀请码：`TEAM2025`（注册新员工时用）
@@ -45,10 +45,11 @@ npm run h5
 npm run seed      # 灌演示数据（幂等，已存在则跳过）
 npm run reset     # 清库重灌（会删除所有数据）
 npm run migrate   # 只跑建表迁移
-npm test          # 后端单元测试（49 个）
+npm test          # 后端单元与服务回归测试
 npm run verify    # 业务闭环验收（55 项，需后端已启动）
 npm run verify:mp # 小程序接口联调（24 项，按页面调用序列验证）
 npm run test:mp   # 小程序地址解析逻辑测试（20 项）
+npm run test:deploy # 部署脚本流程测试（模拟 Docker / 网络命令）
 
 # 用 Docker 一键起全栈（后端 + H5）
 docker compose up -d --build
@@ -59,6 +60,10 @@ docker compose exec backend node scripts/seed.js
 
 ## 功能概览
 
+H5 已提供员工报名、转班／互换与确认、管理员工作配置、草稿和已发布排班对照、人员日表和月历。支持生成草稿后手工调配，以及管理员直接转班／互换已发布排班。手机端使用底部导航，点击月历日期打开当天安排弹窗。操作说明见 [H5 使用指南](docs/h5-usage.md)。
+
+H5 的「安排排班」按设置周期、确认需求、参与人员、生成发布四步连续完成；新建周期可选择本次工作与班次，只为所选项目准备默认需求，新建表单隐藏旧周期操作区。管理员可管理账号（管理员管理普通员工，超级管理员管理管理员和员工），并配置工作类型、长期固定人员、工作日（例如只周日需要）、默认人数、主副负责人、班次时间以及最长一年的周期。需要主副的班次至少 1 主 + 1 副，总人数仍可调整；缺主或缺副时不能发布。
+
 ### 员工侧
 
 - **报名**：选工作时间段 + 可胜任的工作类型 + 意愿优先级 + 本周期最多接几个班
@@ -67,6 +72,8 @@ docker compose exec backend node scripts/seed.js
 - **我的**：我的班次列表、我的工作分布、发起/待确认的换班
 
 ### 管理员侧
+
+管理员和超级管理员均可通过「我的报名」参与排班、进入长期固定名单，并使用「我的换班」处理自己的安排；主副资格、请假和班次上限与普通员工相同，账号管理权限保持原有层级。
 
 - **周期管理**：建排班周期、生成需求格子、批量设需求人数
 - **排班生成**：一键生成，看填充率与缺口，不满意可换种子重试，确认后发布
@@ -183,7 +190,7 @@ weekLoad: -3,          // 本周已排惩罚
 │   ├── scripts/
 │   │   ├── seed.js              # 演示数据
 │   │   └── verify-e2e.js        # 端到端验收
-│   └── test/                    # 39 个单元测试
+│   └── test/                    # 单元与服务回归测试
 ├── miniprogram/                 # 微信小程序
 ├── h5/                          # H5 预览
 └── docs/
@@ -203,22 +210,26 @@ weekLoad: -3,          // 本周已排惩罚
 ```bash
 # 服务器上（Ubuntu 22.04+）
 git clone <你的仓库> /opt/teamshift && cd /opt/teamshift
-cp .env.production.example .env.production && nano .env.production   # 填域名和邮箱
-./deploy/deploy.sh            # 自动申请证书 + 构建 + 启动 + 冒烟测试
+cp .env.production.example .env.production
+# 可选：在 .env.production 中填写 SERVER_IP，供脚本显示访问地址
+./deploy/deploy.sh            # 默认 HTTP/IP，构建 + 启动 + 冒烟测试
+# 浏览器打开 http://服务器IP（默认 80 端口）
 ```
 
-脚本会自动完成：环境自检 → Let's Encrypt 证书 → 构建镜像 → 启动 Nginx + 后端 → 验证 HTTPS。
+默认无需域名、DNS 或证书，放行云安全组和防火墙的 TCP 80 端口即可通过 IP 访问现有 H5 页面及 `/api`。后端 3000 端口仍只在容器内网开放。
+
+如需域名 HTTPS，在 `.env.production` 中设置 `DEPLOY_SCHEME=https` 并填写 `DOMAIN`、`CERT_EMAIL`，重新运行脚本即可申请证书并启用 HTTPS。HTTP 会明文传输账号和登录令牌，建议在可信网络使用。
 
 **运维命令**：
 
 ```bash
 ./deploy/backup.sh                 # 备份（建议 cron 每天）
 ./deploy/restore.sh                # 恢复（自动校验备份完整性）
-docker compose -f docker-compose.prod.yml ps      # 状态
-docker compose -f docker-compose.prod.yml logs -f backend
+docker compose -f docker-compose.prod.yml --env-file .env.production ps      # 状态
+docker compose -f docker-compose.prod.yml --env-file .env.production logs -f backend
 ```
 
-完整步骤（服务器选型、防火墙、备案、证书续期、排查）见 [`docs/production-setup.md`](docs/production-setup.md)。
+完整步骤（IP 部署、可选 HTTPS、防火墙、运维）见 [`docs/production-setup.md`](docs/production-setup.md)。
 
 **内置安全措施**：
 
@@ -227,7 +238,7 @@ docker compose -f docker-compose.prod.yml logs -f backend
 | 双层登录限流 | 单 IP 总量 + IP&工号组合，换工号也绕不过 |
 | 全局限流 | 300 次/分钟/IP |
 | 后端不暴露公网 | 仅 `expose`，只让 Nginx 访问 |
-| 安全响应头 | HSTS / nosniff / X-Frame-Options |
+| 安全响应头 | nosniff / X-Frame-Options；HTTPS 模式额外启用 HSTS |
 
 ## 界面截图
 
@@ -243,16 +254,16 @@ docker compose -f docker-compose.prod.yml logs -f backend
 
 | 项目 | 结果 |
 |---|---|
-| 后端单元测试 | 49 / 49 通过（含 10 项限流测试） |
+| 后端单元与服务测试 | 本轮 113 / 113 通过，覆盖主副资格、长期名单、手工调配、账号分权、密码会话、迁移与版本权限 |
 | 业务闭环验收 | 55 / 55 项通过（含登录、生成、发布、换班闭环、脱敏、审计） |
 | 小程序接口联调 | 24 / 24 项通过（按 16 个页面的真实调用序列） |
 | 小程序地址逻辑 | 20 / 20 项通过（模拟 wx 环境，含穿透域名场景） |
-| Docker 镜像 | 构建通过，容器内 55 项验收 + 24 项联调全通过（healthy） |
+| Docker 镜像 | 历史版本构建通过；本轮环境无 Docker，未复验容器构建 |
 | 备份恢复 | 实做过损坏→备份→恢复演练，数据完整还原 |
 | 限流 | 实测单账号第 6 次拦截、IP 维度换工号仍被拦 |
 | 排班确定性 | 同 seed 两次生成 `inputHash` 一致，91 条分配逐条相同 |
 | 填充率 | 100%（20 人 / 91 岗位） |
-| H5 全流程 | 管理员与员工两视角均走通，控制台零报错 |
+| H5 浏览器验证 | 报名、换班状态流转、管理员配置、年度周期、主副发布、人员日表、月历弹窗及 360/390px 布局已检查；详见 H5 使用指南 |
 
 ---
 
@@ -261,5 +272,9 @@ docker compose -f docker-compose.prod.yml logs -f backend
 - 排班算法是启发式，**不保证全局最优**；对更大规模（如 200 人以上）建议先增大迭代轮数观察效果
 - 微信小程序已接入真实 AppID `wx2503b1cfbc7a04a0`。**正式版需 HTTPS + 备案域名 + 后台配置 request 合法域名**，详见 [`docs/deployment.md`](docs/deployment.md)
 - 项目不收集用户隐私信息（未使用 `wx.login` / 手机号授权 / 位置 / 相册），无需配置隐私保护指引
-- H5 预览仅用于开发验收，**不是生产前端**，未做 CSRF/限流等加固
+- IP 部署提供现有 H5 预览页面，其功能范围与小程序不同；API 请求仍经过后端限流。HTTP 无传输加密，公网敏感使用建议启用 HTTPS
 - 数据库为单体 SQLite，适合单团队（几十到几百人）；多团队多租户需另做隔离设计
+
+管理员可在安排排班的「参与人员」中代报名；排班表默认展示未来 7 天本人安排及同伴。删除周期移入回收站，普通管理员和超级管理员均可删除，仅超级管理员可恢复；原报名、需求和排班保留。说明见 [H5 使用指南](docs/h5-usage.md)。
+
+2026-11-04 支持本人修改密码：H5 点击顶部姓名，小程序进入「我的 → 修改密码」。需填写原密码、新密码和确认密码（6–128 位），不允许与原密码相同；成功后撤销本人全部设备会话并重新登录，不影响其他账号，审计不包含密码。手动退出前确认，取消后保留当前会话和页面。浏览器已验证错误原密码、密码不一致、改密后旧密码和旧令牌 401、新密码可登录，以及取消／确认退出；113 项后端测试通过。小程序同步个人改密与退出确认，未在微信开发者工具实测。

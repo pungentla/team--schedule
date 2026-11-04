@@ -66,17 +66,18 @@ const API = (() => {
       const e = payload && payload.error ? payload.error : {};
       // 登录态失效 → 清会话，回到登录页
       if (res.status === 401) clearSession();
-      throw new ApiError(e.code || `HTTP_${res.status}`, e.message || `请求失败(${res.status})`, res.status);
+      throw new ApiError(e.code || `HTTP_${res.status}`, e.message || `请求失败(${res.status})`, res.status, e.details);
     }
 
     return payload ? payload.data : null;
   }
 
   class ApiError extends Error {
-    constructor(code, message, status = 0) {
+    constructor(code, message, status = 0, details = null) {
       super(message);
       this.code = code;
       this.status = status;
+      this.details = details;
     }
   }
 
@@ -87,6 +88,10 @@ const API = (() => {
     setSession,
     clearSession,
     request,
+    changePassword: (body) => request('/auth/password', { method: 'POST', body }),
+    deletePeriod: (id) => request(`/periods/${id}`, { method: 'DELETE' }),
+    deletedPeriods: () => request('/periods/deleted'),
+    restorePeriod: (id) => request(`/periods/${id}/restore`, { method: 'POST' }),
     get: (p) => request(p),
     post: (p, body) => request(p, { method: 'POST', body }),
     put: (p, body) => request(p, { method: 'PUT', body }),
@@ -98,13 +103,45 @@ const API = (() => {
 
     currentPeriod: () => request('/periods/current'),
     listPeriods: () => request('/periods'),
+    workTypes: () => request('/work-types'),
+    updateWorkType: (id, body) => request(`/work-types/${id}`, { method: 'PUT', body }),
+    createWorkType: (body) => request('/work-types', { method: 'POST', body }),
+    shifts: () => request('/shifts'),
+    saveShift: (id, body) => request(id ? `/shifts/${id}` : '/shifts', { method: id ? 'PUT' : 'POST', body }),
+    createPeriod: (body) => request('/periods', { method: 'POST', body }),
+    periodRange: (startDate, duration) => request(`/periods/range?startDate=${encodeURIComponent(startDate)}&duration=${duration}`),
+    updatePeriod: (id, body) => request(`/periods/${id}`, { method: 'PUT', body }),
+    generateSlots: (id) => request(`/periods/${id}/slots/generate`, { method: 'POST', body: { defaultNeed: 0 } }),
+    periodPreparation: (id) => request(`/periods/${id}/preparation`),
+    preparePeriod: (id) => request(`/periods/${id}/prepare`, { method: 'POST', body: {} }),
+    requirements: (id) => request(`/periods/${id}/requirements`),
+    saveRequirements: (id, items) => request(`/periods/${id}/requirements`, { method: 'PUT', body: { items } }),
+    applyWorkRules: (id) => request(`/periods/${id}/requirements/apply-rules`, { method: 'POST', body: {} }),
+    enrollContext: (id) => request(`/enrollments/context/${id}`),
+    myEnrollment: (id) => request(`/enrollments/mine/${id}`),
+    saveEnrollment: (id, body) => request(`/enrollments/${id}`, { method: 'POST', body }),
 
-    schedule: (periodId) => request(`/schedule/periods/${periodId}`),
+    schedule: (periodId, version) => request(`/schedule/periods/${periodId}${version ? `?version=${version}` : ''}`),
     generate: (periodId, seed) => request(`/schedule/periods/${periodId}/generate`, { method: 'POST', body: { seed } }),
-    publish: (periodId, runId) => request(`/schedule/periods/${periodId}/publish`, { method: 'POST', body: { runId } }),
+    publish: (periodId, runId, revision, publishedRunId, publishedRevision) => request(`/schedule/periods/${periodId}/publish`, { method: 'POST', body: { runId, revision, publishedRunId, publishedRevision } }),
+    draftCandidates: (id, target) => request(`/schedule/runs/${id}/candidates?${new URLSearchParams(target)}`),
+    adjustDraft: (id, body) => request(`/schedule/runs/${id}/adjust`, { method: 'POST', body }),
+    adminReassign: (body) => request('/schedule/reassign', { method: 'POST', body }),
+    adminEnrollment: (periodId, userId) => request(`/enrollments/${periodId}/users/${userId}`),
+    saveAdminEnrollment: (periodId, userId, body) => request(`/enrollments/${periodId}/users/${userId}`, { method: 'POST', body }),
+    adminUsers: () => request('/admin/users'),
+    saveUser: (id, body) => request(id ? `/admin/users/${id}` : '/admin/users', { method: id ? 'PATCH' : 'POST', body }),
+    resetUserPassword: (id, newPassword) => request(`/admin/users/${id}/password`, { method: 'POST', body: { newPassword } }),
     dashboard: () => request('/schedule/dashboard'),
 
     mySwaps: () => request('/swaps?scope=mine'),
+    swapInbox: () => request('/swaps?scope=inbox'),
+    recentSchedule: (params) => request(`/schedule/mine/recent?${new URLSearchParams(params)}`),
+    myAssignments: () => request('/schedule/mine?upcoming=1'),
+    swapCandidates: (id) => request(`/swaps/candidates/${id}`),
+    createSwap: (body) => request('/swaps', { method: 'POST', body }),
+    swapDetail: (id) => request(`/swaps/${id}`),
+    decideSwap: (id, action, reason) => request(`/swaps/${id}/${action}`, { method: 'POST', body: { reason } }),
     adminSwaps: (periodId) => request(`/admin/swaps?periodId=${periodId}`),
 
     auditLogs: (pageSize = 15) => request(`/admin/audit-logs?pageSize=${pageSize}`),

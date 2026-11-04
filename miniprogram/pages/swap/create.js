@@ -34,7 +34,7 @@ Page({
           if (schedule && Array.isArray(schedule.assignments)) {
             const a = schedule.assignments.find((x) => x.id === data.assignment.id);
             if (a) {
-              fromAssignment.label = `${a.workDate} ${a.shiftName} ${a.workTypeName}`;
+              fromAssignment.label = `${a.workDate} ${a.shiftName} ${a.workTypeName}${a.dutyRole === 'primary' ? ' · 主负责人' : a.dutyRole === 'deputy' ? ' · 副负责人' : ''}`;
               fromAssignment.workDate = a.workDate;
               fromAssignment.shiftName = a.shiftName;
               fromAssignment.workTypeName = a.workTypeName;
@@ -68,7 +68,7 @@ Page({
   selectUser(e) {
     const userId = Number(e.currentTarget.dataset.id);
     const c = this.data.candidates.find((x) => x.userId === userId);
-    if (!c.canTake) {
+    if (this.data.mode === 'transfer' ? !c.canTake : !c.theirAssignments.length) {
       wx.showToast({ title: c.problemText || '对方不能接这个班', icon: 'none' });
       return;
     }

@@ -60,6 +60,10 @@ CREATE TABLE IF NOT EXISTS work_types (
   color       TEXT NOT NULL DEFAULT '#4A90D9',
   sort_order  INTEGER NOT NULL DEFAULT 0,
   active      INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+  requires_roles INTEGER NOT NULL DEFAULT 0 CHECK (requires_roles IN (0, 1)),
+  weekdays_json TEXT NOT NULL DEFAULT '[0,1,2,3,4,5,6]',
+  default_need INTEGER NOT NULL DEFAULT 1 CHECK (default_need BETWEEN 0 AND 99),
+  weekly_assignments_json TEXT NOT NULL DEFAULT '[]',
   created_at  TEXT NOT NULL,
   updated_at  TEXT NOT NULL
 );
@@ -97,6 +101,10 @@ CREATE TABLE IF NOT EXISTS periods (
   status                TEXT NOT NULL DEFAULT 'draft'
                           CHECK (status IN ('draft', 'enrolling', 'scheduling', 'published', 'archived')),
   enrollment_deadline   TEXT,
+  work_type_ids_json    TEXT,
+  shift_ids_json        TEXT,
+  deleted_at            TEXT,
+  deleted_by            INTEGER REFERENCES users(id) ON DELETE SET NULL,
   created_at            TEXT NOT NULL,
   updated_at            TEXT NOT NULL,
   CHECK (end_date >= start_date)
@@ -138,6 +146,7 @@ CREATE TABLE IF NOT EXISTS enrollment_work_types (
   enrollment_id INTEGER NOT NULL REFERENCES enrollments(id) ON DELETE CASCADE,
   work_type_id  INTEGER NOT NULL REFERENCES work_types(id),
   priority      INTEGER NOT NULL DEFAULT 1 CHECK (priority BETWEEN 1 AND 3),
+  duty_role     TEXT NOT NULL DEFAULT 'member' CHECK (duty_role IN ('member', 'primary', 'deputy', 'both')),
   PRIMARY KEY (enrollment_id, work_type_id)
 );
 
@@ -204,6 +213,7 @@ CREATE TABLE IF NOT EXISTS schedule_runs (
   gaps_json     TEXT,
   rounds        INTEGER NOT NULL DEFAULT 0,
   duration_ms   INTEGER NOT NULL DEFAULT 0,
+  revision      INTEGER NOT NULL DEFAULT 0,
   created_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
   created_at    TEXT NOT NULL
 );
@@ -224,6 +234,8 @@ CREATE TABLE IF NOT EXISTS assignments (
   user_id       INTEGER NOT NULL REFERENCES users(id),
   status        TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'released')),
   source        TEXT NOT NULL DEFAULT 'algo' CHECK (source IN ('algo', 'manual', 'swap')),
+  duty_role     TEXT NOT NULL DEFAULT 'member' CHECK (duty_role IN ('member', 'primary', 'deputy')),
+  is_fixed      INTEGER NOT NULL DEFAULT 0 CHECK (is_fixed IN (0, 1)),
   released_at   TEXT,
   created_at    TEXT NOT NULL
 );

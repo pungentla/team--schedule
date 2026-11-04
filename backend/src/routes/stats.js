@@ -17,7 +17,7 @@ router.get('/periods/:periodId', requireAuth, requireAdmin, (req, res) => {
 /** 个人跨周期工作分布（本人或管理员） */
 router.get('/employees/:userId', requireAuth, (req, res) => {
   const userId = intParam(req.params.userId, 'userId');
-  if (req.user.role !== 'admin' && req.user.id !== userId) {
+  if (!['admin', 'super_admin'].includes(req.user.role) && req.user.id !== userId) {
     const { forbidden } = require('../utils/errors');
     throw forbidden('只能查看自己的工作分布');
   }

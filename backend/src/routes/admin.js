@@ -7,10 +7,7 @@ const userRepo = require('../repositories/userRepo');
 const auditRepo = require('../repositories/auditRepo');
 const swapRepo = require('../repositories/swapRepo');
 const authService = require('../services/authService');
-const db = require('../db/db');
-const { requireInt, optionalInt, requireString, optionalString, requireEnum, intParam } = require('../utils/validate');
-const { badRequest, notFound, conflict } = require('../utils/errors');
-const { ROLES } = require('../config');
+const { requireInt, optionalInt, intParam } = require('../utils/validate');
 
 const router = express.Router();
 
@@ -33,56 +30,15 @@ router.get('/users', (req, res) => {
   });
 });
 
-router.patch('/users/:id', (req, res) => {
-  const id = intParam(req.params.id, 'id');
-  const user = userRepo.findById(id);
-  if (!user) throw notFound('员工不存在');
-  const b = req.body || {};
-
-  const fields = {};
-  if (b.name !== undefined) fields.name = requireString(b.name, '姓名', { max: 32 });
-  if (b.role !== undefined) fields.role = requireEnum(b.role, '角色', [ROLES.ADMIN, ROLES.EMPLOYEE]);
-  if (b.status !== undefined) fields.status = requireEnum(b.status, '状态', ['active', 'disabled']);
-  if (b.phone !== undefined) fields.phone = optionalString(b.phone, '手机号', { max: 32 });
-
-  // 不允许把最后一个管理员降级/停用
-  if (user.role === ROLES.ADMIN && (fields.role === ROLES.EMPLOYEE || fields.status === 'disabled')) {
-    const adminCount = db.pluck(`SELECT COUNT(*) FROM users WHERE role = 'admin' AND status = 'active'`);
-    if (adminCount <= 1) throw conflict('LAST_ADMIN', '至少需要保留一个启用状态的管理员');
-  }
-
-  userRepo.updateUser(id, fields);
-  if (fields.status === 'disabled') userRepo.deleteUserSessions(id);
-
-  auditRepo.log({
-    action: auditRepo.ACTIONS.USER_UPDATE,
-    entityType: 'user',
-    entityId: id,
-    actorId: req.user.id,
-    detail: fields,
-    requestId: req.requestId,
-  });
-
-  res.json({ data: userRepo.publicUser(userRepo.findById(id)) });
+const accounts = require('../services/accountService');
+router.post('/users', (req, res) => {
+  res.status(201).json({ data: accounts.create(req.body || {}, { user: req.user, requestId: req.requestId }) });
 });
-
-/** 重置密码（管理员） */
+router.patch('/users/:id', (req, res) => {
+  res.json({ data: accounts.update(intParam(req.params.id, 'id'), req.body || {}, { user: req.user, requestId: req.requestId }) });
+});
 router.post('/users/:id/password', (req, res) => {
-  const id = intParam(req.params.id, 'id');
-  const user = userRepo.findById(id);
-  if (!user) throw notFound('员工不存在');
-  const newPassword = requireString(req.body?.newPassword, '新密码', { min: 6, max: 128 });
-  const { hashPasswordSync } = require('../utils/security');
-  userRepo.updateUser(id, { passwordHash: hashPasswordSync(newPassword) });
-  userRepo.deleteUserSessions(id);
-  auditRepo.log({
-    action: auditRepo.ACTIONS.USER_UPDATE,
-    entityType: 'user',
-    entityId: id,
-    actorId: req.user.id,
-    detail: { action: 'reset_password' },
-    requestId: req.requestId,
-  });
+  accounts.resetPassword(intParam(req.params.id, 'id'), req.body?.newPassword, { user: req.user, requestId: req.requestId });
   res.json({ data: { ok: true } });
 });
 

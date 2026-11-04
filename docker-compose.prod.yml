@@ -1,15 +1,15 @@
 # 排班宝 TeamShift —— 生产部署编排（轻量云服务器 + Docker）
 #
 # 拓扑：
-#   Internet → Nginx(443, TLS) → backend(3000, 仅容器内网)
+#   Internet → Nginx(80 HTTP / 可选 443 HTTPS) → backend(3000, 仅容器内网)
 #
 # 用法：
-#   1. cp .env.production.example .env.production 并填写域名
+#   1. cp .env.production.example .env.production（默认 HTTP/IP，无需域名）
 #   2. docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
-#   3. docker compose -f docker-compose.prod.yml exec backend node scripts/seed.js
+#   3. docker compose -f docker-compose.prod.yml --env-file .env.production exec backend node scripts/seed.js
 #
 # 关键设计：
-#   - backend 不暴露端口到宿主机，只让 Nginx 访问（防止绕过 HTTPS 直连）
+#   - backend 不暴露端口到宿主机，只让 Nginx 访问
 #   - 数据库挂到宿主机目录，便于备份与迁移
 #   - 日志滚动，防止磁盘写满
 
@@ -60,9 +60,9 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
-      - "443:443"
     volumes:
-      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/nginx.${DEPLOY_SCHEME:-http}.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./h5/public:/usr/share/nginx/html:ro
       # 证书目录（certbot 签发后会写到这里）
       - ./deploy/certs:/etc/nginx/certs:ro
       - certbot-webroot:/var/www/certbot:ro

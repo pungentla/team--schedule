@@ -39,9 +39,10 @@
               data-assignment-id="{{a.id}}"
               data-user-id="{{a.userId}}"
               bindtap="onTapAssignment"
-            >{{a.name}}</view>
+            >{{a.name}}{{a.dutyRole === 'primary' ? '·主' : a.dutyRole === 'deputy' ? '·副' : ''}}</view>
             <view class="count-tag" wx:if="{{wt.needCount > 1}}">{{wt.filled}}/{{wt.needCount}}</view>
             <view class="gap-badge" wx:if="{{wt.gap > 0}}">{{wt.gapLabel}}</view>
+            <view class="gap-badge" wx:for="{{wt.roleGaps}}" wx:key="*this" wx:for-item="role">缺{{role === 'primary' ? '主负责人' : '副负责人'}}</view>
           </view>
         </view>
       </view>

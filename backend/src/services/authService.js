@@ -3,6 +3,8 @@
 /** 鉴权服务：注册 / 登录 / 退出 */
 
 const crypto = require('node:crypto');
+const db = require('../db/db');
+const { requireString } = require('../utils/validate');
 const userRepo = require('../repositories/userRepo');
 const auditRepo = require('../repositories/auditRepo');
 const { config } = require('../config');
@@ -99,16 +101,20 @@ function logout(tokenHash, userId, ctx = {}) {
 }
 
 /** 修改密码 */
-function changePassword(userId, { oldPassword, newPassword }) {
-  const user = userRepo.findById(userId);
-  if (!user) throw unauthorized();
-  if (!verifyPasswordSync(String(oldPassword || ''), user.password_hash)) {
-    throw badRequest('原密码错误');
-  }
-  if (!newPassword || String(newPassword).length < 6) throw badRequest('新密码至少 6 位');
-  userRepo.updateUser(userId, { passwordHash: hashPasswordSync(String(newPassword)) });
-  // 改密码后踢掉其他会话（保留当前）
-  return true;
+function changePassword(userId, { oldPassword, newPassword }, ctx = {}) {
+  oldPassword = requireString(oldPassword, '原密码', { max: 128 });
+  newPassword = requireString(newPassword, '新密码', { min: 6, max: 128 });
+  return db.tx(() => {
+    const user = userRepo.findById(userId);
+    if (!user) throw unauthorized();
+    if (user.status !== 'active') throw forbidden('账号已被停用');
+    if (!verifyPasswordSync(oldPassword, user.password_hash)) throw badRequest('原密码错误');
+    if (oldPassword === newPassword) throw badRequest('新密码不能与原密码相同');
+    userRepo.updateUser(userId, { passwordHash: hashPasswordSync(newPassword) });
+    userRepo.deleteUserSessions(userId);
+    auditRepo.log({ action: auditRepo.ACTIONS.AUTH_PASSWORD_CHANGE, entityType: 'user', entityId: userId, actorId: userId, requestId: ctx.requestId });
+    return true;
+  });
 }
 
 /** 生成邀请码 */

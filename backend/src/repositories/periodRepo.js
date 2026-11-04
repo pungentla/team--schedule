@@ -15,13 +15,15 @@ function insertPeriod({
   forbidConsecutive = true,
   status = 'draft',
   enrollmentDeadline = null,
+  workTypeIds = null,
+  shiftIds = null,
 }) {
   const now = nowIso();
   const { lastInsertRowid } = db.run(
     `INSERT INTO periods
        (name, start_date, end_date, max_shifts_per_day, max_shifts_per_week,
-        forbid_consecutive, status, enrollment_deadline, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        forbid_consecutive, status, enrollment_deadline, created_at, updated_at, work_type_ids_json, shift_ids_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     name,
     startDate,
     endDate,
@@ -31,20 +33,22 @@ function insertPeriod({
     status,
     enrollmentDeadline,
     now,
-    now
+    now,
+    workTypeIds === null ? null : JSON.stringify(workTypeIds),
+    shiftIds === null ? null : JSON.stringify(shiftIds)
   );
   return lastInsertRowid;
 }
 
-function findPeriod(id) {
-  return db.get('SELECT * FROM periods WHERE id = ?', id);
+function findPeriod(id, { includeDeleted = false } = {}) {
+  return db.get(`SELECT * FROM periods WHERE id = ? ${includeDeleted ? '' : 'AND deleted_at IS NULL'}`, id);
 }
 
 function listPeriods({ status = null } = {}) {
   if (status) {
-    return db.all('SELECT * FROM periods WHERE status = ? ORDER BY start_date DESC', status);
+    return db.all('SELECT * FROM periods WHERE deleted_at IS NULL AND status = ? ORDER BY start_date DESC', status);
   }
-  return db.all('SELECT * FROM periods ORDER BY start_date DESC');
+  return db.all('SELECT * FROM periods WHERE deleted_at IS NULL ORDER BY start_date DESC');
 }
 
 function updatePeriod(id, fields) {
@@ -84,25 +88,25 @@ function findCurrentPeriod() {
     // 1. 今天在这个周期范围内
     db.get(
       `SELECT * FROM periods
-        WHERE status != 'archived' AND start_date <= ? AND end_date >= ?
+        WHERE deleted_at IS NULL AND status != 'archived' AND start_date <= ? AND end_date >= ?
         ORDER BY start_date ASC LIMIT 1`,
       t, t
     ) ||
     // 2. 最近一个还没开始的
     db.get(
       `SELECT * FROM periods
-        WHERE status != 'archived' AND start_date > ?
+        WHERE deleted_at IS NULL AND status != 'archived' AND start_date > ?
         ORDER BY start_date ASC LIMIT 1`,
       t
     ) ||
     // 3. 都已过期 → 最近结束的
     db.get(
       `SELECT * FROM periods
-        WHERE status != 'archived'
+        WHERE deleted_at IS NULL AND status != 'archived'
         ORDER BY end_date DESC LIMIT 1`
     ) ||
     // 4. 全部归档 → 退到最新一条，至少别返回 null
-    db.get(`SELECT * FROM periods ORDER BY start_date DESC LIMIT 1`)
+    db.get(`SELECT * FROM periods WHERE deleted_at IS NULL ORDER BY start_date DESC LIMIT 1`)
   );
 }
 
@@ -192,6 +196,11 @@ function totalNeeded(periodId) {
 
 // ---------------------------- DTO ----------------------------
 
+function getScope(period) {
+  return { workTypeIds: period.work_type_ids_json ? JSON.parse(period.work_type_ids_json) : null,
+    shiftIds: period.shift_ids_json ? JSON.parse(period.shift_ids_json) : null };
+}
+
 function toPeriodDto(r) {
   if (!r) return null;
   return {
@@ -204,11 +213,13 @@ function toPeriodDto(r) {
     forbidConsecutive: r.forbid_consecutive === 1,
     status: r.status,
     enrollmentDeadline: r.enrollment_deadline,
+    ...getScope(r),
     createdAt: r.created_at,
   };
 }
 
 module.exports = {
+  getScope,
   insertPeriod,
   findPeriod,
   listPeriods,

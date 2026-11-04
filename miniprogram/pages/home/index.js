@@ -45,7 +45,7 @@ Page({
       app.globalData.pendingSwapCount = pending.count;
 
       // 已发布 → 拉统计（管理员）
-      if (period.status === 'published' && app.globalData.user.role === 'admin') {
+      if (period.status === 'published' && ['admin', 'super_admin'].includes(app.globalData.user.role)) {
         try {
           const dash = await request('/api/schedule/dashboard');
           this.setData({ stats: dash });

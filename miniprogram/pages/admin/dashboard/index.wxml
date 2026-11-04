@@ -2,7 +2,7 @@
   <view class="stat-grid">
     <view class="stat">
       <text class="v">{{dash.employeeCount}}</text>
-      <text class="l">在职员工</text>
+      <text class="l">可参与人数</text>
     </view>
     <view class="stat">
       <text class="v">{{dash.enrollment.submitted}}/{{dash.enrollment.total}}</text>

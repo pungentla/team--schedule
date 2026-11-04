@@ -80,7 +80,7 @@ function insertRun(status, seed, userId = EMPLOYEE.id) {
     periodId,
     algoVersion: 'test',
     seed,
-    inputHash: `hash-${seed}`,
+    inputHash: null, // 此视图用例直接构造分配，没有完整算法输入。
     status,
     totalNeeded: 1,
     totalFilled: 1,
@@ -105,6 +105,15 @@ function insertRun(status, seed, userId = EMPLOYEE.id) {
   );
   return runId;
 }
+
+test('管理员可分别读取草稿和已发布版本，员工不能指定草稿', () => {
+  const published = insertRun('published', 101);
+  const draft = insertRun('draft', 102);
+  assert.equal(scheduleService.getSchedule(periodId, ADMIN, { version: 'published' }).run.id, published);
+  assert.equal(scheduleService.getSchedule(periodId, ADMIN, { version: 'draft' }).run.id, draft);
+  assert.throws(() => scheduleService.getSchedule(periodId, EMPLOYEE, { version: 'draft' }), (e) => e.status === 403);
+  assert.throws(() => scheduleService.getSchedule(periodId, EMPLOYEE, { runId: draft }), (e) => e.status === 403);
+});
 
 function clean() {
   db.run('DELETE FROM assignments');

@@ -19,3 +19,7 @@
 .f-field text { width: 130rpx; font-size: 26rpx; color: #6B7280; flex-shrink: 0; }
 .f-field input { flex: 1; height: 76rpx; background: #F4F6FA; border-radius: 10rpx; padding: 0 20rpx; font-size: 28rpx; }
 .save { background: #2E5AAC; color: #fff; border-radius: 12rpx; font-size: 28rpx; }
+.user { flex-wrap: wrap; gap: 16rpx; }
+.ops { flex-wrap: wrap; }
+.form { max-height: 80vh; overflow-y: auto; }
+.f-field input { min-width: 0; }

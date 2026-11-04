@@ -24,6 +24,7 @@ const scheduleRepo = require('../repositories/scheduleRepo');
 const periodRepo = require('../repositories/periodRepo');
 const configRepo = require('../repositories/configRepo');
 const enrollmentRepo = require('../repositories/enrollmentRepo');
+const enrollmentService = require('./enrollmentService');
 const auditRepo = require('../repositories/auditRepo');
 const userRepo = require('../repositories/userRepo');
 const db = require('../db/db');
@@ -37,6 +38,7 @@ const {
   ASSIGNMENT_SOURCE,
 } = require('../config');
 const { badRequest, notFound, conflict, forbidden } = require('../utils/errors');
+const { computeMetrics } = require('../scheduler/metrics');
 const { isoWeekKey } = require('../utils/date');
 
 /**
@@ -44,7 +46,7 @@ const { isoWeekKey } = require('../utils/date');
  * 复用 scheduler/constraints.js，保证与排班算法使用同一套规则。
  */
 function buildEmployeeState(period, userId) {
-  const enrolled = enrollmentRepo.loadSubmittedEnrollments(period.id).find((e) => e.userId === userId);
+  const enrolled = enrollmentService.getEffectiveEnrollments(period.id).find((e) => e.userId === userId);
   const availabilityMap = enrollmentRepo.loadAvailabilityMap(period.id);
   const unavailabilityMap = enrollmentRepo.loadUnavailabilityMap(period.id);
 
@@ -55,8 +57,8 @@ function buildEmployeeState(period, userId) {
       employeeNo: enrolled ? enrolled.employeeNo : String(userId),
       maxShifts: enrolled ? enrolled.maxShifts : 0,
       workTypes: enrolled ? enrolled.workTypes : [],
-      availability: [...(availabilityMap.get(userId) || [])],
-      unavailableDates: [...(unavailabilityMap.get(userId) || [])],
+      availability: enrolled?.hasSubmitted ? [...(availabilityMap.get(userId) || [])] : [],
+      unavailableDates: enrolled?.hasSubmitted ? [...(unavailabilityMap.get(userId) || [])] : [],
       historyByWorkType: new Map(),
       historyTotal: 0,
       lastDateByWorkType: new Map(),
@@ -82,6 +84,10 @@ function buildEmployeeState(period, userId) {
  * @returns {Array<{code,message}>} 空数组表示可以
  */
 function precheckTransfer({ period, assignment, toUserId, excludeAssignmentId = null }) {
+  const published = scheduleRepo.findPublishedRun(period.id);
+  if (!published || published.id !== assignment.run_id) {
+    return [{ code: 'schedule_replaced', message: '该班次所属排班已被新版本替换，请以最新已发布排班为准' }];
+  }
   const shift = configRepo.findShift(assignment.shift_id);
   const problems = [];
 
@@ -101,6 +107,8 @@ function precheckTransfer({ period, assignment, toUserId, excludeAssignmentId = 
     shiftId: assignment.shift_id,
     shiftSeq: shift ? shift.seq : 999,
     workTypeId: assignment.work_type_id,
+    dutyRole: assignment.duty_role || 'member',
+    manualOverride: true,
   };
 
   const res = checkSlot(emp, slot, {
@@ -148,7 +156,7 @@ function createSwap(payload, ctx) {
     if (!target) throw badRequest('交换模式下必须选择对方的一个班次');
     if (target.user_id !== toUserId) throw badRequest('目标班次不属于所选接收人');
     if (target.status !== 'active') throw conflict('ASSIGNMENT_RELEASED', '目标班次已不在对方名下');
-    if (target.period_id !== period.id) throw badRequest('只能在同一周期内交换');
+    if (target.period_id !== period.id || target.run_id !== fromAssignment.run_id) throw badRequest('只能在同一生效周期内交换');
     toAssignmentId = target.id;
 
     // 双向检查：A 能否接 B 的班，B 能否接 A 的班
@@ -221,7 +229,7 @@ function getSwapDetail(swapId, viewer) {
 
   const participants = swapRepo.listParticipants(swapId);
   const isParticipant = participants.some((p) => p.user_id === viewer.id);
-  if (!isParticipant && viewer.role !== 'admin') throw forbidden('无权查看该换班申请');
+  if (!isParticipant && !['admin', 'super_admin'].includes(viewer.role)) throw forbidden('无权查看该换班申请');
 
   const fromAssign = swapRepo.findAssignmentDetail(swap.from_assignment_id);
   const toAssign = swap.to_assignment_id ? swapRepo.findAssignmentDetail(swap.to_assignment_id) : null;
@@ -233,6 +241,16 @@ function getSwapDetail(swapId, viewer) {
     const from = scheduleRepo.findAssignment(swap.from_assignment_id);
     if (!from || from.status !== 'active') {
       liveProblems.push({ code: 'ASSIGNMENT_RELEASED', label: '原班次已不在发起人名下', message: '原班次已不在发起人名下' });
+    } else if (swap.type === SWAP_TYPE.EXCHANGE) {
+      const target = scheduleRepo.findAssignment(swap.to_assignment_id);
+      if (!target || target.status !== 'active' || target.user_id !== swap.to_user_id) {
+        liveProblems.push({ code: 'ASSIGNMENT_RELEASED', label: '目标班次已不在对方名下', message: '目标班次已不在对方名下' });
+      } else {
+        liveProblems = [
+          ...precheckTransfer({ period, assignment: target, toUserId: swap.requester_id, excludeAssignmentId: from.id }),
+          ...precheckTransfer({ period, assignment: from, toUserId: swap.to_user_id, excludeAssignmentId: target.id }),
+        ].map((p) => ({ ...p, label: REASON_LABELS[p.code] || p.message }));
+      }
     } else {
       liveProblems = precheckTransfer({ period, assignment: from, toUserId: swap.to_user_id }).map((p) => ({
         ...p,
@@ -302,6 +320,7 @@ function formatAssignment(a) {
     startTime: a.start_time ? a.start_time.slice(0, 5) : null,
     endTime: a.end_time ? a.end_time.slice(0, 5) : null,
     workTypeId: a.work_type_id,
+    dutyRole: a.duty_role,
     workTypeName: a.work_type_name,
     workTypeColor: a.work_type_color,
     status: a.status,
@@ -402,7 +421,8 @@ function confirm(swapId, ctx) {
  *   3. 更新 swap 状态 + 审计日志
  * 任一步失败 → 整体 ROLLBACK，返回 409，participant 退回 pending 由调用方处理。
  */
-function applySwap(swap, period, ctx) {
+function applySwap(swap, period, ctx, { adminDirect = false } = {}) {
+  if (adminDirect && !['admin', 'super_admin'].includes(ctx.user.role)) throw forbidden('仅管理员可以直接调配已发布排班');
   const fromAssignmentId = swap.from_assignment_id;
   const toAssignmentId = swap.to_assignment_id;
 
@@ -451,7 +471,9 @@ function applySwap(swap, period, ctx) {
         workDate: from.work_date,
         shiftId: from.shift_id,
         workTypeId: from.work_type_id,
+        dutyRole: from.duty_role,
         userId: swap.to_user_id,
+        source: adminDirect ? 'manual' : 'swap',
       });
       scheduleRepo.insertSwapAssignment({
         runId,
@@ -459,7 +481,9 @@ function applySwap(swap, period, ctx) {
         workDate: target.work_date,
         shiftId: target.shift_id,
         workTypeId: target.work_type_id,
+        dutyRole: target.duty_role,
         userId: swap.requester_id,
+        source: adminDirect ? 'manual' : 'swap',
       });
       appliedItems.push({
         assignmentId: from.id,
@@ -487,7 +511,9 @@ function applySwap(swap, period, ctx) {
         workDate: from.work_date,
         shiftId: from.shift_id,
         workTypeId: from.work_type_id,
+        dutyRole: from.duty_role,
         userId: swap.to_user_id,
+        source: adminDirect ? 'manual' : 'swap',
       });
       appliedItems.push({
         assignmentId: from.id,
@@ -502,22 +528,24 @@ function applySwap(swap, period, ctx) {
     }
 
     // 3) 状态与日志（在同一事务内，保证原子）
-    db.run(
+    if (!adminDirect) db.run(
       `UPDATE swap_requests SET status = 'approved', decided_at = ?, applied_at = ? WHERE id = ?`,
       now,
       now,
       swap.id
     );
+    refreshRunMetrics(runId);
+    db.run('UPDATE schedule_runs SET revision=revision+1 WHERE id=?', runId);
 
     db.run(
       `INSERT INTO audit_logs (action, entity_type, entity_id, period_id, actor_id, detail_json, request_id, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      auditRepo.ACTIONS.SWAP_APPLY,
-      'swap',
-      swap.id,
+      adminDirect ? auditRepo.ACTIONS.ASSIGNMENT_MANUAL : auditRepo.ACTIONS.SWAP_APPLY,
+      adminDirect ? 'assignment' : 'swap',
+      adminDirect ? from.id : swap.id,
       period.id,
       ctx.user.id,
-      JSON.stringify({ type: swap.type, applied: appliedItems }),
+      JSON.stringify({ type: swap.type, applied: appliedItems, adminDirect, message: swap.message || null }),
       ctx.requestId,
       now
     );
@@ -526,6 +554,45 @@ function applySwap(swap, period, ctx) {
   });
 
   return result;
+}
+
+function refreshRunMetrics(runId) {
+  const run = scheduleRepo.findRun(runId);
+  const previous = run.metrics_json ? JSON.parse(run.metrics_json) : null;
+  if (!previous?.workload?.distribution || !previous.perWorkType) return;
+  const employees = previous.workload.distribution.map((u) => ({
+    id: u.userId, name: u.name, employeeNo: u.employeeNo, historyTotal: u.historyTotal,
+    workTypes: new Map(previous.perWorkType.filter((w) => w.distribution.some((d) => d.userId === u.userId)).map((w) => [w.workTypeId, 1])),
+    historyCount: (id) => previous.perWorkType.find((w) => w.workTypeId === id)?.distribution.find((d) => d.userId === u.userId)?.historyCount || 0,
+  }));
+  const history = require('./scheduleService').loadHistory(periodRepo.findPeriod(run.period_id).start_date);
+  for (const e of enrollmentService.getEffectiveEnrollments(run.period_id)) {
+    const current = employees.find((u) => u.id === e.userId);
+    if (current) e.workTypes.forEach((w) => current.workTypes.set(w.workTypeId, w.priority));
+    else employees.push({ id: e.userId, name: e.name, employeeNo: e.employeeNo, historyTotal: history.get(e.userId)?.total || 0, workTypes: new Map(e.workTypes.map((w) => [w.workTypeId, w.priority])), historyCount: (id) => history.get(e.userId)?.byWorkType.get(id) || 0 });
+  }
+  const workTypes = previous.perWorkType.map((w) => ({ id: w.workTypeId, name: w.workTypeName, color: w.workTypeColor }));
+  const active = scheduleRepo.listAssignmentsWithUser(runId).map((a) => ({ userId: a.user_id, workTypeId: a.work_type_id }));
+  db.run('UPDATE schedule_runs SET metrics_json=? WHERE id=?', JSON.stringify(computeMetrics({ employees, workTypes, assignments: active })), runId);
+}
+
+function reassignByAdmin(payload, ctx) {
+  if (!['admin', 'super_admin'].includes(ctx.user.role)) throw forbidden('仅管理员可以直接调配已发布排班');
+  const from = scheduleRepo.findAssignment(payload.fromAssignmentId);
+  if (!from || from.status !== 'active') throw conflict('ASSIGNMENT_RELEASED', '原排班已变化，请刷新后重试');
+  if (!['transfer', 'exchange'].includes(payload.type)) throw badRequest('无效的调配方式');
+  const run = scheduleRepo.findRun(from.run_id);
+  if (run?.status !== 'published') throw conflict('ASSIGNMENT_RELEASED', '该排班不是当前生效版本，请刷新后重试');
+  const period = periodRepo.findPeriod(from.period_id);
+  if (!period) throw notFound('排班周期不存在');
+  if (period.status !== PERIOD_STATUS.PUBLISHED) throw conflict('PERIOD_LOCKED', '只能直接调配已发布且未归档的周期');
+  const user = userRepo.findById(payload.toUserId);
+  if (!user || user.status !== 'active' || user.id === from.user_id) throw badRequest('请选择另一名已启用的人员作为接班人');
+  if (payload.type === SWAP_TYPE.EXCHANGE) {
+    const target = scheduleRepo.findAssignment(payload.toAssignmentId);
+    if (!target || target.status !== 'active' || target.user_id !== user.id || target.period_id !== period.id || target.run_id !== from.run_id) throw badRequest('请选择同周期内属于对方的有效班次');
+  }
+  return { applied: true, ...applySwap({ type: payload.type, from_assignment_id: from.id, to_assignment_id: payload.toAssignmentId || null, to_user_id: user.id, requester_id: from.user_id, message: payload.message }, period, ctx, { adminDirect: true }) };
 }
 
 /** 拒绝 */
@@ -566,7 +633,7 @@ function reject(swapId, reason, ctx) {
 function cancel(swapId, ctx) {
   const swap = swapRepo.findSwap(swapId);
   if (!swap) throw notFound('换班申请不存在');
-  if (swap.requester_id !== ctx.user.id && ctx.user.role !== 'admin') {
+  if (swap.requester_id !== ctx.user.id && !['admin', 'super_admin'].includes(ctx.user.role)) {
     throw forbidden('只有发起人可以撤回');
   }
   if (swap.status !== SWAP_STATUS.PENDING) {
@@ -614,6 +681,7 @@ function listSwaps(userId, { scope = 'mine', status = null } = {}) {
             shiftSeq: s.from_seq,
             workTypeName: s.from_work_type_name,
             workTypeColor: s.from_work_type_color,
+            dutyRole: s.from_duty_role,
           }
         : null,
       toAssign: s.to_work_date
@@ -623,6 +691,7 @@ function listSwaps(userId, { scope = 'mine', status = null } = {}) {
             shiftSeq: s.to_seq,
             workTypeName: s.to_work_type_name,
             workTypeColor: s.to_work_type_color,
+            dutyRole: s.to_duty_role,
           }
         : null,
       createdAt: s.created_at,
@@ -639,6 +708,7 @@ function getPendingCount(userId) {
   return db.pluck(
     `SELECT COUNT(*) FROM swap_participants sp
        JOIN swap_requests sr ON sr.id = sp.swap_id
+       JOIN periods p ON p.id=sr.period_id AND p.deleted_at IS NULL
       WHERE sp.user_id = ? AND sp.status = 'pending' AND sr.status = 'pending'`,
     userId
   );
@@ -648,10 +718,11 @@ function getPendingCount(userId) {
 function listCandidates(assignmentId, viewer) {
   const assignment = scheduleRepo.findAssignment(assignmentId);
   if (!assignment) throw notFound('排班不存在');
-  if (assignment.user_id !== viewer.id && viewer.role !== 'admin') throw forbidden('只能为自己的班次寻找换班对象');
+  if (assignment.user_id !== viewer.id && !['admin', 'super_admin'].includes(viewer.role)) throw forbidden('只能为自己的班次寻找换班对象');
 
   const period = periodRepo.findPeriod(assignment.period_id);
-  const enrollments = enrollmentRepo.loadSubmittedEnrollments(period.id);
+  if (!period) throw notFound('排班周期不存在');
+  const enrollments = enrollmentService.getEffectiveEnrollments(period.id);
 
   const candidates = [];
   for (const e of enrollments) {
@@ -675,6 +746,7 @@ function listCandidates(assignmentId, viewer) {
         workTypeId: a.work_type_id,
         workTypeName: a.work_type_name,
         workTypeColor: a.work_type_color,
+        dutyRole: a.duty_role,
       })),
     });
   }
@@ -685,6 +757,7 @@ function listCandidates(assignmentId, viewer) {
       workDate: assignment.work_date,
       shiftId: assignment.shift_id,
       workTypeId: assignment.work_type_id,
+      dutyRole: assignment.duty_role,
     },
     candidates: candidates.sort(
       (a, b) => Number(b.canTake) - Number(a.canTake) || a.employeeNo.localeCompare(b.employeeNo)
@@ -693,6 +766,7 @@ function listCandidates(assignmentId, viewer) {
 }
 
 module.exports = {
+  reassignByAdmin,
   createSwap,
   getSwapDetail,
   confirm,

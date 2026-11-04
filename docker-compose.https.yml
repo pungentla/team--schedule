@@ -1,0 +1,5 @@
+# HTTPS 模式叠加此文件，HTTP/IP 模式只占用 80 端口。
+services:
+  nginx:
+    ports:
+      - "443:443"

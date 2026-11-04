@@ -3,7 +3,7 @@
     <view class="avatar">{{user.name[0]}}</view>
     <view class="p-info">
       <text class="p-name">{{user.name}}</text>
-      <text class="p-no">工号 {{user.employeeNo}} · {{user.role === 'admin' ? '管理员' : '员工'}}</text>
+      <text class="p-no">工号 {{user.employeeNo}} · {{user.role === 'super_admin' ? '超级管理员' : (user.role === 'admin' ? '管理员' : '员工')}}</text>
     </view>
   </view>
 
@@ -24,11 +24,25 @@
     <view class="c-title">我的班次（最近 {{myShifts.length}} 个）</view>
     <view class="shift-line" wx:for="{{myShifts}}" wx:key="id">
       <text class="sl-date">{{item.workDate}}</text>
-      <text class="sl-detail">{{item.shiftName}} {{item.startTime}}-{{item.endTime}} · {{item.workTypeName}}</text>
+      <text class="sl-detail">{{item.shiftName}} {{item.startTime}}-{{item.endTime}} · {{item.workTypeName}}{{item.dutyRole === 'primary' ? ' · 主负责人' : item.dutyRole === 'deputy' ? ' · 副负责人' : ''}}</text>
     </view>
   </view>
 
+  <view class="card" wx:if="{{passwordOpen}}">
+    <view class="c-title">修改密码</view>
+    <form bindsubmit="changePassword">
+      <view class="password-field"><text>原密码</text><input name="oldPassword" password maxlength="128" disabled="{{passwordSaving}}" placeholder="输入原密码" /></view>
+      <view class="password-field"><text>新密码</text><input name="newPassword" password maxlength="128" disabled="{{passwordSaving}}" placeholder="6–128 位" /></view>
+      <view class="password-field"><text>确认新密码</text><input name="confirmPassword" password maxlength="128" disabled="{{passwordSaving}}" placeholder="再次输入新密码" /></view>
+      <text class="password-help">修改后需重新登录。</text>
+      <text class="password-error" wx:if="{{passwordError}}">{{passwordError}}</text>
+      <button form-type="submit" type="primary" loading="{{passwordSaving}}" disabled="{{passwordSaving}}">保存新密码</button>
+      <button bindtap="togglePassword" disabled="{{passwordSaving}}">取消</button>
+    </form>
+  </view>
+
   <view class="menu">
+    <view class="menu-item" bindtap="togglePassword"><text>修改密码</text><text class="arrow">›</text></view>
     <view class="menu-item" bindtap="goEnroll">
       <text>报名排班</text>
       <text class="arrow">›</text>

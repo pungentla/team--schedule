@@ -32,11 +32,11 @@ const OVERLOAD_CODES = new Set([REASON.DAILY_LIMIT, REASON.PERIOD_LIMIT, REASON.
  * @param {Array} args.blockers 已经因硬约束被剔除的人 [{userId, name, code}]
  */
 function diagnoseGap({ employees, workTypeId, slot, period, checkSlot }) {
-  const enrolled = employees.filter((e) => e.workTypes.has(workTypeId));
+  const enrolled = employees.filter((e) => e.matchesWork(slot));
   if (enrolled.length === 0) {
     return {
       code: 'no_candidate',
-      message: GAP_REASON_LABELS.no_candidate,
+      message: slot.dutyRole && slot.dutyRole !== 'member' ? '无人报名该负责人角色' : GAP_REASON_LABELS.no_candidate,
       candidates: [],
     };
   }
@@ -92,6 +92,7 @@ function buildGapReport({ slots, assignmentsBySlot, employees, period, checkSlot
         workTypeId: slot.workTypeId,
         workTypeName: slot.workTypeName,
         workTypeColor: slot.workTypeColor,
+        requiresRoles: !!slot.dutyRole && slot.dutyRole !== 'member',
         need: 0,
         filled: 0,
         gap: 0,
@@ -125,6 +126,7 @@ function buildGapReport({ slots, assignmentsBySlot, employees, period, checkSlot
     });
     group.items.push({
       workTypeId: slot.workTypeId,
+      dutyRole: slot.dutyRole || 'member',
       workTypeName: slot.workTypeName,
       workTypeColor: slot.workTypeColor,
       need: slot.needCount,
