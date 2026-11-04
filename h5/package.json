@@ -1,0 +1,12 @@
+{
+  "name": "@teamshift/h5",
+  "version": "1.0.0",
+  "private": true,
+  "description": "排班宝 TeamShift H5 预览版（共用同一后端 API，用于浏览器验收演示）",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {}
+}

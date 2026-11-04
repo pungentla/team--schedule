@@ -1,0 +1,69 @@
+<view class="page" wx:if="{{detail}}">
+  <view class="status-bar status-{{detail.swap.status}}">
+    <text class="st-label">{{statusLabel}}</text>
+    <text class="st-sub" wx:if="{{detail.swap.status === 'pending'}}">等待全部参与者确认</text>
+    <text class="st-sub" wx:elif="{{detail.swap.status === 'approved'}}">已于 {{detail.swap.appliedAt}} 生效</text>
+  </view>
+
+  <!-- 换班内容 -->
+  <view class="card">
+    <view class="c-title">换班内容</view>
+    <view class="assign-row">
+      <view class="assign-box">
+        <text class="ab-label">原班次</text>
+        <text class="ab-body" wx:if="{{detail.fromAssignment}}">{{detail.fromAssignment.workDate}}
+{{detail.fromAssignment.shiftName}} {{detail.fromAssignment.workTypeName}}</text>
+        <text class="ab-user">{{detail.fromAssignment.userName}}</text>
+      </view>
+      <view class="arrow" wx:if="{{detail.swap.type === 'transfer'}}">→</view>
+      <view class="arrow" wx:else>⇄</view>
+      <view class="assign-box" wx:if="{{detail.swap.type === 'exchange'}}">
+        <text class="ab-label">对方班次</text>
+        <text class="ab-body">{{detail.toAssignment.workDate}}
+{{detail.toAssignment.shiftName}} {{detail.toAssignment.workTypeName}}</text>
+        <text class="ab-user">{{detail.toAssignment.userName}}</text>
+      </view>
+      <view class="assign-box" wx:else>
+        <text class="ab-label">接收人</text>
+        <text class="ab-body">{{detail.swap.toUserName}}</text>
+      </view>
+    </view>
+    <view class="msg" wx:if="{{detail.swap.message}}">"{{detail.swap.message}}"</view>
+  </view>
+
+  <!-- 冲突预检 -->
+  <view class="card warn-card" wx:if="{{detail.liveProblems.length && detail.swap.status === 'pending'}}">
+    <view class="c-title warn">⚠ 系统检测到问题，当前无法生效</view>
+    <view class="prob" wx:for="{{detail.liveProblems}}" wx:key="index">{{item.label}}</view>
+  </view>
+
+  <!-- 参与者 -->
+  <view class="card">
+    <view class="c-title">确认进度</view>
+    <view class="part" wx:for="{{detail.participants}}" wx:key="userId">
+      <view class="p-left">
+        <text class="p-name">{{item.name}}</text>
+        <text class="p-role">{{item.role === 'requester' ? '发起人' : '接收人'}}</text>
+      </view>
+      <text class="p-status s-{{item.status}}">
+        {{item.status === 'approved' ? '已同意' : item.status === 'rejected' ? '已拒绝' : '待确认'}}
+      </text>
+    </view>
+  </view>
+
+  <!-- 时间线 -->
+  <view class="card" wx:if="{{detail.timeline.length}}">
+    <view class="c-title">进度</view>
+    <view class="tl" wx:for="{{detail.timeline}}" wx:key="index">
+      <text class="tl-time">{{item.at}}</text>
+      <text class="tl-text">{{item.text}}</text>
+    </view>
+  </view>
+
+  <!-- 操作按钮 -->
+  <view class="actions">
+    <button class="btn-ghost" wx:if="{{detail.swap.status === 'pending' && detail.myDecision === 'pending'}}" bindtap="onReject">拒绝</button>
+    <button class="btn-primary" wx:if="{{detail.swap.status === 'pending' && detail.myDecision === 'pending'}}" bindtap="onConfirm">同意</button>
+    <button class="btn-ghost full" wx:if="{{detail.swap.status === 'pending' && detail.myDecision === 'approved' && detail.swap.requesterId === detail.participants[0].userId}}" bindtap="onCancel">撤回申请</button>
+  </view>
+</view>

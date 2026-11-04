@@ -1,0 +1,56 @@
+<view class="page">
+  <!-- 周期信息 + tab -->
+  <view class="topbar">
+    <view class="period-info" wx:if="{{period}}">
+      <text class="p-name">{{period.name}}</text>
+      <text class="p-range">{{period.startDate}} ~ {{period.endDate}}</text>
+    </view>
+    <view class="tabs">
+      <view class="tab {{tab === 'all' ? 'active' : ''}}" data-tab="all" bindtap="switchTab">全部</view>
+      <view class="tab {{tab === 'mine' ? 'active' : ''}}" data-tab="mine" bindtap="switchTab">我的</view>
+    </view>
+  </view>
+
+  <!-- 缺口提示 -->
+  <view class="gap-banner" wx:if="{{gaps && gaps.totalGap > 0}}">
+    <text class="gap-num">{{gaps.totalGap}}</text> 个班次缺口待补
+  </view>
+
+  <!-- 矩阵 -->
+  <view class="matrix" wx:if="{{filtered.length}}">
+    <view class="day-card" wx:for="{{filtered}}" wx:key="workDate" wx:for-item="day">
+      <view class="day-head">{{day.dateLabel}}</view>
+      <view class="shift-block" wx:for="{{day.shifts}}" wx:key="shiftId" wx:for-item="shift">
+        <view class="shift-head">
+          <text class="shift-name">{{shift.shiftName}}</text>
+          <text class="shift-time">{{shift.workTypes[0].startTime}}-{{shift.workTypes[0].endTime}}</text>
+        </view>
+        <view class="wt-row" wx:for="{{shift.workTypes}}" wx:key="workTypeId" wx:for-item="wt">
+          <view class="wt-name">
+            <view class="dot" style="background: {{wt.workTypeColor}}"></view>
+            <text>{{wt.workTypeName}}</text>
+          </view>
+          <view class="wt-people">
+            <view
+              class="person {{a.userId === myId ? 'mine' : ''}}"
+              wx:for="{{wt.assigned}}"
+              wx:key="id"
+              wx:for-item="a"
+              data-assignment-id="{{a.id}}"
+              data-user-id="{{a.userId}}"
+              bindtap="onTapAssignment"
+            >{{a.name}}</view>
+            <view class="count-tag" wx:if="{{wt.needCount > 1}}">{{wt.filled}}/{{wt.needCount}}</view>
+            <view class="gap-badge" wx:if="{{wt.gap > 0}}">{{wt.gapLabel}}</view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view class="empty" wx:if="{{!loading && !filtered.length}}">
+    <text>{{tab === 'mine' ? '本周期暂无你的排班' : '该周期还没有生成排班'}}</text>
+  </view>
+
+  <view class="loading" wx:if="{{loading}}">加载中...</view>
+</view>

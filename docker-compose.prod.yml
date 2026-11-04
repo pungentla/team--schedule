@@ -1,0 +1,91 @@
+# 排班宝 TeamShift —— 生产部署编排（轻量云服务器 + Docker）
+#
+# 拓扑：
+#   Internet → Nginx(443, TLS) → backend(3000, 仅容器内网)
+#
+# 用法：
+#   1. cp .env.production.example .env.production 并填写域名
+#   2. docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+#   3. docker compose -f docker-compose.prod.yml exec backend node scripts/seed.js
+#
+# 关键设计：
+#   - backend 不暴露端口到宿主机，只让 Nginx 访问（防止绕过 HTTPS 直连）
+#   - 数据库挂到宿主机目录，便于备份与迁移
+#   - 日志滚动，防止磁盘写满
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: teamshift-backend
+    restart: unless-stopped
+    # 不映射 ports，只在内网暴露给 nginx
+    expose:
+      - "3000"
+    environment:
+      NODE_ENV: production
+      TZ: Asia/Shanghai
+      DB_FILE: /app/backend/data/app.db
+      HOST: 0.0.0.0
+      PORT: "3000"
+      # 生产密码策略等敏感项从 .env.production 注入
+      SCHEDULE_SEED: ${SCHEDULE_SEED:-42}
+      SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-30}
+      HISTORY_PERIODS: ${HISTORY_PERIODS:-6}
+      # 在 Nginx 之后，必须开启才能拿到真实 IP（限流依赖）
+      TRUST_PROXY: "1"
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-1}
+      RATE_LIMIT_GLOBAL_PER_MIN: ${RATE_LIMIT_GLOBAL_PER_MIN:-300}
+      RATE_LIMIT_LOGIN_PER_10MIN: ${RATE_LIMIT_LOGIN_PER_10MIN:-10}
+    volumes:
+      # 数据库放宿主机目录：备份、迁移、排查都方便
+      - ./data:/app/backend/data
+    healthcheck:
+      test:
+        ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: teamshift-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # 证书目录（certbot 签发后会写到这里）
+      - ./deploy/certs:/etc/nginx/certs:ro
+      - certbot-webroot:/var/www/certbot:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # 证书申请/续期（首次手动跑，之后加 cron）
+  certbot:
+    image: certbot/certbot:latest
+    container_name: teamshift-certbot
+    volumes:
+      - ./deploy/certs:/etc/letsencrypt
+      - certbot-webroot:/var/www/certbot
+    entrypoint: /bin/sh
+    # 默认不启动，用 docker compose run --rm certbot 执行
+    profiles: ["certbot"]
+
+volumes:
+  certbot-webroot:
+    driver: local

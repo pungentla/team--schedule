@@ -1,0 +1,145 @@
+.page {
+  min-height: 100vh;
+  background: #F4F6FA;
+  padding: 24rpx 32rpx 60rpx;
+  box-sizing: border-box;
+}
+
+.card {
+  background: #fff;
+  border-radius: 18rpx;
+  padding: 28rpx;
+  margin-bottom: 24rpx;
+}
+
+.profile {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+}
+
+.avatar {
+  width: 100rpx;
+  height: 100rpx;
+  border-radius: 50%;
+  background: #2E5AAC;
+  color: #fff;
+  font-size: 44rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+}
+
+.p-name {
+  font-size: 34rpx;
+  font-weight: bold;
+  color: #1F2937;
+  display: block;
+}
+
+.p-no {
+  font-size: 24rpx;
+  color: #8A94A6;
+  margin-top: 6rpx;
+}
+
+.c-title {
+  font-size: 28rpx;
+  font-weight: bold;
+  margin-bottom: 20rpx;
+  color: #1F2937;
+}
+
+.wt-bar-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 14rpx;
+  gap: 16rpx;
+}
+
+.wt-bar-name {
+  width: 140rpx;
+  font-size: 24rpx;
+  color: #374151;
+  flex-shrink: 0;
+}
+
+.bar-wrap {
+  flex: 1;
+  height: 22rpx;
+  background: #F3F4F6;
+  border-radius: 10rpx;
+  overflow: hidden;
+}
+
+.bar {
+  height: 100%;
+  border-radius: 10rpx;
+  min-width: 8rpx;
+}
+
+.wt-bar-count {
+  font-size: 22rpx;
+  color: #6B7280;
+  width: 80rpx;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.shift-line {
+  display: flex;
+  gap: 20rpx;
+  padding: 12rpx 0;
+  border-bottom: 1rpx solid #F5F6F8;
+  font-size: 25rpx;
+}
+
+.shift-line:last-child {
+  border-bottom: none;
+}
+
+.sl-date {
+  color: #2E5AAC;
+  font-weight: bold;
+  width: 180rpx;
+  flex-shrink: 0;
+}
+
+.sl-detail {
+  color: #374151;
+}
+
+.menu {
+  background: #fff;
+  border-radius: 18rpx;
+  overflow: hidden;
+}
+
+.menu-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 30rpx 28rpx;
+  border-bottom: 1rpx solid #F5F6F8;
+  font-size: 28rpx;
+  color: #1F2937;
+}
+
+.menu-item:last-child {
+  border-bottom: none;
+}
+
+.menu-item.danger {
+  color: #C0392B;
+}
+
+.arrow {
+  color: #C0C4CC;
+  font-size: 32rpx;
+}
+
+.server-url {
+  font-size: 22rpx;
+  color: #8A94A6;
+}

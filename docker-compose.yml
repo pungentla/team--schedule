@@ -1,0 +1,65 @@
+# 排班宝 TeamShift —— 本地/试用环境编排
+#
+# 用法：
+#   docker compose up -d          启动
+#   docker compose logs -f backend  看日志
+#   docker compose down           停止（数据保留在卷里）
+#
+# 首次启动后需要灌数据：
+#   docker compose exec backend node scripts/seed.js
+
+services:
+  backend:
+    # 构建上下文是仓库根目录（npm workspaces，lock 文件在根上）
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: teamshift-backend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      TZ: Asia/Shanghai
+      DB_FILE: /app/data/app.db
+      # 排班随机种子：固定值保证同输入同结果，便于复现
+      SCHEDULE_SEED: "42"
+      SESSION_TTL_DAYS: "30"
+      HISTORY_PERIODS: "6"
+    volumes:
+      # 数据库持久化：命名卷，容器重建不丢数据
+      - teamshift-data:/app/backend/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # H5 预览（可选）：把 /api 代理到 backend，方便浏览器验收
+  h5:
+    image: node:22-alpine
+    container_name: teamshift-h5
+    restart: unless-stopped
+    working_dir: /app
+    ports:
+      - "8080:8080"
+    environment:
+      H5_PORT: "8080"
+      API_HOST: backend
+      API_PORT: "3000"
+      TZ: Asia/Shanghai
+    volumes:
+      - ./h5:/app
+    command: node server.js
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  teamshift-data:
+    driver: local

@@ -1,0 +1,23 @@
+<view class="page">
+  <button class="add" bindtap="openCreate">+ 新增工作类型</button>
+
+  <view class="item" wx:for="{{items}}" wx:key="id">
+    <view class="dot" style="background: {{item.color}}"></view>
+    <view class="info" data-id="{{item.id}}" bindtap="openEdit">
+      <text class="name">{{item.name}}</text>
+      <text class="code">{{item.code}} · 报名 {{item.enrolledCount}} 人</text>
+    </view>
+    <switch checked="{{item.active}}" data-id="{{item.id}}" bindchange="toggleActive" color="#2E5AAC" />
+  </view>
+
+  <view class="mask" wx:if="{{showForm}}" bindtap="closeForm">
+    <view class="form" catchtap="">
+      <view class="f-title">{{editing ? '编辑' : '新增'}}工作类型</view>
+      <view class="f-field"><text>编码</text><input value="{{form.code}}" disabled="{{!!editing}}" data-field="code" bindinput="onForm" placeholder="如 FRONT" /></view>
+      <view class="f-field"><text>名称</text><input value="{{form.name}}" data-field="name" bindinput="onForm" placeholder="如 前台接待" /></view>
+      <view class="f-field"><text>颜色</text><input value="{{form.color}}" data-field="color" bindinput="onForm" /></view>
+      <view class="f-field"><text>排序</text><input type="number" value="{{form.sortOrder}}" data-field="sortOrder" bindinput="onForm" /></view>
+      <button class="save" bindtap="onSave">保存</button>
+    </view>
+  </view>
+</view>

@@ -1,0 +1,26 @@
+<view class="page">
+  <view class="title">注册账号</view>
+  <view class="subtitle">使用管理员提供的邀请码加入团队</view>
+
+  <view class="card">
+    <view class="field">
+      <text class="label">工号</text>
+      <input class="input" placeholder="字母/数字，2-32位" data-field="employeeNo" bindinput="onInput" />
+    </view>
+    <view class="field">
+      <text class="label">姓名</text>
+      <input class="input" placeholder="真实姓名" data-field="name" bindinput="onInput" />
+    </view>
+    <view class="field">
+      <text class="label">密码</text>
+      <input class="input" placeholder="至少 6 位" password data-field="password" bindinput="onInput" />
+    </view>
+    <view class="field">
+      <text class="label">邀请码</text>
+      <input class="input" placeholder="请输入邀请码" data-field="inviteCode" bindinput="onInput" />
+    </view>
+    <button class="btn-primary {{loading ? 'disabled' : ''}}" bindtap="onRegister">
+      {{loading ? '注册中...' : '注 册'}}
+    </button>
+  </view>
+</view>

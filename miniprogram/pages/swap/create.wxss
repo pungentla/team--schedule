@@ -1,0 +1,166 @@
+.page {
+  min-height: 100vh;
+  background: #F4F6FA;
+  padding: 24rpx 32rpx 60rpx;
+  box-sizing: border-box;
+}
+
+.card {
+  background: #fff;
+  border-radius: 18rpx;
+  padding: 28rpx;
+  margin-bottom: 24rpx;
+}
+
+.fc-label {
+  font-size: 24rpx;
+  color: #8A94A6;
+  margin-bottom: 8rpx;
+}
+
+.fc-body {
+  font-size: 32rpx;
+  font-weight: bold;
+  color: #2E5AAC;
+}
+
+.mode-row {
+  display: flex;
+  background: #fff;
+  border-radius: 14rpx;
+  padding: 8rpx;
+  margin-bottom: 24rpx;
+  gap: 8rpx;
+}
+
+.mode {
+  flex: 1;
+  text-align: center;
+  padding: 18rpx 0;
+  border-radius: 10rpx;
+  font-size: 28rpx;
+  color: #6B7280;
+}
+
+.mode.on {
+  background: #2E5AAC;
+  color: #fff;
+  font-weight: bold;
+}
+
+.section {
+  background: #fff;
+  border-radius: 18rpx;
+  padding: 28rpx;
+  margin-bottom: 24rpx;
+}
+
+.sec-title {
+  font-size: 28rpx;
+  font-weight: bold;
+  margin-bottom: 20rpx;
+  color: #1F2937;
+}
+
+.cand {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20rpx;
+  border: 2rpx solid #F0F2F5;
+  border-radius: 14rpx;
+  margin-bottom: 14rpx;
+}
+
+.cand.sel {
+  border-color: #2E5AAC;
+  background: #EEF2FB;
+}
+
+.cand.off {
+  opacity: 0.65;
+}
+
+.cand-name {
+  font-size: 28rpx;
+  font-weight: bold;
+  color: #1F2937;
+  margin-right: 12rpx;
+}
+
+.cand-no {
+  font-size: 22rpx;
+  color: #9CA3AF;
+}
+
+.ok-tag {
+  background: #E8F5EE;
+  color: #2E9E5B;
+  border-radius: 8rpx;
+  padding: 6rpx 14rpx;
+  font-size: 22rpx;
+}
+
+.no-tag {
+  background: #FDECEC;
+  color: #C0392B;
+  border-radius: 8rpx;
+  padding: 6rpx 14rpx;
+  font-size: 22rpx;
+}
+
+.target {
+  border: 2rpx solid #F0F2F5;
+  border-radius: 12rpx;
+  padding: 18rpx 22rpx;
+  margin-bottom: 12rpx;
+  font-size: 26rpx;
+  color: #374151;
+}
+
+.target.sel {
+  border-color: #2E5AAC;
+  background: #EEF2FB;
+  color: #2E5AAC;
+  font-weight: bold;
+}
+
+.empty-tip {
+  color: #9CA3AF;
+  font-size: 24rpx;
+  text-align: center;
+  padding: 20rpx;
+}
+
+.msg {
+  width: 100%;
+  height: 120rpx;
+  background: #F4F6FA;
+  border-radius: 12rpx;
+  padding: 20rpx;
+  font-size: 26rpx;
+  box-sizing: border-box;
+}
+
+.submit {
+  margin-top: 8rpx;
+  height: 92rpx;
+  line-height: 92rpx;
+  background: #2E5AAC;
+  color: #fff;
+  border-radius: 16rpx;
+  font-size: 32rpx;
+  border: none;
+}
+
+.submit.disabled {
+  opacity: 0.5;
+}
+
+.tip {
+  margin-top: 16rpx;
+  font-size: 22rpx;
+  color: #9CA3AF;
+  line-height: 1.6;
+  text-align: center;
+}

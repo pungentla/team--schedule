@@ -1,0 +1,55 @@
+<view class="page">
+  <view class="logo-wrap" bindtouchstart="onLogoTouchStart" bindtouchend="onLogoTouchEnd">
+    <view class="logo">
+      <text class="logo-text">排</text>
+    </view>
+    <text class="app-name">排班宝</text>
+    <text class="slogan">团队轮值 · 公平轮转 · 协商换班</text>
+    <!-- 服务器地址入口：不再只靠长按，显式给一个可点的入口 -->
+    <view class="server-entry" catchtap="openServerPanel">
+      <text class="server-entry-text">{{envLabel}} · {{serverUrl}}</text>
+      <text class="server-entry-btn">切换</text>
+    </view>
+  </view>
+
+  <view class="form card">
+    <view class="field">
+      <text class="label">工号</text>
+      <input class="input" placeholder="请输入工号" value="{{employeeNo}}" bindinput="onInputNo" />
+    </view>
+    <view class="field">
+      <text class="label">密码</text>
+      <input class="input" placeholder="请输入密码" password value="{{password}}" bindinput="onInputPwd" />
+    </view>
+    <button class="btn-primary {{loading ? 'disabled' : ''}}" bindtap="onLogin">
+      {{loading ? '登录中...' : '登 录'}}
+    </button>
+    <view class="register-link" bindtap="goRegister">
+      没有账号？<text class="link">用邀请码注册</text>
+    </view>
+  </view>
+
+  <!-- 服务器地址设置 -->
+  <view class="mask" wx:if="{{showServerPanel}}" bindtap="closeServerPanel">
+    <view class="panel" catchtap="">
+      <view class="panel-title">服务器地址</view>
+      <view class="panel-sub">当前环境：{{envLabel}}</view>
+
+      <input class="input server-input" value="{{serverUrl}}" bindinput="onInputServer"
+             placeholder="http://192.168.1.5:3000" />
+
+      <view class="quick-row">
+        <view class="quick-btn" bindtap="useDevUrl">模拟器 127.0.0.1</view>
+        <view class="quick-btn" bindtap="onAutoDetect">{{detecting ? '探测中...' : '自动探测局域网'}}</view>
+      </view>
+
+      <button class="btn-primary" bindtap="saveServer">保存并测试连接</button>
+
+      <view class="tip">
+        <view wx:if="{{isRealDevice}}">真机上 127.0.0.1 指向手机自己，连不上电脑。请填电脑的局域网 IP（后端启动日志里有显示），并确保手机和电脑在同一 WiFi。</view>
+        <view wx:else>开发者工具中需勾选「详情 → 本地设置 → 不校验合法域名」。</view>
+      </view>
+      <view class="tip warn" wx:if="{{connError}}">{{connError}}</view>
+    </view>
+  </view>
+</view>

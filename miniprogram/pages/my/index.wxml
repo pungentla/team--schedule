@@ -1,0 +1,49 @@
+<view class="page">
+  <view class="profile card">
+    <view class="avatar">{{user.name[0]}}</view>
+    <view class="p-info">
+      <text class="p-name">{{user.name}}</text>
+      <text class="p-no">工号 {{user.employeeNo}} · {{user.role === 'admin' ? '管理员' : '员工'}}</text>
+    </view>
+  </view>
+
+  <!-- 我的工作分布 -->
+  <view class="card" wx:if="{{stats && stats.byWorkType.length}}">
+    <view class="c-title">我的工作分布（共 {{stats.total}} 班）</view>
+    <view class="wt-bar-row" wx:for="{{stats.byWorkType}}" wx:key="workTypeId">
+      <text class="wt-bar-name">{{item.name}}</text>
+      <view class="bar-wrap">
+        <view class="bar" style="width: {{item.ratio * 100}}%; background: {{item.color}}"></view>
+      </view>
+      <text class="wt-bar-count">{{item.count}}次</text>
+    </view>
+  </view>
+
+  <!-- 我的近期班次 -->
+  <view class="card" wx:if="{{myShifts.length}}">
+    <view class="c-title">我的班次（最近 {{myShifts.length}} 个）</view>
+    <view class="shift-line" wx:for="{{myShifts}}" wx:key="id">
+      <text class="sl-date">{{item.workDate}}</text>
+      <text class="sl-detail">{{item.shiftName}} {{item.startTime}}-{{item.endTime}} · {{item.workTypeName}}</text>
+    </view>
+  </view>
+
+  <view class="menu">
+    <view class="menu-item" bindtap="goEnroll">
+      <text>报名排班</text>
+      <text class="arrow">›</text>
+    </view>
+    <view class="menu-item" bindtap="goSwapList">
+      <text>换班申请</text>
+      <text class="arrow">›</text>
+    </view>
+    <view class="menu-item" bindtap="copyServer">
+      <text>服务器地址</text>
+      <text class="server-url">{{baseUrl}}</text>
+    </view>
+    <view class="menu-item danger" bindtap="onLogout">
+      <text>退出登录</text>
+      <text class="arrow">›</text>
+    </view>
+  </view>
+</view>

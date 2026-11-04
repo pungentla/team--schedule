@@ -1,0 +1,24 @@
+{
+  "name": "@teamshift/backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "排班宝 TeamShift 后端服务",
+  "type": "commonjs",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "dev": "NODE_NO_WARNINGS=1 node --watch src/server.js",
+    "start": "NODE_NO_WARNINGS=1 node src/server.js",
+    "migrate": "NODE_NO_WARNINGS=1 node src/db/migrate.js",
+    "seed": "NODE_NO_WARNINGS=1 node scripts/seed.js",
+    "reset": "NODE_NO_WARNINGS=1 node scripts/seed.js --reset",
+    "test": "NODE_NO_WARNINGS=1 node --test \"test/**/*.test.js\"",
+    "verify": "NODE_NO_WARNINGS=1 node scripts/verify-e2e.js",
+    "verify:mp": "NODE_NO_WARNINGS=1 node scripts/verify-miniprogram.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}

@@ -1,0 +1,63 @@
+<view class="page">
+  <view class="from-card card" wx:if="{{fromAssignment}}">
+    <view class="fc-label">我要转出的班次</view>
+    <view class="fc-body">{{fromAssignment.label}}</view>
+  </view>
+
+  <!-- 模式切换 -->
+  <view class="mode-row">
+    <view class="mode {{mode === 'transfer' ? 'on' : ''}}" data-mode="transfer" bindtap="switchMode">
+      转给别人
+    </view>
+    <view class="mode {{mode === 'exchange' ? 'on' : ''}}" data-mode="exchange" bindtap="switchMode">
+      互换
+    </view>
+  </view>
+
+  <!-- 候选人 -->
+  <view class="section" wx:if="{{!loading}}">
+    <view class="sec-title">{{mode === 'transfer' ? '选择接收人' : '选择交换对象'}}</view>
+    <view
+      class="cand {{item.canTake ? '' : 'off'}} {{selectedUser && selectedUser.userId === item.userId ? 'sel' : ''}}"
+      wx:for="{{candidates}}"
+      wx:key="userId"
+      data-id="{{item.userId}}"
+      bindtap="selectUser"
+    >
+      <view class="cand-info">
+        <text class="cand-name">{{item.name}}</text>
+        <text class="cand-no">{{item.employeeNo}}</text>
+      </view>
+      <view class="cand-status">
+        <text class="ok-tag" wx:if="{{item.canTake}}">可接</text>
+        <text class="no-tag" wx:else>{{item.problemText}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 交换模式下：选对方哪条班 -->
+  <view class="section" wx:if="{{mode === 'exchange' && selectedUser}}">
+    <view class="sec-title">选对方的班次（{{selectedUser.name}}）</view>
+    <view
+      class="target {{selectedSwapTarget && selectedSwapTarget.id === item.id ? 'sel' : ''}}"
+      wx:for="{{selectedUser.theirAssignments}}"
+      wx:key="id"
+      data-id="{{item.id}}"
+      bindtap="selectSwapTarget"
+    >
+      {{item.workDate}} {{item.shiftName}} · {{item.workTypeName}}
+    </view>
+    <view class="empty-tip" wx:if="{{!selectedUser.theirAssignments.length}}">对方名下没有班次，无法互换</view>
+  </view>
+
+  <!-- 留言 -->
+  <view class="section">
+    <view class="sec-title">留言（选填）</view>
+    <textarea class="msg" value="{{message}}" bindinput="onMessage" placeholder="例如：家里有事，想请你帮忙顶 11-05 早班" />
+  </view>
+
+  <button class="submit {{submitting || !selectedUser ? 'disabled' : ''}}" bindtap="onSubmit">
+    {{submitting ? '提交中...' : (mode === 'transfer' ? '发起转班' : '发起互换')}}
+  </button>
+  <view class="tip">对方同意后自动生效；如对方班次被占用或有约束冲突，系统会拒绝并说明原因</view>
+</view>

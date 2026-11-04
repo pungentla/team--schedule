@@ -1,0 +1,19 @@
+node_modules/
+data/*.db
+data/*.db-shm
+data/*.db-wal
+.env
+.DS_Store
+*.log
+.idea/
+.vscode/
+
+# 小程序个人配置（每人本地不同，不共享）
+miniprogram/project.private.config.json
+
+# 生产部署产物
+.env.production
+data/
+backups/
+deploy/certs/
+.certbot-webroot/

@@ -1,0 +1,252 @@
+/**
+ * 排班宝 TeamShift — 全局样式
+ * 设计基线：主色 #2E5AAC，背景 #F4F6FA，卡片白底圆角 16rpx
+ * 单位统一用 rpx，1rpx ≈ 0.5px @750 设计稿
+ */
+
+page {
+  background: #F4F6FA;
+  color: #1F2937;
+  font-size: 28rpx;
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  line-height: 1.6;
+}
+
+/* ------------------------------ 通用容器 ------------------------------ */
+
+.container {
+  padding: 24rpx 30rpx;
+}
+
+.card {
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 28rpx;
+  margin-bottom: 20rpx;
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.04);
+}
+
+.card-title {
+  font-size: 30rpx;
+  font-weight: bold;
+  color: #1F2937;
+  margin-bottom: 20rpx;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+}
+
+.row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.flex-1 {
+  flex: 1;
+}
+
+.gap-12 {
+  gap: 12rpx;
+}
+
+.gap-20 {
+  gap: 20rpx;
+}
+
+/* ------------------------------ 文字 ------------------------------ */
+
+.text-primary { color: #2E5AAC; }
+.text-success { color: #2E9E5B; }
+.text-danger { color: #C0392B; }
+.text-warning { color: #D97706; }
+.text-gray { color: #8A94A6; }
+.text-bold { font-weight: bold; }
+
+.text-sm { font-size: 24rpx; }
+.text-lg { font-size: 34rpx; }
+.text-xl { font-size: 44rpx; }
+
+.ellipsis {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* ------------------------------ 按钮 ------------------------------ */
+
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 88rpx;
+  border-radius: 12rpx;
+  font-size: 30rpx;
+  border: none;
+  line-height: 1;
+}
+
+.btn::after {
+  border: none;
+}
+
+.btn-primary {
+  background: #2E5AAC;
+  color: #fff;
+}
+
+.btn-success {
+  background: #2E9E5B;
+  color: #fff;
+}
+
+.btn-danger {
+  background: #C0392B;
+  color: #fff;
+}
+
+.btn-ghost {
+  background: #EEF2FB;
+  color: #2E5AAC;
+}
+
+.btn-plain {
+  background: #F4F6FA;
+  color: #374151;
+}
+
+.btn-sm {
+  height: 60rpx;
+  font-size: 26rpx;
+  padding: 0 24rpx;
+}
+
+.btn-block {
+  width: 100%;
+}
+
+.btn[disabled] {
+  opacity: 0.5;
+}
+
+/* ------------------------------ 标签 ------------------------------ */
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 8rpx;
+  padding: 6rpx 16rpx;
+  font-size: 22rpx;
+  line-height: 1.4;
+}
+
+.tag-primary {
+  background: #EEF2FB;
+  color: #2E5AAC;
+}
+
+.tag-success {
+  background: #E8F5EE;
+  color: #2E9E5B;
+}
+
+.tag-danger {
+  background: #FDECEC;
+  color: #C0392B;
+}
+
+.tag-warning {
+  background: #FFF4E5;
+  color: #D97706;
+}
+
+.tag-gray {
+  background: #F3F4F6;
+  color: #6B7280;
+}
+
+/* ------------------------------ 表单 ------------------------------ */
+
+.form-item {
+  display: flex;
+  align-items: center;
+  min-height: 96rpx;
+  border-bottom: 1rpx solid #F0F2F5;
+}
+
+.form-item:last-child {
+  border-bottom: none;
+}
+
+.form-label {
+  width: 200rpx;
+  flex-shrink: 0;
+  color: #374151;
+  font-size: 28rpx;
+}
+
+.form-input {
+  flex: 1;
+  height: 96rpx;
+  font-size: 28rpx;
+  text-align: right;
+}
+
+.form-input-left {
+  text-align: left;
+}
+
+.placeholder {
+  color: #C4CAD4;
+}
+
+/* ------------------------------ 分割与空态 ------------------------------ */
+
+.divider {
+  height: 1rpx;
+  background: #F0F2F5;
+  margin: 20rpx 0;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 100rpx 40rpx;
+  color: #8A94A6;
+  font-size: 26rpx;
+}
+
+.empty-icon {
+  font-size: 80rpx;
+  margin-bottom: 20rpx;
+  opacity: 0.4;
+}
+
+/* ------------------------------ 红点 ------------------------------ */
+
+.badge {
+  min-width: 32rpx;
+  height: 32rpx;
+  border-radius: 16rpx;
+  background: #C0392B;
+  color: #fff;
+  font-size: 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8rpx;
+}
+
+/* ------------------------------ 工具类 ------------------------------ */
+
+.hidden {
+  display: none;
+}
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}

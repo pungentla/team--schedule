@@ -1,0 +1,69 @@
+<view class="page">
+  <view class="card">
+    <view class="c-title">生成排班</view>
+    <view class="seed-row">
+      <text class="seed-label">随机种子（同种子=同结果，可复现）</text>
+      <input class="seed-input" type="number" value="{{seed}}" bindinput="onSeed" />
+    </view>
+    <button class="btn main" bindtap="onGenerate">
+      {{generating ? '计算中...' : (generated ? '重新生成' : '开始生成')}}
+    </button>
+    <button class="btn" wx:if="{{generated}}" bindtap="onRegenerate">换个种子重试</button>
+  </view>
+
+  <block wx:if="{{result}}">
+    <!-- 结果概览 -->
+    <view class="card">
+      <view class="c-title">结果概览</view>
+      <view class="stat-row">
+        <view class="s-item">
+          <text class="v">{{result.stats.filled}}/{{result.stats.seats}}</text>
+          <text class="l">已排/座位</text>
+        </view>
+        <view class="s-item">
+          <text class="v">{{result.gaps.totalGap}}</text>
+          <text class="l">缺口</text>
+        </view>
+        <view class="s-item">
+          <text class="v">{{gradeLabel}}</text>
+          <text class="l">公平度</text>
+        </view>
+        <view class="s-item">
+          <text class="v">{{result.stats.durationMs}}ms</text>
+          <text class="l">耗时</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 公平度明细 -->
+    <view class="card">
+      <view class="c-title">各工作类型轮转分布</view>
+      <view class="m-row" wx:for="{{result.metrics.perWorkType}}" wx:key="workTypeId">
+        <text class="m-name">{{item.workTypeName}}</text>
+        <text class="m-std">标准差 {{item.std}}</text>
+        <text class="m-dist">{{item.distribution.length ? item.distribution.map(d => d.count).join(',') : '-'}}</text>
+      </view>
+      <view class="m-row total">
+        <text class="m-name">工作量</text>
+        <text class="m-std">标准差 {{result.metrics.workload.std}}</text>
+        <text class="m-dist">{{result.metrics.workload.distribution.map(d => d.assigned).join(',')}}</text>
+      </view>
+    </view>
+
+    <!-- 缺口 -->
+    <view class="card" wx:if="{{result.gaps.totalGap > 0}}">
+      <view class="c-title warn">缺口明细（{{result.gaps.totalGap}}）</view>
+      <view class="gap-group" wx:for="{{result.gaps.byDateShift}}" wx:key="index" wx:if="{{item.gapTotal > 0}}" wx:for-item="g">
+        <view class="g-head">{{g.workDate}} {{g.shiftName}}</view>
+        <view class="g-item" wx:for="{{g.items}}" wx:key="workTypeId">
+          <text>{{item.workTypeName}} 缺 {{item.gap}} 人</text>
+          <text class="g-reason">{{item.reasonMessage}}</text>
+        </view>
+      </view>
+    </view>
+
+    <button class="btn publish" bindtap="onPublish">
+      {{publishing ? '发布中...' : '发布排班'}}
+    </button>
+  </block>
+</view>

@@ -1,0 +1,84 @@
+<view class="page">
+  <!-- 用户问候 -->
+  <view class="header">
+    <view class="greet">
+      <text class="hello">你好，{{user.name}}</text>
+      <text class="role">{{user.role === 'admin' ? '管理员' : '员工'}}</text>
+    </view>
+    <text class="date">{{periodLabel || '暂无排班周期'}}</text>
+  </view>
+
+  <!-- 状态卡 -->
+  <view class="card main-card" wx:if="{{period}}">
+    <view class="period-row">
+      <text class="period-name">{{period.name}}</text>
+      <text class="status-tag status-{{period.status}}">{{statusLabel}}</text>
+    </view>
+
+    <block wx:if="{{myNextShift}}">
+      <view class="next-shift">
+        <text class="ns-label">我的下一个班次</text>
+        <view class="ns-body">
+          <text class="ns-date">{{myNextShift.workDate}}</text>
+          <text class="ns-detail">{{myNextShift.shiftName}} · {{myNextShift.workTypeName}} · {{myNextShift.startTime}}-{{myNextShift.endTime}}</text>
+        </view>
+      </view>
+      <view class="count-row">
+        <text>本周期我共有 <text class="num">{{myShiftsCount}}</text> 个班次</text>
+      </view>
+    </block>
+    <block wx:else>
+      <view class="empty-tip">本周期暂无你的排班{{period.status === 'enrolling' ? '，快去报名吧' : ''}}</view>
+    </block>
+
+    <view class="action-row">
+      <button class="btn-ghost" bindtap="goSchedule" size="mini">查看排班</button>
+      <button class="btn-primary-sm" bindtap="goEnroll" size="mini"
+        wx:if="{{period.status === 'enrolling'}}">去报名</button>
+    </view>
+  </view>
+
+  <view class="card empty-card" wx:elif="{{!loading}}">
+    <text>还没有排班周期，请联系管理员创建</text>
+  </view>
+
+  <!-- 功能入口 -->
+  <view class="grid">
+    <view class="grid-item" bindtap="goSwapList">
+      <view class="gi-icon swap">换</view>
+      <text class="gi-label">换班</text>
+      <view class="badge" wx:if="{{pendingSwapCount > 0}}">{{pendingSwapCount}}</view>
+    </view>
+    <view class="grid-item" bindtap="goEnroll" wx:if="{{period && period.status === 'enrolling'}}">
+      <view class="gi-icon enroll">报</view>
+      <text class="gi-label">报名</text>
+    </view>
+    <view class="grid-item" bindtap="goAdmin" wx:if="{{user.role === 'admin'}}">
+      <view class="gi-icon admin">管</view>
+      <text class="gi-label">管理后台</text>
+    </view>
+    <view class="grid-item" bindtap="goSchedule">
+      <view class="gi-icon sched">班</view>
+      <text class="gi-label">排班表</text>
+    </view>
+  </view>
+
+  <!-- 管理员统计摘要 -->
+  <view class="card stats-card" wx:if="{{stats && stats.publishedRun}}">
+    <view class="sc-title">本期概览</view>
+    <view class="sc-row">
+      <view class="sc-item">
+        <text class="sc-num">{{stats.publishedRun.totalFilled}}/{{stats.publishedRun.totalNeeded}}</text>
+        <text class="sc-label">已排/需求</text>
+      </view>
+      <view class="sc-item">
+        <text class="sc-num">{{stats.enrollment.submitted}}/{{stats.enrollment.total}}</text>
+        <text class="sc-label">报名人数</text>
+      </view>
+      <view class="sc-item">
+        <text class="sc-num">{{stats.pendingSwaps}}</text>
+        <text class="sc-label">待处理换班</text>
+      </view>
+    </view>
+  </view>
+</view>

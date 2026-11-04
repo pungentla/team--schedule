@@ -1,0 +1,10 @@
+.page { min-height: 100vh; background: #F4F6FA; padding: 24rpx 32rpx; }
+.item {
+  background: #fff; border-radius: 14rpx; padding: 22rpx;
+  margin-bottom: 12rpx; display: flex; justify-content: space-between; align-items: center;
+}
+.action { font-size: 27rpx; font-weight: bold; color: #1F2937; display: block; }
+.detail { font-size: 22rpx; color: #9CA3AF; margin-top: 6rpx; display: block; }
+.time { font-size: 20rpx; color: #C0C4CC; flex-shrink: 0; margin-left: 16rpx; }
+.end { text-align: center; color: #C0C4CC; font-size: 24rpx; padding: 30rpx 0; }
+.empty { text-align: center; color: #9CA3AF; padding: 120rpx 0; }

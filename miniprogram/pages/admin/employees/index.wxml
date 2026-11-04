@@ -1,0 +1,34 @@
+<view class="page">
+  <view class="sec-title">员工（{{users.length}}）</view>
+  <view class="user" wx:for="{{users}}" wx:key="id">
+    <view class="info">
+      <text class="name">{{item.name}}</text>
+      <text class="meta">{{item.employeeNo}} · {{item.role === 'admin' ? '管理员' : '员工'}}</text>
+    </view>
+    <view class="ops">
+      <view class="op" data-id="{{item.id}}" bindtap="toggleRole">{{item.role === 'admin' ? '降为员工' : '设为管理员'}}</view>
+      <view class="op {{item.status === 'active' ? 'danger' : 'ok'}}" data-id="{{item.id}}" bindtap="toggleStatus">
+        {{item.status === 'active' ? '停用' : '启用'}}
+      </view>
+    </view>
+  </view>
+
+  <view class="sec-title mt">邀请码</view>
+  <button class="add" bindtap="openInviteForm">+ 生成邀请码</button>
+  <view class="invite" wx:for="{{invites}}" wx:key="id" data-id="{{item.id}}" bindtap="copyInvite">
+    <view class="iv-info">
+      <text class="code">{{item.code}}</text>
+      <text class="meta">已用 {{item.usedCount}}/{{item.maxUses}}{{item.expiresAt ? ' · 至 ' + item.expiresAt : ''}}</text>
+    </view>
+    <text class="copy">复制</text>
+  </view>
+
+  <view class="mask" wx:if="{{showInviteForm}}" bindtap="closeInviteForm">
+    <view class="form" catchtap="">
+      <view class="f-title">生成邀请码</view>
+      <view class="f-field"><text>可用次数</text><input type="number" value="{{inviteForm.maxUses}}" data-field="maxUses" bindinput="onInviteForm" /></view>
+      <view class="f-field"><text>有效天数</text><input type="number" value="{{inviteForm.expiresInDays}}" data-field="expiresInDays" bindinput="onInviteForm" /></view>
+      <button class="save" bindtap="createInvite">生成</button>
+    </view>
+  </view>
+</view>

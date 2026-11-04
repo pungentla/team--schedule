@@ -1,0 +1,25 @@
+{
+  "name": "teamshift",
+  "version": "1.0.0",
+  "private": true,
+  "description": "排班宝 TeamShift — 团队轮值排班系统（微信小程序 + Node 后端 + H5 预览）",
+  "workspaces": [
+    "backend",
+    "h5"
+  ],
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "dev": "npm run dev --workspace backend",
+    "start": "npm run start --workspace backend",
+    "h5": "npm run start --workspace h5",
+    "seed": "npm run seed --workspace backend",
+    "reset": "npm run reset --workspace backend",
+    "migrate": "npm run migrate --workspace backend",
+    "test": "npm run test --workspace backend",
+    "verify": "npm run verify --workspace backend",
+    "verify:mp": "npm run verify:mp --workspace backend",
+    "test:mp": "node miniprogram/test/env.test.js"
+  }
+}

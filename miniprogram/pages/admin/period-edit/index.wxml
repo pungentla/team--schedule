@@ -1,0 +1,31 @@
+<view class="page" wx:if="{{matrix}}">
+  <view class="hint">编辑每天 × 每班次 × 每工作类型的需要人数。0 表示该班次不开这个工作。</view>
+
+  <view class="wt-filters">
+    <view class="wt-f" wx:for="{{workTypes}}" wx:key="id" data-id="{{item.id}}" bindtap="fillColumn">
+      <view class="dot" style="background:{{item.color}}"></view>
+      <text>{{item.name}}</text>
+    </view>
+  </view>
+
+  <view class="day-block" wx:for="{{matrix.dates}}" wx:key="workDate" wx:for-item="day" wx:for-index="di">
+    <view class="d-head">{{day.workDate}}</view>
+    <view class="shift-row" wx:for="{{day.shifts}}" wx:key="shiftId" wx:for-item="shift" wx:for-index="si">
+      <view class="s-name">{{shift.shiftName}}</view>
+      <view class="s-cells">
+        <view class="cell" wx:for="{{shift.requirements}}" wx:key="workTypeId" wx:for-item="r" wx:for-index="wi">
+          <text class="cell-label">{{r.workTypeName}}</text>
+          <input class="cell-input" type="number" value="{{r.needCount}}"
+            data-di="{{di}}" data-si="{{si}}" data-wi="{{wi}}"
+            bindinput="onNeedInput" />
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view class="save-bar">
+    <button class="save {{dirty ? '' : 'disabled'}}" bindtap="onSave">
+      {{saving ? '保存中...' : (dirty ? '保存修改' : '已保存')}}
+    </button>
+  </view>
+</view>

@@ -1,0 +1,13 @@
+<view class="page">
+  <view class="item" wx:for="{{items}}" wx:key="id">
+    <view class="left">
+      <text class="action">{{item.actionLabel}}</text>
+      <text class="detail">
+        {{item.actorName || '系统'}}{{item.entityType ? ' · ' + item.entityType + '#' + item.entityId : ''}}
+      </text>
+    </view>
+    <text class="time">{{item.createdAt}}</text>
+  </view>
+  <view class="end" wx:if="{{!hasMore && items.length}}">— 没有更多了 —</view>
+  <view class="empty" wx:if="{{!items.length}}">暂无日志</view>
+</view>

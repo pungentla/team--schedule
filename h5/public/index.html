@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>排班宝 TeamShift - 预览</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <!-- 登录视图 -->
+  <div id="view-login" class="view">
+    <div class="login-box">
+      <div class="logo">排班宝</div>
+      <div class="sub">TeamShift · 团队轮值排班</div>
+      <input id="login-no" placeholder="工号（admin / emp001）" />
+      <input id="login-pwd" type="password" placeholder="密码（123456）" />
+      <button id="btn-login" class="btn-primary">登 录</button>
+      <div class="hint">演示账号：admin/123456（管理员）、emp001~emp020/123456</div>
+    </div>
+  </div>
+
+  <!-- 主视图 -->
+  <div id="view-main" class="view hidden">
+    <header class="topbar">
+      <span class="brand">排班宝</span>
+      <span id="tb-user" class="tb-user"></span>
+      <span id="tb-tab-schedule" class="tb-tab on" data-tab="schedule">排班表</span>
+      <span id="tb-tab-admin" class="tb-tab" data-tab="admin">管理后台</span>
+      <button id="btn-logout" class="btn-ghost-sm">退出</button>
+    </header>
+
+    <!-- 排班表 -->
+    <section id="tab-schedule" class="tabpane">
+      <div id="gap-banner" class="gap-banner hidden"></div>
+      <div id="matrix" class="matrix"></div>
+    </section>
+
+    <!-- 管理后台 -->
+    <section id="tab-admin" class="tabpane hidden">
+      <div id="admin-stats" class="stat-grid"></div>
+
+      <div class="panel">
+        <h3>排班生成与发布</h3>
+        <div class="row">
+          <label>种子 <input id="gen-seed" type="number" value="42" style="width:90px"></label>
+          <button id="btn-gen" class="btn-primary">生成排班</button>
+          <button id="btn-publish" class="btn-success hidden">发布排班</button>
+          <button id="btn-regen" class="btn-ghost hidden">换种子重试</button>
+        </div>
+        <div id="gen-result"></div>
+      </div>
+
+      <div class="panel">
+        <h3>公平度指标</h3>
+        <div id="metrics-detail">生成排班后这里会显示每个工作类型的轮转分布</div>
+      </div>
+
+      <div class="panel">
+        <h3>换班申请</h3>
+        <div id="swap-records">暂无数据</div>
+      </div>
+
+      <div class="panel">
+        <h3>操作日志（最近 15 条）</h3>
+        <div id="audit-list" class="audit"></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="api.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

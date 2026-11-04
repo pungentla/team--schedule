@@ -1,0 +1,67 @@
+<view class="page" wx:if="{{period}}">
+  <view class="head">
+    <text class="p-name">{{period.name}}</text>
+    <text class="p-range">{{period.startDate}} ~ {{period.endDate}}</text>
+  </view>
+
+  <!-- 1. 工作类型多选 -->
+  <view class="section">
+    <view class="sec-title">1. 选择工作类型 <text class="sec-tip">按选择顺序自动设置意愿优先级</text></view>
+    <view class="wt-list">
+      <view
+        class="wt-item {{wt.selected ? 'on' : ''}}"
+        wx:for="{{workTypes}}"
+        wx:key="id"
+        data-id="{{item.id}}"
+        bindtap="toggleWt"
+      >
+        <view class="wt-color" style="background: {{item.color}}"></view>
+        <text class="wt-name">{{item.name}}</text>
+        <view class="pri-tag" wx:if="{{item.selected && item.priority}}">P{{item.priority}}</view>
+      </view>
+    </view>
+    <view class="pri-help" wx:if="{{workTypes.some(w => w.selected)}}">P1 最想去 / P2 愿意 / P3 可以接受</view>
+  </view>
+
+  <!-- 2. 个人上限 -->
+  <view class="section">
+    <view class="sec-title">2. 本周期最多上几个班</view>
+    <input class="max-input" type="number" value="{{maxShifts}}" bindinput="onMaxShifts" />
+  </view>
+
+  <!-- 3. 可用时间网格 -->
+  <view class="section">
+    <view class="sec-title">3. 可用时间 <text class="sec-tip">点格子切换 可用/不可用；点日期整日开关</text></view>
+    <view class="avail-grid">
+      <view class="ag-header">
+        <view class="ag-date-cell"></view>
+        <view class="ag-shift-cell" wx:for="{{shifts}}" wx:key="id">{{item.name}}</view>
+      </view>
+      <view class="ag-row" wx:for="{{grid}}" wx:key="workDate" wx:for-item="day" wx:for-index="di">
+        <view class="ag-date-cell" data-di="{{di}}" bindtap="toggleWholeDay">
+          <text>{{day.workDate}}</text>
+        </view>
+        <view
+          class="ag-cell {{s.state === 1 ? 'ok' : 'no'}}"
+          wx:for="{{day.shifts}}"
+          wx:key="shiftId"
+          wx:for-item="s"
+          wx:for-index="si"
+          data-di="{{di}}"
+          data-si="{{si}}"
+          bindtap="toggleCell"
+        >{{s.state === 1 ? '✓' : '×'}}</view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 备注 -->
+  <view class="section">
+    <view class="sec-title">备注</view>
+    <textarea class="note" value="{{note}}" bindinput="onNote" placeholder="选填，如：只能上早班" />
+  </view>
+
+  <button class="submit {{submitting ? 'disabled' : ''}}" bindtap="onSubmit">
+    {{submitting ? '提交中...' : (existing ? '更新报名' : '提交报名')}}
+  </button>
+</view>

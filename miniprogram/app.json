@@ -1,0 +1,56 @@
+{
+  "pages": [
+    "pages/home/index",
+    "pages/schedule/index",
+    "pages/my/index",
+    "pages/login/index",
+    "pages/register/index",
+    "pages/enroll/index",
+    "pages/swap/create",
+    "pages/swap/detail",
+    "pages/swap/list",
+    "pages/admin/dashboard/index",
+    "pages/admin/period-edit/index",
+    "pages/admin/generate/index",
+    "pages/admin/work-types/index",
+    "pages/admin/shifts/index",
+    "pages/admin/employees/index",
+    "pages/admin/audit/index"
+  ],
+  "window": {
+    "backgroundTextStyle": "light",
+    "navigationBarBackgroundColor": "#2E5AAC",
+    "navigationBarTitleText": "排班宝",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#F4F6FA"
+  },
+  "tabBar": {
+    "color": "#8A94A6",
+    "selectedColor": "#2E5AAC",
+    "backgroundColor": "#FFFFFF",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/home/index",
+        "text": "首页",
+        "iconPath": "assets/tab-home.png",
+        "selectedIconPath": "assets/tab-home-active.png"
+      },
+      {
+        "pagePath": "pages/schedule/index",
+        "text": "排班",
+        "iconPath": "assets/tab-schedule.png",
+        "selectedIconPath": "assets/tab-schedule-active.png"
+      },
+      {
+        "pagePath": "pages/my/index",
+        "text": "我的",
+        "iconPath": "assets/tab-my.png",
+        "selectedIconPath": "assets/tab-my-active.png"
+      }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}

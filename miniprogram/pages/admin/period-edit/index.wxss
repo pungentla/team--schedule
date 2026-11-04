@@ -1,0 +1,37 @@
+.page { min-height: 100vh; background: #F4F6FA; padding: 24rpx 32rpx 160rpx; box-sizing: border-box; }
+
+.hint { font-size: 24rpx; color: #8A94A6; margin-bottom: 20rpx; line-height: 1.6; }
+
+.wt-filters { display: flex; flex-wrap: wrap; gap: 14rpx; margin-bottom: 24rpx; }
+.wt-f {
+  display: flex; align-items: center; gap: 8rpx;
+  background: #fff; border-radius: 12rpx; padding: 12rpx 20rpx;
+  font-size: 24rpx; color: #374151;
+}
+.dot { width: 16rpx; height: 16rpx; border-radius: 50%; }
+
+.day-block { background: #fff; border-radius: 16rpx; margin-bottom: 20rpx; overflow: hidden; }
+.d-head {
+  background: #F4F8FE; color: #2E5AAC; font-weight: bold;
+  padding: 16rpx 24rpx; font-size: 26rpx;
+}
+.shift-row {
+  display: flex; padding: 18rpx 24rpx;
+  border-top: 1rpx solid #F5F6F8; align-items: flex-start;
+}
+.s-name { width: 100rpx; font-weight: bold; font-size: 26rpx; color: #374151; flex-shrink: 0; padding-top: 10rpx; }
+.s-cells { flex: 1; display: flex; flex-direction: column; gap: 12rpx; }
+.cell { display: flex; align-items: center; gap: 12rpx; }
+.cell-label { width: 130rpx; font-size: 24rpx; color: #6B7280; flex-shrink: 0; }
+.cell-input {
+  width: 100rpx; height: 60rpx; background: #F4F6FA; border-radius: 10rpx;
+  text-align: center; font-size: 28rpx;
+}
+
+.save-bar {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  background: #fff; padding: 20rpx 32rpx;
+  box-shadow: 0 -4rpx 20rpx rgba(0,0,0,0.05);
+}
+.save { background: #2E5AAC; color: #fff; border-radius: 14rpx; font-size: 30rpx; }
+.save.disabled { opacity: 0.5; }

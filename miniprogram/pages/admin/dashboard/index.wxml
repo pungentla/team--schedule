@@ -1,0 +1,40 @@
+<view class="page" wx:if="{{dash}}">
+  <view class="stat-grid">
+    <view class="stat">
+      <text class="v">{{dash.employeeCount}}</text>
+      <text class="l">在职员工</text>
+    </view>
+    <view class="stat">
+      <text class="v">{{dash.enrollment.submitted}}/{{dash.enrollment.total}}</text>
+      <text class="l">已报名</text>
+    </view>
+    <view class="stat">
+      <text class="v">{{fillPercent}}%</text>
+      <text class="l">排班填充率</text>
+    </view>
+    <view class="stat">
+      <text class="v">{{gradeLabel || '-'}}</text>
+      <text class="l">轮转公平度</text>
+    </view>
+  </view>
+
+  <view class="card" wx:if="{{dash.currentPeriod}}">
+    <view class="c-row">
+      <text class="c-name">{{dash.currentPeriod.name}}</text>
+      <text class="c-status">{{dash.currentPeriod.status}}</text>
+    </view>
+    <text class="c-range">{{dash.currentPeriod.startDate}} ~ {{dash.currentPeriod.endDate}}</text>
+
+    <view class="m-row">
+      <view class="m-item" bindtap="goPeriodEdit">需求配置</view>
+      <view class="m-item primary" bindtap="goGenerate">生成/发布排班</view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="menu-item" bindtap="goWorkTypes"><text>工作类型管理</text><text class="arr">›</text></view>
+    <view class="menu-item" bindtap="goShifts"><text>班次管理</text><text class="arr">›</text></view>
+    <view class="menu-item" bindtap="goEmployees"><text>员工与邀请码</text><text class="arr">›</text></view>
+    <view class="menu-item" bindtap="goAudit"><text>操作日志</text><text class="arr">›</text></view>
+  </view>
+</view>

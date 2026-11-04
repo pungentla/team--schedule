@@ -1,0 +1,303 @@
+-- ============================================================================
+-- 排班宝 TeamShift 数据库结构
+-- 约定：日期统一 TEXT 'YYYY-MM-DD'，时间戳 TEXT ISO8601（UTC）
+-- 建表顺序受外键约束限制：被引用的表必须先创建
+-- ============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 1. 角色与用户
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS roles (
+  code        TEXT PRIMARY KEY,
+  name        TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS users (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  employee_no   TEXT NOT NULL UNIQUE,
+  name          TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  role          TEXT NOT NULL DEFAULT 'employee' REFERENCES roles(code),
+  phone         TEXT,
+  status        TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled')),
+  created_at    TEXT NOT NULL,
+  updated_at    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_status ON users(status);
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+
+-- 邀请码：注册时需要
+CREATE TABLE IF NOT EXISTS invites (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  code        TEXT NOT NULL UNIQUE,
+  max_uses    INTEGER NOT NULL DEFAULT 1 CHECK (max_uses >= 1),
+  used_count  INTEGER NOT NULL DEFAULT 0 CHECK (used_count >= 0),
+  expires_at  TEXT,
+  created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at  TEXT NOT NULL,
+  CHECK (used_count <= max_uses)
+);
+
+-- 登录会话：存 token 的 sha256，可实时吊销
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash  TEXT PRIMARY KEY,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at  TEXT NOT NULL,
+  expires_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+
+-- ---------------------------------------------------------------------------
+-- 2. 基础配置：工作类型 / 班次
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS work_types (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  code        TEXT NOT NULL UNIQUE,
+  name        TEXT NOT NULL,
+  description TEXT,
+  color       TEXT NOT NULL DEFAULT '#4A90D9',
+  sort_order  INTEGER NOT NULL DEFAULT 0,
+  active      INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_work_types_active ON work_types(active, sort_order);
+
+-- 班次模板。seq 用于判断"是否连续班次"（H8 约束），必须唯一且有序
+CREATE TABLE IF NOT EXISTS shifts (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  code        TEXT NOT NULL UNIQUE,
+  name        TEXT NOT NULL,
+  start_time  TEXT NOT NULL,
+  end_time    TEXT NOT NULL,
+  seq         INTEGER NOT NULL UNIQUE,
+  color       TEXT NOT NULL DEFAULT '#7B8794',
+  active      INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL,
+  CHECK (end_time <> start_time)
+);
+
+CREATE INDEX IF NOT EXISTS idx_shifts_active_seq ON shifts(active, seq);
+
+-- ---------------------------------------------------------------------------
+-- 3. 排班周期
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS periods (
+  id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+  name                  TEXT NOT NULL,
+  start_date            TEXT NOT NULL,
+  end_date              TEXT NOT NULL,
+  max_shifts_per_day    INTEGER NOT NULL DEFAULT 1 CHECK (max_shifts_per_day >= 1),
+  max_shifts_per_week   INTEGER NOT NULL DEFAULT 5 CHECK (max_shifts_per_week >= 1),
+  forbid_consecutive    INTEGER NOT NULL DEFAULT 1 CHECK (forbid_consecutive IN (0, 1)),
+  status                TEXT NOT NULL DEFAULT 'draft'
+                          CHECK (status IN ('draft', 'enrolling', 'scheduling', 'published', 'archived')),
+  enrollment_deadline   TEXT,
+  created_at            TEXT NOT NULL,
+  updated_at            TEXT NOT NULL,
+  CHECK (end_date >= start_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_periods_status ON periods(status, start_date);
+
+-- 开班格子：某天某班次开班了。被 slot_requirements 复合外键引用
+CREATE TABLE IF NOT EXISTS period_slots (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  period_id  INTEGER NOT NULL REFERENCES periods(id) ON DELETE CASCADE,
+  work_date  TEXT NOT NULL,
+  shift_id   INTEGER NOT NULL REFERENCES shifts(id),
+  UNIQUE (period_id, work_date, shift_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_period_slots_period ON period_slots(period_id, work_date);
+
+-- ---------------------------------------------------------------------------
+-- 4. 报名
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS enrollments (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  period_id     INTEGER NOT NULL REFERENCES periods(id) ON DELETE CASCADE,
+  user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  max_shifts    INTEGER CHECK (max_shifts IS NULL OR max_shifts >= 0),
+  status        TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'submitted')),
+  note          TEXT,
+  submitted_at  TEXT,
+  created_at    TEXT NOT NULL,
+  updated_at    TEXT NOT NULL,
+  UNIQUE (period_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_enrollments_period ON enrollments(period_id, status);
+
+-- 报名的工作类型 + 意愿优先级（1 最想去）
+CREATE TABLE IF NOT EXISTS enrollment_work_types (
+  enrollment_id INTEGER NOT NULL REFERENCES enrollments(id) ON DELETE CASCADE,
+  work_type_id  INTEGER NOT NULL REFERENCES work_types(id),
+  priority      INTEGER NOT NULL DEFAULT 1 CHECK (priority BETWEEN 1 AND 3),
+  PRIMARY KEY (enrollment_id, work_type_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ewt_work_type ON enrollment_work_types(work_type_id);
+
+-- 精细可用时段（allow-list）。若某人设置了任意一行，则只能排在这些格子里
+CREATE TABLE IF NOT EXISTS availability_slots (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  period_id  INTEGER NOT NULL REFERENCES periods(id) ON DELETE CASCADE,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  work_date  TEXT NOT NULL,
+  shift_id   INTEGER NOT NULL REFERENCES shifts(id),
+  UNIQUE (period_id, user_id, work_date, shift_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_avail_lookup ON availability_slots(period_id, user_id, work_date);
+
+-- 整日不可用（请假）
+CREATE TABLE IF NOT EXISTS unavailability_dates (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  period_id  INTEGER NOT NULL REFERENCES periods(id) ON DELETE CASCADE,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  work_date  TEXT NOT NULL,
+  reason     TEXT,
+  UNIQUE (period_id, user_id, work_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_unavail_lookup ON unavailability_dates(period_id, user_id, work_date);
+
+-- ---------------------------------------------------------------------------
+-- 5. 需求：某天某班次某工作需要几人
+-- 复合外键引用 period_slots(period_id, work_date, shift_id) —— 保证只能给已开的格子配需求
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS slot_requirements (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  period_id     INTEGER NOT NULL,
+  work_date     TEXT NOT NULL,
+  shift_id      INTEGER NOT NULL,
+  work_type_id  INTEGER NOT NULL REFERENCES work_types(id),
+  need_count    INTEGER NOT NULL DEFAULT 0 CHECK (need_count >= 0),
+  FOREIGN KEY (period_id, work_date, shift_id)
+    REFERENCES period_slots(period_id, work_date, shift_id) ON DELETE CASCADE,
+  UNIQUE (period_id, work_date, shift_id, work_type_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_req_period ON slot_requirements(period_id, work_date);
+CREATE INDEX IF NOT EXISTS idx_req_work_type ON slot_requirements(work_type_id);
+
+-- ---------------------------------------------------------------------------
+-- 6. 排班结果
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS schedule_runs (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  period_id     INTEGER NOT NULL REFERENCES periods(id) ON DELETE CASCADE,
+  algo_version  TEXT NOT NULL,
+  seed          INTEGER NOT NULL,
+  input_hash    TEXT,
+  status        TEXT NOT NULL DEFAULT 'draft'
+                  CHECK (status IN ('draft', 'published', 'discarded')),
+  total_needed  INTEGER NOT NULL DEFAULT 0,
+  total_filled  INTEGER NOT NULL DEFAULT 0,
+  fill_rate     REAL NOT NULL DEFAULT 0,
+  metrics_json  TEXT,
+  gaps_json     TEXT,
+  rounds        INTEGER NOT NULL DEFAULT 0,
+  duration_ms   INTEGER NOT NULL DEFAULT 0,
+  created_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_runs_period ON schedule_runs(period_id, status);
+
+-- 每个周期最多一个 published run
+CREATE UNIQUE INDEX IF NOT EXISTS uq_runs_one_published
+  ON schedule_runs(period_id) WHERE status = 'published';
+
+CREATE TABLE IF NOT EXISTS assignments (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id        INTEGER NOT NULL REFERENCES schedule_runs(id) ON DELETE CASCADE,
+  period_id     INTEGER NOT NULL REFERENCES periods(id) ON DELETE CASCADE,
+  work_date     TEXT NOT NULL,
+  shift_id      INTEGER NOT NULL REFERENCES shifts(id),
+  work_type_id  INTEGER NOT NULL REFERENCES work_types(id),
+  user_id       INTEGER NOT NULL REFERENCES users(id),
+  status        TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'released')),
+  source        TEXT NOT NULL DEFAULT 'algo' CHECK (source IN ('algo', 'manual', 'swap')),
+  released_at   TEXT,
+  created_at    TEXT NOT NULL
+);
+
+-- 核心防重：在一次排班 run 内，同一个人同一天同一个班次只能有一条 active 记录。
+-- 这是并发换班场景下的最后兜底。
+-- 注意：必须按 run_id 而不是 period_id —— 同一周期可以同时存在 draft 与 published 两套运行，
+-- 按 period_id 会让两套运行互相冲突。
+CREATE UNIQUE INDEX IF NOT EXISTS uq_assignment_active_person_slot
+  ON assignments(run_id, user_id, work_date, shift_id) WHERE status = 'active';
+
+CREATE INDEX IF NOT EXISTS idx_assignment_period_date ON assignments(period_id, work_date, shift_id);
+CREATE INDEX IF NOT EXISTS idx_assignment_user ON assignments(period_id, user_id, status);
+CREATE INDEX IF NOT EXISTS idx_assignment_run ON assignments(run_id, status);
+CREATE INDEX IF NOT EXISTS idx_assignment_worktype ON assignments(work_type_id, status);
+
+-- ---------------------------------------------------------------------------
+-- 7. 换班申请（发起 + 逐个确认）
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS swap_requests (
+  id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+  period_id          INTEGER NOT NULL REFERENCES periods(id) ON DELETE CASCADE,
+  type               TEXT NOT NULL CHECK (type IN ('transfer', 'exchange')),
+  from_assignment_id INTEGER NOT NULL REFERENCES assignments(id),
+  to_user_id         INTEGER NOT NULL REFERENCES users(id),
+  to_assignment_id   INTEGER REFERENCES assignments(id),
+  requester_id       INTEGER NOT NULL REFERENCES users(id),
+  status             TEXT NOT NULL DEFAULT 'pending'
+                       CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled', 'expired')),
+  message            TEXT,
+  decided_at         TEXT,
+  applied_at         TEXT,
+  created_at         TEXT NOT NULL,
+  -- exchange 必须有目标 assignment；transfer 不需要
+  CHECK (
+    (type = 'transfer' AND to_assignment_id IS NULL)
+    OR (type = 'exchange' AND to_assignment_id IS NOT NULL)
+  )
+);
+
+CREATE INDEX IF NOT EXISTS idx_swaps_period ON swap_requests(period_id, status);
+CREATE INDEX IF NOT EXISTS idx_swaps_requester ON swap_requests(requester_id, status);
+CREATE INDEX IF NOT EXISTS idx_swaps_to_user ON swap_requests(to_user_id, status);
+
+-- 参与者：逐个确认的核心。发起人自身直接 approved，接收人 pending
+CREATE TABLE IF NOT EXISTS swap_participants (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  swap_id    INTEGER NOT NULL REFERENCES swap_requests(id) ON DELETE CASCADE,
+  user_id    INTEGER NOT NULL REFERENCES users(id),
+  role       TEXT NOT NULL CHECK (role IN ('requester', 'receiver')),
+  seq        INTEGER NOT NULL DEFAULT 0,
+  status     TEXT NOT NULL DEFAULT 'pending'
+               CHECK (status IN ('pending', 'approved', 'rejected')),
+  decided_at TEXT,
+  UNIQUE (swap_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_swap_participants_user ON swap_participants(user_id, status);
+
+-- ---------------------------------------------------------------------------
+-- 8. 操作日志
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  action      TEXT NOT NULL,
+  entity_type TEXT,
+  entity_id   INTEGER,
+  period_id   INTEGER,
+  actor_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  detail_json TEXT,
+  request_id  TEXT,
+  created_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_period ON audit_logs(period_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_logs(actor_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_logs(action, created_at);

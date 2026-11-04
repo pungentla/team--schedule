@@ -1,0 +1,25 @@
+<view class="page">
+  <button class="add" bindtap="openCreate">+ 新增班次</button>
+
+  <view class="item" wx:for="{{items}}" wx:key="id">
+    <view class="seq">{{item.seq}}</view>
+    <view class="info" data-id="{{item.id}}" bindtap="openEdit">
+      <text class="name">{{item.name}}</text>
+      <text class="time">{{item.startTime}} - {{item.endTime}}</text>
+    </view>
+    <switch checked="{{item.active}}" data-id="{{item.id}}" bindchange="toggleActive" color="#2E5AAC" />
+  </view>
+  <view class="tip">seq 越小表示越早；相邻 seq 的班次视为"连续班次"（若周期启用该约束则同一人不排相邻两班）</view>
+
+  <view class="mask" wx:if="{{showForm}}" bindtap="closeForm">
+    <view class="form" catchtap="">
+      <view class="f-title">{{editing ? '编辑' : '新增'}}班次</view>
+      <view class="f-field"><text>编码</text><input value="{{form.code}}" disabled="{{!!editing}}" data-field="code" bindinput="onForm" placeholder="如 MORNING" /></view>
+      <view class="f-field"><text>名称</text><input value="{{form.name}}" data-field="name" bindinput="onForm" placeholder="如 早班" /></view>
+      <view class="f-field"><text>开始</text><picker mode="time" value="{{form.startTime}}" data-field="startTime" bindchange="onTime"><view class="picker">{{form.startTime || '选择时间'}}</view></picker></view>
+      <view class="f-field"><text>结束</text><picker mode="time" value="{{form.endTime}}" data-field="endTime" bindchange="onTime"><view class="picker">{{form.endTime || '选择时间'}}</view></picker></view>
+      <view class="f-field"><text>顺序</text><input type="number" value="{{form.seq}}" data-field="seq" bindinput="onForm" /></view>
+      <button class="save" bindtap="onSave">保存</button>
+    </view>
+  </view>
+</view>

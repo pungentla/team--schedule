@@ -1,0 +1,39 @@
+<view class="page">
+  <view class="tabs">
+    <view class="tab {{tab === 'inbox' ? 'on' : ''}}" data-tab="inbox" bindtap="switchTab">
+      待我确认
+      <view class="badge" wx:if="{{inbox.length}}">{{inbox.length}}</view>
+    </view>
+    <view class="tab {{tab === 'mine' ? 'on' : ''}}" data-tab="mine" bindtap="switchTab">我发起的</view>
+  </view>
+
+  <view class="list">
+    <view
+      class="item"
+      wx:for="{{tab === 'inbox' ? inbox : mine}}"
+      wx:key="id"
+      data-id="{{item.id}}"
+      bindtap="goDetail"
+    >
+      <view class="i-head">
+        <text class="i-type">{{item.type === 'exchange' ? '互换' : '转班'}}</text>
+        <text class="i-status s-{{item.status}}">{{item.statusLabel}}</text>
+      </view>
+      <view class="i-body">
+        <block wx:if="{{item.fromAssign}}">
+          <text class="i-line">{{item.dateLabel}} {{item.fromAssign.shiftName}} · {{item.fromAssign.workTypeName}}</text>
+        </block>
+        <text class="i-people">
+          {{item.type === 'exchange'
+            ? item.requesterName + ' ⇄ ' + item.toUserName
+            : item.requesterName + ' → ' + item.toUserName}}
+        </text>
+      </view>
+      <view class="i-arrow">›</view>
+    </view>
+
+    <view class="empty" wx:if="{{!loading && !(tab === 'inbox' ? inbox : mine).length}}">
+      <text>{{tab === 'inbox' ? '没有待确认的换班' : '还没有发起过换班'}}</text>
+    </view>
+  </view>
+</view>
