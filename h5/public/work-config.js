@@ -18,11 +18,16 @@ function weeklyAssignmentRow(rule = {}, roles = false) {
   <label class="field">负责人角色<select data-duty-role required>${(roles ? ['primary','deputy'] : ['member']).map((role) => `<option value="${role}" ${role === rule.dutyRole ? 'selected' : ''}>${dutyRoleLabels[role]}</option>`).join('')}</select></label><button type="button" class="btn-ghost" data-remove-weekly>移除此人</button></div>`;
 }
 
+function dutyPairRow(pair = {}) {
+  return `<div class="duty-pair">${[['primaryUserId', '主负责人'], ['deputyUserId', '副负责人']].map(([key, label]) => `<label class="field">${label}<select data-pair-role="${key}" required><option value="">选择人员</option>${workConfig.users.map((u) => `<option value="${u.id}" ${u.id === pair[key] ? 'selected' : ''} ${u.status !== 'active' ? 'disabled' : ''}>${escapeHtml(u.name)}（${escapeHtml(u.employeeNo)}）${u.status !== 'active' ? '（停用）' : ''}</option>`).join('')}</select></label>`).join('')}<button class="btn-ghost" type="button" data-remove-pair>移除此组</button></div>`;
+}
+
 function workTypeFields(w = {}) {
   return `<label class="field">工作名称<input name="name" value="${escapeHtml(w.name || '')}" required maxlength="32"></label>
     <label class="field">工作说明<textarea name="description" rows="2" maxlength="200">${escapeHtml(w.description || '')}</textarea></label>
     <div class="row"><label>显示颜色 <input name="color" type="color" value="${/^#[a-f0-9]{6}$/i.test(w.color || '') ? w.color : '#4A90D9'}"></label><label>显示排序 <input name="sortOrder" type="number" min="0" max="999" value="${w.sortOrder || 0}" required></label></div>
     <label class="field checkbox-field"><input type="checkbox" name="requiresRoles" ${w.requiresRoles ? 'checked' : ''}> 区分主副负责人</label>
+    <fieldset class="duty-pair-config ${w.requiresRoles ? '' : 'hidden'}" ${w.requiresRoles ? '' : 'disabled'}><legend>固定搭档轮值 ${helpButton('pairs')}</legend><div class="duty-pairs">${(w.dutyPairs || []).map(dutyPairRow).join('')}</div><button class="btn-ghost" type="button" data-add-pair>＋ 添加主副搭档</button></fieldset>
     <fieldset class="weekday-options"><legend>每周需要哪些天</legend>${[1, 2, 3, 4, 5, 6, 0].map((day) => `<label><input name="weekdays" type="checkbox" value="${day}" ${(w.weekdays || [0, 1, 2, 3, 4, 5, 6]).includes(day) ? 'checked' : ''}> ${weekdayLabels[day]}</label>`).join('')}</fieldset>
     <label class="field">默认每班人数<input name="defaultNeed" type="number" required min="0" max="99" value="${w.defaultNeed ?? (w.requiresRoles ? 2 : 1)}"></label>
 
@@ -65,7 +70,7 @@ async function renderWorkConfig() {
     const [workTypes, shifts, users] = await Promise.all([API.workTypes(), API.shifts(), API.adminUsers()]);
     workConfig.users = users; workConfig.shifts = shifts;
     if (!isAdminUser()) return;
-    box.innerHTML = `<details><summary>＋ 新增工作类型</summary><form data-worktype-id="">${workTypeFields()}<p class="form-error" role="alert"></p><button class="btn-success" type="submit">新增工作</button></form></details>` + workTypes.map((w) => `<details><summary>${escapeHtml(w.name)} · ${w.active ? '已启用' : '已停用'}${w.requiresRoles ? ' · 至少 1 主 + 1 副' : ''}</summary><form data-worktype-id="${w.id}">${workTypeFields(w)}<p class="form-error" role="alert"></p><button class="btn-ghost" type="submit">保存工作设置</button></form></details>`).join('');
+    box.innerHTML = `<details><summary>＋ 新增工作类型</summary><form data-worktype-id="">${workTypeFields()}<p class="form-error" role="alert"></p><button class="btn-success" type="submit">新增工作</button></form></details>` + workTypes.map((w) => `<details><summary>${escapeHtml(w.name)} · ${w.active ? '已启用' : '已停用'}${w.requiresRoles ? ' · 至少 1 主 + 1 副' : ''}${w.dutyPairs?.length ? ` · ${w.dutyPairs.length} 组搭档` : ''}</summary><form data-worktype-id="${w.id}">${workTypeFields(w)}<p class="form-error" role="alert"></p><button class="btn-ghost" type="submit">保存工作设置</button></form></details>`).join('');
     $('#shift-config').innerHTML = `<details><summary>＋ 新增班次</summary><form data-shift-id="">${shiftFields({ seq: Math.max(0, ...shifts.map((s) => s.seq)) + 1 })}<p class="form-error" role="alert"></p><button class="btn-success" type="submit">新增班次</button></form></details>` + shifts.map((s) => `<details><summary>${escapeHtml(s.name)} ${escapeHtml(s.startTime)}–${escapeHtml(s.endTime)} · ${s.active ? '已启用' : '已停用'}</summary><form data-shift-id="${s.id}">${shiftFields(s)}<p class="form-error" role="alert"></p><button class="btn-ghost" type="submit">保存班次设置</button></form></details>`).join('');
     switchConfigTab(workConfig.tab, false);
     if (workConfig.tab === 'accounts') await renderAccounts();
@@ -102,6 +107,8 @@ async function renderRequirements() {
 
 function bindWorkConfigEvents() {
   $('#worktype-config').addEventListener('click', (event) => {
+    if (event.target.closest('[data-remove-pair]')) event.target.closest('.duty-pair').remove();
+    if (event.target.closest('[data-add-pair]')) event.target.closest('form').querySelector('.duty-pairs').insertAdjacentHTML('beforeend', dutyPairRow());
     if (event.target.closest('[data-remove-weekly]')) event.target.closest('.weekly-rule').remove();
     if (event.target.closest('[data-add-weekly]')) {
       const form = event.target.closest('form');
@@ -111,6 +118,8 @@ function bindWorkConfigEvents() {
   $('#worktype-config').addEventListener('change', (event) => {
     if (event.target.name !== 'requiresRoles') return;
     const roles = event.target.checked ? ['primary', 'deputy'] : ['member'];
+    const pairs = event.target.form.querySelector('.duty-pair-config');
+    pairs.classList.toggle('hidden', !event.target.checked); pairs.disabled = !event.target.checked;
     event.target.form.querySelectorAll('[data-duty-role]').forEach((select) => { select.innerHTML = roles.map((role) => `<option value="${role}">${dutyRoleLabels[role]}</option>`).join(''); });
   });
   $$('.config-nav button').forEach((button) => button.addEventListener('click', () => switchConfigTab(button.dataset.configTab)));
@@ -155,6 +164,7 @@ function bindWorkConfigEvents() {
       const e = form.elements;
       const body = { name: e.name.value.trim(), description: e.description.value.trim(), color: e.color.value, sortOrder: Number(e.sortOrder.value), requiresRoles: e.requiresRoles.checked, defaultNeed: Number(e.defaultNeed.value), weekdays: Array.from(form.querySelectorAll('[name="weekdays"]:checked')).map((input) => Number(input.value)) };
       body.weeklyAssignments = Array.from(form.querySelectorAll('.weekly-rule')).map((row) => ({ weekday: Number(row.querySelector('[data-weekday]').value), shiftId: Number(row.querySelector('[data-shift]').value), userId: Number(row.querySelector('[data-user]').value), dutyRole: row.querySelector('[data-duty-role]').value }));
+      body.dutyPairs = body.requiresRoles ? Array.from(form.querySelectorAll('.duty-pair')).map((row) => Object.fromEntries(Array.from(row.querySelectorAll('[data-pair-role]')).map((select) => [select.dataset.pairRole, Number(select.value)]))) : [];
       if (form.dataset.worktypeId) { body.active = e.active.checked; await API.updateWorkType(Number(form.dataset.worktypeId), body); }
       else { body.code = `WT_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`; await API.createWorkType(body); }
       toast('工作配置已保存');

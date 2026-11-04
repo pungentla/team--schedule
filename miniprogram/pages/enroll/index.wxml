@@ -5,6 +5,7 @@
   </view>
 
   <view class="section" wx:if="{{fixedAssignments.length}}"><view class="sec-title">长期固定安排</view><view class="sec-tip">自动参与，无需重复报名；下方可提交本周期请假和上限，勾选工作表示额外参与其他日期。</view><view wx:for="{{fixedAssignments}}" wx:key="index">{{item.workTypeName}} · {{item.weekdayLabel}} · {{item.shiftName}} · {{item.roleLabel}}</view></view>
+  <view class="section sec-tip" wx:if="{{period.status === 'published'}}">提交后补入近7天空位；取消工作会移除明天起的本期安排。</view>
   <!-- 1. 工作类型多选 -->
   <view class="section">
     <view class="sec-title">1. 选择工作类型 <text class="sec-tip">按选择顺序自动设置意愿优先级</text></view>

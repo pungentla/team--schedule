@@ -27,6 +27,7 @@ router.post('/', requireAuth, requireAdmin, (req, res) => {
       weekdays: b.weekdays === undefined ? undefined : parseWeekdays(b.weekdays),
       defaultNeed: optionalInt(b.defaultNeed, '默认人数', { min: 0, max: 99 }) ?? undefined,
       weeklyAssignments: b.weeklyAssignments,
+      dutyPairs: b.dutyPairs,
     },
     { user: req.user, requestId: req.requestId }
   );
@@ -46,6 +47,7 @@ router.put('/:id', requireAuth, requireAdmin, (req, res) => {
   if (b.weekdays !== undefined) fields.weekdays = parseWeekdays(b.weekdays);
   if (b.defaultNeed !== undefined) fields.defaultNeed = requireInt(b.defaultNeed, '默认人数', { min: 0, max: 99 });
   if (b.weeklyAssignments !== undefined) fields.weeklyAssignments = b.weeklyAssignments;
+  if (b.dutyPairs !== undefined) fields.dutyPairs = b.dutyPairs;
 
   const data = configService.updateWorkType(id, fields, { user: req.user, requestId: req.requestId });
   res.json({ data });

@@ -2,7 +2,7 @@ const { request } = require('../../../utils/request');
 const DAYS = [1, 2, 3, 4, 5, 6, 0].map((value) => ({ value, label: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][value], checked: true }));
 
 Page({
-  data: { items: [], shifts: [], employees: [], rules: [], dayNames: ['周日','周一','周二','周三','周四','周五','周六'], roleNames: ['主负责人','副负责人'], editing: null, showForm: false, weekdays: DAYS, form: { code: '', name: '', color: '#4A90D9', sortOrder: 0, defaultNeed: 1, weekdays: [0, 1, 2, 3, 4, 5, 6] } },
+  data: { items: [], shifts: [], employees: [], rules: [], pairs: [], dayNames: ['周日','周一','周二','周三','周四','周五','周六'], roleNames: ['主负责人','副负责人'], editing: null, showForm: false, weekdays: DAYS, form: { code: '', name: '', color: '#4A90D9', sortOrder: 0, defaultNeed: 1, weekdays: [0, 1, 2, 3, 4, 5, 6] } },
 
   onShow() { this.load(); },
 
@@ -12,13 +12,14 @@ Page({
   },
 
   openCreate() {
-    this.setData({ showForm: true, editing: null, weekdays: DAYS, rules: [], form: { code: '', name: '', color: '#4A90D9', sortOrder: 0, defaultNeed: 1, weekdays: [0, 1, 2, 3, 4, 5, 6] } });
+    this.setData({ showForm: true, editing: null, weekdays: DAYS, rules: [], pairs: [], form: { code: '', name: '', color: '#4A90D9', sortOrder: 0, defaultNeed: 1, weekdays: [0, 1, 2, 3, 4, 5, 6] } });
   },
 
   openEdit(e) {
     const it = this.data.items.find((x) => x.id === e.currentTarget.dataset.id);
     this.setData({ showForm: true, editing: it, form: { ...it }, weekdays: DAYS.map((d) => ({ ...d, checked: it.weekdays.includes(d.value) })) });
     this.setRules(it.weeklyAssignments || []);
+    this.setPairs(it.dutyPairs || []);
   },
 
   closeForm() { this.setData({ showForm: false }); },
@@ -49,9 +50,23 @@ Page({
     rows[index][field] = field === 'shiftId' ? this.data.shifts[value].id : field === 'userId' ? this.data.employees[value].id : field === 'dutyRole' ? ['primary','deputy'][value] : value;
     this.setRules(rows);
   },
+  setPairs(pairs) {
+    this.setData({ pairs: pairs.map((p) => ({ ...p,
+      primaryIndex: this.data.employees.findIndex((u) => u.id === p.primaryUserId),
+      deputyIndex: this.data.employees.findIndex((u) => u.id === p.deputyUserId),
+    })) });
+  },
+  addPair() { this.setPairs([...this.data.pairs, {}]); },
+  removePair(e) { this.setPairs(this.data.pairs.filter((p, i) => i !== Number(e.currentTarget.dataset.index))); },
+  onPair(e) {
+    const pairs = this.data.pairs.map((p) => ({ ...p }));
+    pairs[Number(e.currentTarget.dataset.index)][e.currentTarget.dataset.field] = this.data.employees[Number(e.detail.value)].id;
+    this.setPairs(pairs);
+  },
   async onSave() {
     const { form, editing } = this.data;
     if (!form.name.trim()) { wx.showToast({ title: '请填写名称', icon: 'none' }); return; }
+    form.dutyPairs = form.requiresRoles ? this.data.pairs.map(({ primaryUserId, deputyUserId }) => ({ primaryUserId, deputyUserId })) : [];
     form.weeklyAssignments = this.data.rules.map(({ weekday, shiftId, userId, dutyRole }) => ({ weekday, shiftId, userId, dutyRole }));
     if (editing) {
       await request(`/api/work-types/${editing.id}`, { method: 'PUT', data: form });

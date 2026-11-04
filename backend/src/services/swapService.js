@@ -15,7 +15,7 @@
  *  2. 每次确认后检查：无 pending 且无 rejected → 同一事务内生效。
  *  3. 生效前全量硬约束复检（期间别人可能已排班），失败整体 ROLLBACK 返回 409。
  *  4. 幂等：重复确认返回 409 ALREADY_DECIDED，不重复生效。
- *  5. 数据库部分唯一索引 (period_id,user_id,work_date,shift_id) WHERE status='active'
+ *  5. 数据库部分唯一索引 (run_id,user_id,work_date,shift_id,work_type_id) WHERE status='active'
  *     是并发场景下的最后兜底。
  */
 
@@ -49,6 +49,7 @@ function buildEmployeeState(period, userId) {
   const enrolled = enrollmentService.getEffectiveEnrollments(period.id).find((e) => e.userId === userId);
   const availabilityMap = enrollmentRepo.loadAvailabilityMap(period.id);
   const unavailabilityMap = enrollmentRepo.loadUnavailabilityMap(period.id);
+  const history = require('./scheduleService').loadHistory(period.start_date).get(userId);
 
   const emp = new EmployeeState(
     {
@@ -59,9 +60,9 @@ function buildEmployeeState(period, userId) {
       workTypes: enrolled ? enrolled.workTypes : [],
       availability: enrolled?.hasSubmitted ? [...(availabilityMap.get(userId) || [])] : [],
       unavailableDates: enrolled?.hasSubmitted ? [...(unavailabilityMap.get(userId) || [])] : [],
-      historyByWorkType: new Map(),
-      historyTotal: 0,
-      lastDateByWorkType: new Map(),
+      historyByWorkType: history?.byWorkType || new Map(),
+      historyTotal: history?.total || 0,
+      lastDateByWorkType: history?.lastDateByWorkType || new Map(),
     },
     {
       maxShiftsPerDay: period.max_shifts_per_day,
@@ -109,6 +110,7 @@ function precheckTransfer({ period, assignment, toUserId, excludeAssignmentId = 
     workTypeId: assignment.work_type_id,
     dutyRole: assignment.duty_role || 'member',
     manualOverride: true,
+    allowConcurrent: true,
   };
 
   const res = checkSlot(emp, slot, {
@@ -118,6 +120,16 @@ function precheckTransfer({ period, assignment, toUserId, excludeAssignmentId = 
   });
 
   if (res) problems.push({ code: res.code, message: res.message });
+  const pairs = JSON.parse(configRepo.findWorkType(assignment.work_type_id).duty_pairs_json);
+  if (pairs.length) {
+    const own = excludeAssignmentId ? scheduleRepo.findAssignment(excludeAssignmentId) : null;
+    const final = scheduleRepo.listAssignmentsWithUser(published.id).map((a) => ({
+      workDate: a.work_date, shiftId: a.shift_id, workTypeId: a.work_type_id, dutyRole: a.duty_role,
+      userId: a.id === assignment.id ? toUserId : a.id === own?.id ? assignment.user_id : a.user_id,
+    }));
+    const pairProblems = require('../scheduler/dutyPairs').validatePairs([{ workDate: assignment.work_date, shiftId: assignment.shift_id, workTypeId: assignment.work_type_id, dutyPairs: pairs }], final);
+    problems.push(...pairProblems);
+  }
 
   return problems;
 }
@@ -572,7 +584,7 @@ function refreshRunMetrics(runId) {
     else employees.push({ id: e.userId, name: e.name, employeeNo: e.employeeNo, historyTotal: history.get(e.userId)?.total || 0, workTypes: new Map(e.workTypes.map((w) => [w.workTypeId, w.priority])), historyCount: (id) => history.get(e.userId)?.byWorkType.get(id) || 0 });
   }
   const workTypes = previous.perWorkType.map((w) => ({ id: w.workTypeId, name: w.workTypeName, color: w.workTypeColor }));
-  const active = scheduleRepo.listAssignmentsWithUser(runId).map((a) => ({ userId: a.user_id, workTypeId: a.work_type_id }));
+  const active = scheduleRepo.listAssignmentsWithUser(runId).map((a) => ({ userId: a.user_id, workTypeId: a.work_type_id, workDate: a.work_date, shiftId: a.shift_id }));
   db.run('UPDATE schedule_runs SET metrics_json=? WHERE id=?', JSON.stringify(computeMetrics({ employees, workTypes, assignments: active })), runId);
 }
 
@@ -766,6 +778,7 @@ function listCandidates(assignmentId, viewer) {
 }
 
 module.exports = {
+  refreshRunMetrics,
   reassignByAdmin,
   createSwap,
   getSwapDetail,

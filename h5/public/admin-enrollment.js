@@ -29,8 +29,8 @@ async function loadAdminEnrollment() {
     if (token !== proxyEnrollment.request) return;
     proxyEnrollment.data = data;
     const selected = new Map(data.enrollment.workTypes.map((w) => [w.workTypeId, w]));
-    const locked = ['published', 'archived'].includes(data.context.period.status);
-    box.innerHTML = `${locked ? '<p class="notice">本周期已发布或归档，不能修改报名。</p>' : ''}<form id="admin-enrollment-form"><fieldset ${locked ? 'disabled' : ''}><legend class="sr-only">代报名工作和角色</legend><p class="form-help">${data.enrollment.exists ? '更新本周期报名' : '新增本周期报名'}${data.enrollment.maxShifts === 0 ? ' · 个人上限为 0，暂不接班' : ''}</p><div class="worktype-options">${data.context.workTypes.map((w) => `<div class="worktype-option"><label><input name="workTypeIds" type="checkbox" value="${w.id}" ${selected.has(w.id) ? 'checked' : ''}> ${escapeHtml(w.name)}</label>${w.requiresRoles ? `<label class="field">角色<select name="duty-${w.id}" required ${selected.has(w.id) ? '' : 'disabled'}><option value="">选择主副角色</option>${['primary','deputy','both'].map((role) => `<option value="${role}" ${selected.get(w.id)?.dutyRole === role ? 'selected' : ''}>${dutyRoleLabels[role]}</option>`).join('')}</select></label>` : ''}</div>`).join('')}</div><p class="form-help">保留原有请假与个人上限。${state.draftSchedule?.run ? '提交后需重新生成草稿。' : ''}</p><p id="admin-enroll-error" class="form-error" role="alert"></p><button type="submit" class="btn-success">提交代报名</button></fieldset></form>`;
+    const locked = data.context.period.status === 'archived';
+    box.innerHTML = `${locked ? '<p class="notice">本周期已归档，不能修改报名。</p>' : data.context.period.status === 'published' ? '<p class="notice">代报名可补入近7天空位；取消工作会移除明天起的本期安排。</p>' : ''}<form id="admin-enrollment-form"><fieldset ${locked ? 'disabled' : ''}><legend class="sr-only">代报名工作和角色</legend><p class="form-help">${data.enrollment.exists ? '更新本周期报名' : '新增本周期报名'}${data.enrollment.maxShifts === 0 ? ' · 个人上限为 0，暂不接班' : ''}</p><div class="worktype-options">${data.context.workTypes.map((w) => `<div class="worktype-option"><label><input name="workTypeIds" type="checkbox" value="${w.id}" ${selected.has(w.id) ? 'checked' : ''}> ${escapeHtml(w.name)}</label>${w.requiresRoles ? `<label class="field">角色<select name="duty-${w.id}" required ${selected.has(w.id) ? '' : 'disabled'}><option value="">选择主副角色</option>${['primary','deputy','both'].map((role) => `<option value="${role}" ${selected.get(w.id)?.dutyRole === role ? 'selected' : ''}>${dutyRoleLabels[role]}</option>`).join('')}</select></label>` : ''}</div>`).join('')}</div><p class="form-help">保留原有请假与个人上限。${state.draftSchedule?.run ? '提交后需重新生成草稿。' : ''}</p><p id="admin-enroll-error" class="form-error" role="alert"></p><button type="submit" class="btn-success">提交代报名</button></fieldset></form>`;
   } catch (err) { box.innerHTML = errorMarkup(err); }
 }
 function bindAdminEnrollmentEvents() {
@@ -49,14 +49,15 @@ function bindAdminEnrollmentEvents() {
     const form = event.target;
     const previous = new Map(proxyEnrollment.data.enrollment.workTypes.map((w) => [w.workTypeId, w]));
     const workTypes = Array.from(form.querySelectorAll('[name="workTypeIds"]:checked')).map((el) => ({ workTypeId: Number(el.value), priority: previous.get(Number(el.value))?.priority || 1, dutyRole: form.elements[`duty-${el.value}`]?.value || 'member' }));
-    if (!workTypes.length) { $('#admin-enroll-error').textContent = '至少选择一项工作。'; return; }
+    if (!workTypes.length && !proxyEnrollment.data.enrollment.submittedWorkTypeIds?.length && !proxyEnrollment.data.enrollment.withdrawnWorkTypeIds?.length && !proxyEnrollment.data.context.fixedAssignments?.length) { $('#admin-enroll-error').textContent = '至少选择一项工作。'; return; }
+    if (!confirmEnrollmentRemoval(proxyEnrollment.data.context, proxyEnrollment.data.enrollment, workTypes)) return;
     const periodId = proxyEnrollment.periodId, userId = proxyEnrollment.data.user.id;
     const fieldset = form.querySelector('fieldset');
     proxyEnrollment.saving = true; fieldset.disabled = true;
     $('#admin-enroll-user').disabled = true; $('#btn-admin-enroll-close').disabled = true;
     try {
-      await API.saveAdminEnrollment(periodId, userId, { workTypes });
-      resetAdminEnrollment(); toast(state.draftSchedule?.run ? '代报名已提交，请重新生成草稿' : '代报名已提交');
+      const result = await API.saveAdminEnrollment(periodId, userId, { workTypes });
+      resetAdminEnrollment(); toast(enrollmentSavedMessage(result) + (state.draftSchedule?.run ? '；请重新生成草稿' : ''));
       if (state.period?.id === periodId && isAdminUser()) await renderAdmin();
     } catch (err) { $('#admin-enroll-error').textContent = employeeError(err); }
     finally { proxyEnrollment.saving = false; fieldset.disabled = false; const userSelect = $('#admin-enroll-user'); if (userSelect) userSelect.disabled = false; $('#btn-admin-enroll-close').disabled = false; }

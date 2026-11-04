@@ -21,7 +21,7 @@ const config = {
   sessionTtlDays: intEnv('SESSION_TTL_DAYS', 30),
   defaultSeed: intEnv('SCHEDULE_SEED', 42),
   historyPeriods: intEnv('HISTORY_PERIODS', 6),
-  algoVersion: '1.2.0',
+  algoVersion: '1.3.0',
   // 排班迭代优化上限与最小改进阈值（保证收敛）
   maxOptimizeRounds: intEnv('MAX_OPTIMIZE_ROUNDS', 30),
   minImprovement: 1.0,
@@ -125,6 +125,7 @@ const SWAP_PARTICIPANT_STATUS = Object.freeze({
 const SCORE_WEIGHTS = Object.freeze({
   base: 100,
   rotation: 60,
+  repeatWork: -120,
   rarity: 12,
   balance: 25,
   preference: { 1: 15, 2: 8, 3: 0 },

@@ -121,7 +121,7 @@ for round in 1..maxRounds(30):
 `backend/src/scheduler/scoring.js`
 
 ```js
-score = rotation + rarity + balance + preference + periodLoad + weekLoad + jitter
+score = rotation + repeatWork + rarity + balance + preference + freshness + periodLoad + weekLoad + jitter
 ```
 
 ### 4.1 轮转项（最高权重 60）
@@ -192,7 +192,7 @@ jitter: 0.999 * deterministicJitter(...)  // 0~0.999
 | H6 | 个人上限 | `totalAssigned < maxShifts` | `period_limit` |
 | H7 | 每周上限 | 该 ISO 周已排 < `maxShiftsPerWeek` | `weekly_limit` |
 | H8 | 禁止连班 | 同日已有班次且 `forbidConsecutive` 时，`|seq差| === 1` 则拒绝 | `consecutive` |
-| H9 | 岗位占用 | 同人同日同班次已有分配 | `slot_taken` |
+| H9 | 岗位占用 | 同人同日同班次同一工作已有分配 | `slot_taken` |
 
 > 编号以 `constraints.js` 中的 `REASON` 注释为准（H9 是后加的岗位占用检查）。
 
@@ -301,3 +301,11 @@ npm run verify  # 内含"同 seed 两次生成 inputHash 一致"断言
 2. **无回溯**：贪心阶段不回溯，极端约束下可能比"人工排"差。当前通过迭代优化部分弥补。
 3. **规模**：20–100 人表现良好；200 人以上建议先跑 `input-preview` 看候选规模，必要时增大 `maxOptimizeRounds` 或引入分治。
 4. **互换优化覆盖度**：PairSwap 只考虑两人互换，三人以上的连锁调整未实现。
+
+## 兼任与主副搭档（1.3.0）
+
+先按原规则分散安排，再尝试通过兼任填剩余空位。同班次不同工作计一个班次，EmployeeState 按日期/班次去重维护上限，按工作保留人次；同一工作重复占名额始终禁止。
+
+配置 dutyPairs 的工作先整组选择主副，兼顾两人的评分及资格、可用时间和上限；允许搭档组共享人员。为保持组合，优化阶段不单独替换该工作的成员。额外人数也需有配置中的搭档在场。无法组成完整搭档时保留缺口，不排半组；发布复检搭配。已有排班在新增报名时只执行近7天空位补入，不运行全量优化。
+
+轮转评分增加上一轮同项工作人员的软惩罚（-120），通过历史及本周期已排日期识别上一轮；仍可在其他人不可用时补位。新鲜度改为 `4 * days / (1 + days)`，越久未做越优先，从未做过为 4。跨周期历史只读取新周期开始日前的工作日期；固定名单与手工指定不因评分被改动。

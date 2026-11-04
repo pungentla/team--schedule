@@ -13,17 +13,25 @@ const { PERIOD_STATUS, ENROLLMENT_STATUS } = require('../config');
 const { badRequest, notFound, conflict, forbidden } = require('../utils/errors');
 const { isDateString } = require('../utils/date');
 
+function submittedWorkIds(enrollment) {
+  if (!enrollment) return [];
+  if (enrollment.submitted_work_type_ids_json !== null) return JSON.parse(enrollment.submitted_work_type_ids_json);
+  return enrollment.status === 'submitted' ? enrollmentRepo.listEnrollmentWorkTypes(enrollment.id).map((w) => w.work_type_id) : [];
+}
+
 /** 周期报名与管理员长期报名合并；固定资格仅适用于指定星期、班次和角色。 */
 function getEffectiveEnrollments(periodId) {
   const period = periodRepo.findPeriod(periodId);
   if (!period) throw notFound('排班周期不存在');
   const scope = periodRepo.getScope(period);
+  const withdrawals = new Map(db.all('SELECT user_id,withdrawn_work_type_ids_json FROM enrollments WHERE period_id=?', periodId).map((e) => [e.user_id, new Set(JSON.parse(e.withdrawn_work_type_ids_json))]));
   const entries = new Map(enrollmentRepo.loadSubmittedEnrollments(periodId).map((e) => [e.userId, { ...e, hasSubmitted: true }]));
   const users = new Map(db.all("SELECT id,name,employee_no FROM users WHERE status='active'").map((u) => [u.id, u]));
   const activeShifts = new Set(configRepo.listShifts({ includeInactive: false }).filter((s) => scope.shiftIds === null || scope.shiftIds.includes(s.id)).map((s) => s.id));
   for (const work of configRepo.listWorkTypes({ includeInactive: false }).filter((w) => scope.workTypeIds === null || scope.workTypeIds.includes(w.id))) {
     for (const rule of JSON.parse(work.weekly_assignments_json)) {
       const user = users.get(rule.userId);
+      if (withdrawals.get(rule.userId)?.has(work.id)) continue;
       if (!user || !activeShifts.has(rule.shiftId) || !JSON.parse(work.weekdays_json).includes(rule.weekday)) continue;
       if (!entries.has(user.id)) entries.set(user.id, { userId: user.id, name: user.name, employeeNo: user.employee_no, maxShifts: null, workTypes: [], hasSubmitted: false });
       const entry = entries.get(user.id);
@@ -39,8 +47,8 @@ function getEffectiveEnrollments(periodId) {
 
 function assertEditable(period, { allowDraft = false } = {}) {
   if (!period) throw notFound('排班周期不存在');
-  if (period.status === PERIOD_STATUS.PUBLISHED || period.status === PERIOD_STATUS.ARCHIVED) {
-    throw conflict('PERIOD_LOCKED', '该周期排班已发布，不能再修改报名');
+  if (period.status === PERIOD_STATUS.ARCHIVED) {
+    throw conflict('PERIOD_LOCKED', '该周期已归档，不能再修改报名');
   }
   if (period.status === PERIOD_STATUS.DRAFT && !allowDraft) {
     throw conflict('PERIOD_NOT_OPEN', '该周期尚未开放报名');
@@ -58,6 +66,8 @@ function saveEnrollment(periodId, userId, payload, ctx, { byAdmin = false } = {}
   if (byAdmin) requireEnrollmentAdmin(ctx);
   assertEditable(period, { allowDraft: byAdmin });
 
+  const previous = enrollmentRepo.findEnrollment(periodId, userId);
+  const submittedWorkTypeIds = submittedWorkIds(previous);
   const submit = payload.submit !== false; // 默认提交
   const workTypes = payload.workTypes || [];
 
@@ -79,7 +89,7 @@ function saveEnrollment(periodId, userId, payload, ctx, { byAdmin = false } = {}
     if (submit && requiresRoles && dutyRole === 'member') throw badRequest(`请为「${validWorkTypes.get(wtId).name}」选择主负责人、副负责人或两者皆可`);
     normalizedWt.push({ workTypeId: wtId, priority, dutyRole });
   }
-  if (submit && normalizedWt.length === 0 && !getEffectiveEnrollments(periodId).some((e) => e.userId === userId && e.workTypes.some((w) => w.fixedRules?.length))) throw badRequest('至少选择一种工作类型才能提交报名');
+  if (submit && normalizedWt.length === 0 && !submittedWorkTypeIds.length && !JSON.parse(previous?.withdrawn_work_type_ids_json || '[]').length && !getEffectiveEnrollments(periodId).some((e) => e.userId === userId && e.workTypes.some((w) => w.fixedRules?.length))) throw badRequest('至少选择一种工作类型才能提交报名');
 
   const maxShifts = payload.maxShifts === undefined || payload.maxShifts === null || payload.maxShifts === ''
     ? null
@@ -108,6 +118,7 @@ function saveEnrollment(periodId, userId, payload, ctx, { byAdmin = false } = {}
 
   // ---- 写入（单事务，先删后插保证幂等） ----
   let enrollmentId;
+  let scheduleChanges = null;
   db.tx(() => {
     const existing = enrollmentRepo.findEnrollment(periodId, userId);
     if (existing) {
@@ -130,6 +141,17 @@ function saveEnrollment(periodId, userId, payload, ctx, { byAdmin = false } = {}
     enrollmentRepo.replaceEnrollmentWorkTypes(enrollmentId, normalizedWt);
     enrollmentRepo.replaceAvailability(periodId, userId, availSlots);
     enrollmentRepo.replaceUnavailability(periodId, userId, unavail);
+    if (submit) {
+      const selectedIds = normalizedWt.map((w) => w.workTypeId);
+      const removedIds = submittedWorkTypeIds.filter((id) => !selectedIds.includes(id));
+      const withdrawn = new Set(previous ? JSON.parse(previous.withdrawn_work_type_ids_json) : []);
+      removedIds.forEach((id) => withdrawn.add(id));
+      selectedIds.forEach((id) => withdrawn.delete(id));
+      db.run('UPDATE enrollments SET submitted_work_type_ids_json=?,withdrawn_work_type_ids_json=? WHERE id=?', JSON.stringify(selectedIds), JSON.stringify([...withdrawn]), enrollmentId);
+      if (period.status === PERIOD_STATUS.PUBLISHED) {
+        scheduleChanges = require('./enrollmentScheduleService').applyPublishedEnrollment(periodId, userId, removedIds, ctx);
+      }
+    }
   });
 
   auditRepo.log({
@@ -141,6 +163,7 @@ function saveEnrollment(periodId, userId, payload, ctx, { byAdmin = false } = {}
     detail: {
       targetUserId: userId,
       submittedByAdmin: byAdmin,
+      scheduleChanges,
       workTypes: normalizedWt,
       maxShifts,
       availabilityCount: availSlots.length,
@@ -150,7 +173,7 @@ function saveEnrollment(periodId, userId, payload, ctx, { byAdmin = false } = {}
     requestId: ctx.requestId,
   });
 
-  return getMyEnrollment(periodId, userId);
+  return { ...getMyEnrollment(periodId, userId), ...(scheduleChanges ? { scheduleChanges } : {}) };
 }
 
 function requireEnrollmentAdmin(ctx) {
@@ -169,7 +192,7 @@ function getAdminEnrollment(periodId, userId, ctx) {
 }
 function saveAdminEnrollment(periodId, userId, payload, ctx) {
   requireEnrollmentAdmin(ctx);
-  const workTypes = requireArray(payload.workTypes, '工作类型', { min: 1, max: 50 });
+  const workTypes = requireArray(payload.workTypes, '工作类型', { min: 0, max: 50 });
   return db.tx(() => {
     getProxyTarget(userId);
     const previous = getMyEnrollment(periodId, userId);
@@ -187,6 +210,8 @@ function getMyEnrollment(periodId, userId) {
   if (!e) {
     return {
       exists: false,
+      submittedWorkTypeIds: [],
+      withdrawnWorkTypeIds: [],
       periodId,
       workTypes: [],
       maxShifts: null,
@@ -197,6 +222,8 @@ function getMyEnrollment(periodId, userId) {
   }
   return {
     exists: true,
+    submittedWorkTypeIds: submittedWorkIds(e),
+    withdrawnWorkTypeIds: JSON.parse(e.withdrawn_work_type_ids_json),
     enrollmentId: e.id,
     periodId,
     status: e.status,

@@ -128,6 +128,7 @@ router.get('/assignments/:id/explain', requireAuth, requireAdmin, (req, res) => 
   const period = periodRepo.findPeriod(row.period_id);
   if (!period) throw notFound('排班周期不存在');
   const { emp } = buildEmployeeState(period, row.user_id);
+  const employees = require('../services/enrollmentService').getEffectiveEnrollments(period.id).map((e) => buildEmployeeState(period, e.userId).emp);
   const { explainScore } = require('../scheduler/scoring');
 
   res.json({
@@ -143,7 +144,7 @@ router.get('/assignments/:id/explain', requireAuth, requireAdmin, (req, res) => 
       explanation: explainScore(
         emp,
         { workDate: row.work_date, shiftId: row.shift_id, shiftSeq: row.seq, workTypeId: row.work_type_id },
-        { seed: 42, refDate: period.start_date, workTypeRarity: null }
+        { seed: 42, refDate: period.start_date, workTypeRarity: null, employees }
       ),
       note: '评分为「当前状态下」的重新计算值，与排班当时的中间状态可能不同，仅供理解算法逻辑',
     },

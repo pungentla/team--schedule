@@ -11,7 +11,7 @@
  * H6 周期总数 < min(个人上限, 周期上限)   → canAssign 检查
  * H7 每周班次数 < maxShiftsPerWeek       → canAssign 检查
  * H8 禁止连续班次（同日 |Δseq| == 1）     → canAssign 检查
- * H9 同一人同一 (date, shift) 只能一个岗位 → 由 H5(默认1) + 数据库部分唯一索引兜底
+ * H9 同一人同一 (date, shift, work) 只能一个岗位；空位可兼任不同工作
  *
  * 约束编号会出现在缺口归因里，便于前端解释"为什么没人能补"。
  */
@@ -74,6 +74,8 @@ class EmployeeState {
     this.byWeek = new Map();
     /** Map<workTypeId, count> 本周期已排 */
     this.byWorkType = new Map();
+    this.bySlotWork = new Map();
+    this.workDates = new Map();
     this.total = 0;
 
     /** Map<workTypeId, count> 历史累计（跨周期） */
@@ -99,6 +101,13 @@ class EmployeeState {
     return this.byWorkType.get(workTypeId) || 0;
   }
 
+  lastWorkDateBefore(workTypeId, date) {
+    const history = this.lastDateByWorkType.get(workTypeId);
+    let last = history && history < date ? history : null;
+    for (const day of this.workDates.get(workTypeId)?.keys() || []) if (day < date && (!last || day > last)) last = day;
+    return last;
+  }
+
   dayShifts(date) {
     return this.byDate.get(date) || [];
   }
@@ -110,23 +119,39 @@ class EmployeeState {
   /** 记录一次分配 */
   addAssignment({ date, shiftSeq, workTypeId }) {
     if (!this.byDate.has(date)) this.byDate.set(date, []);
+    const newShift = !this.byDate.get(date).includes(shiftSeq);
     this.byDate.get(date).push(shiftSeq);
     const wk = isoWeekKey(date);
-    this.byWeek.set(wk, (this.byWeek.get(wk) || 0) + 1);
+    if (newShift) this.byWeek.set(wk, (this.byWeek.get(wk) || 0) + 1);
     this.byWorkType.set(workTypeId, (this.byWorkType.get(workTypeId) || 0) + 1);
-    this.total += 1;
+    const key = `${date}|${shiftSeq}|${workTypeId}`;
+    this.bySlotWork.set(key, (this.bySlotWork.get(key) || 0) + 1);
+    if (!this.workDates.has(workTypeId)) this.workDates.set(workTypeId, new Map());
+    const dates = this.workDates.get(workTypeId);
+    dates.set(date, (dates.get(date) || 0) + 1);
+    if (newShift) this.total += 1;
   }
 
   /** 撤销一次分配（用于回填/交换时临时释放） */
   removeAssignment({ date, shiftSeq, workTypeId }) {
     const arr = this.byDate.get(date);
+    const key = `${date}|${shiftSeq}|${workTypeId}`;
+    if (!this.bySlotWork.has(key)) return;
+    const remaining = this.bySlotWork.get(key) - 1;
+    if (remaining) this.bySlotWork.set(key, remaining);
+    else this.bySlotWork.delete(key);
+    const dates = this.workDates.get(workTypeId);
+    const count = dates.get(date) - 1;
+    if (count) dates.set(date, count); else dates.delete(date);
+    if (!dates.size) this.workDates.delete(workTypeId);
     if (arr) {
       const i = arr.indexOf(shiftSeq);
       if (i >= 0) arr.splice(i, 1);
       if (arr.length === 0) this.byDate.delete(date);
     }
     const wk = isoWeekKey(date);
-    const wc = (this.byWeek.get(wk) || 0) - 1;
+    const removedShift = !arr?.includes(shiftSeq);
+    const wc = (this.byWeek.get(wk) || 0) - Number(removedShift);
     if (wc > 0) this.byWeek.set(wk, wc);
     else this.byWeek.delete(wk);
 
@@ -134,7 +159,7 @@ class EmployeeState {
     if (tc > 0) this.byWorkType.set(workTypeId, tc);
     else this.byWorkType.delete(workTypeId);
 
-    this.total = Math.max(0, this.total - 1);
+    if (removedShift) this.total = Math.max(0, this.total - 1);
   }
 
   clone() {
@@ -154,6 +179,8 @@ class EmployeeState {
     c.byDate = new Map([...this.byDate].map(([k, v]) => [k, [...v]]));
     c.byWeek = new Map(this.byWeek);
     c.byWorkType = new Map(this.byWorkType);
+    c.bySlotWork = new Map(this.bySlotWork);
+    c.workDates = new Map([...this.workDates].map(([id, dates]) => [id, new Map(dates)]));
     c.total = this.total;
     c.historyByWorkType = new Map(this.historyByWorkType);
     c.historyTotal = this.historyTotal;
@@ -188,13 +215,14 @@ function checkSlot(emp, slot, period) {
 
   const dayShifts = emp.dayShifts(workDate);
 
-  // H9 同一班次只能一个岗位（这里是显式检查，DB 索引兜底）
-  if (dayShifts.includes(shiftSeq)) {
+  // 同一工作不能重复占名额，包括主副两个角色；兼任只用于不同工作。
+  const sameShift = dayShifts.includes(shiftSeq);
+  if (emp.bySlotWork.has(`${workDate}|${shiftSeq}|${workTypeId}`) || (sameShift && !slot.allowConcurrent)) {
     return { code: REASON.SLOT_TAKEN, message: REASON_LABELS[REASON.SLOT_TAKEN] };
   }
 
   // H5 每日上限
-  if (dayShifts.length >= period.maxShiftsPerDay) {
+  if (!sameShift && new Set(dayShifts).size >= period.maxShiftsPerDay) {
     return { code: REASON.DAILY_LIMIT, message: REASON_LABELS[REASON.DAILY_LIMIT] };
   }
 
@@ -208,12 +236,12 @@ function checkSlot(emp, slot, period) {
   }
 
   // H6 周期上限（个人上限优先）
-  if (emp.total >= emp.effectiveCap) {
+  if (emp.effectiveCap === 0 || (!sameShift && emp.total >= emp.effectiveCap)) {
     return { code: REASON.PERIOD_LIMIT, message: REASON_LABELS[REASON.PERIOD_LIMIT] };
   }
 
   // H7 每周上限
-  if (emp.weekCount(workDate) >= period.maxShiftsPerWeek) {
+  if (!sameShift && emp.weekCount(workDate) >= period.maxShiftsPerWeek) {
     return { code: REASON.WEEKLY_LIMIT, message: REASON_LABELS[REASON.WEEKLY_LIMIT] };
   }
 

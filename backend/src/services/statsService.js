@@ -21,7 +21,7 @@ function getPeriodStats(periodId) {
 
   // 从 assignments 现算（保证换班后的数据是真实的，而不是生成时的快照）
   const rows = db.all(
-    `SELECT a.user_id, a.work_type_id, u.name, u.employee_no
+    `SELECT a.user_id, a.work_type_id, a.work_date, a.shift_id, u.name, u.employee_no
        FROM assignments a
        JOIN users u ON u.id = a.user_id
       WHERE a.run_id = ? AND a.status = 'active'`,
@@ -85,7 +85,7 @@ function getPeriodStats(periodId) {
     };
   });
 
-  const assignments = rows.map((r) => ({ userId: r.user_id, workTypeId: r.work_type_id }));
+  const assignments = rows.map((r) => ({ userId: r.user_id, workTypeId: r.work_type_id, workDate: r.work_date, shiftId: r.shift_id }));
   const metrics = computeMetrics({
     employees: fakeEmployees,
     workTypes,

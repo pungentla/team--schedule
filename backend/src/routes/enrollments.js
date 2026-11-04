@@ -40,7 +40,7 @@ router.get('/:periodId/users/:userId', requireAuth, requireAdmin, (req, res) => 
   res.json({ data: enrollmentService.getAdminEnrollment(intParam(req.params.periodId, 'periodId'), intParam(req.params.userId, 'userId'), ctx(req)) });
 });
 router.post('/:periodId/users/:userId', requireAuth, requireAdmin, (req, res) => {
-  const workTypes = requireArray(req.body?.workTypes, 'workTypes', { min: 1, max: 50 });
+  const workTypes = requireArray(req.body?.workTypes, 'workTypes', { min: 0, max: 50 });
   res.json({ data: enrollmentService.saveAdminEnrollment(intParam(req.params.periodId, 'periodId'), intParam(req.params.userId, 'userId'), { workTypes }, ctx(req)) });
 });
 

@@ -474,3 +474,101 @@ test('availability_allowlist: 只排在有标记的可用时段内', () => {
   const assignedDates = result.assignments.map((a) => a.workDate).sort();
   assert.deepEqual(assignedDates, ['2025-01-06', '2025-01-08']);
 });
+
+test('空位最后允许兼任不同工作，同一班次计1班，并通过完整草稿校验', () => {
+  const { evaluateAssignments } = require('../src/scheduler');
+  const input = { period: makePeriod({ maxShiftsPerDay: 1, maxShiftsPerWeek: 1 }), seed: 42,
+    employees: [makeEmployee(1, [WT.FRONT, WT.KITCHEN], { maxShifts: 1 })],
+    slots: [WT.FRONT, WT.KITCHEN].flatMap((workTypeId) => makeSlots({ dates: ['2025-01-06', '2025-01-07'], shiftId: 10, workTypeId, needCount: 1 })),
+  };
+  const result = generateSchedule(input);
+  assert.equal(result.assignments.length, 2);
+  assert.deepEqual(new Set(result.assignments.map((a) => a.workDate)), new Set(['2025-01-06']));
+  assert.equal(result.employees[0].total, 1);
+  assert.equal(result.metrics.workload.distribution[0].assigned, 1);
+  assert.equal(result.gaps.byEmployee[0].assigned, 1);
+  assert.equal(evaluateAssignments(input, result.assignments).problems.length, 0);
+  const { EmployeeState, checkSlot } = require('../src/scheduler/constraints');
+  const state = new EmployeeState(input.employees[0], input.period);
+  for (const a of result.assignments) state.addAssignment({ date: a.workDate, shiftSeq: a.shiftSeq, workTypeId: a.workTypeId });
+  assert.equal(checkSlot(state, { ...result.assignments[0], allowConcurrent: true }, input.period).code, 'slot_taken');
+  const cloned = state.clone();
+  cloned.removeAssignment({ date: '2025-01-06', shiftSeq: 1, workTypeId: WT.FRONT });
+  assert.equal(cloned.total, 1); assert.equal(cloned.weekCount('2025-01-06'), 1);
+  cloned.removeAssignment({ date: '2025-01-06', shiftSeq: 1, workTypeId: WT.KITCHEN });
+  assert.equal(cloned.total, 0); assert.equal(cloned.weekCount('2025-01-06'), 0); assert.equal(state.total, 1);
+});
+
+test('有足够人时优先分给不同人员；兼任不突破请假和相邻班次限制', () => {
+  const slots = [WT.FRONT, WT.KITCHEN].flatMap((workTypeId) => makeSlots({ dates: ['2025-01-06'], shiftId: 10, workTypeId, needCount: 1 }));
+  const input = { period: makePeriod(), seed: 42, slots, employees: [1, 2].map((id) => makeEmployee(id, [WT.FRONT, WT.KITCHEN])) };
+  assert.equal(new Set(generateSchedule(input).assignments.map((a) => a.userId)).size, 2);
+  input.employees = [makeEmployee(1, [WT.FRONT, WT.KITCHEN], { unavailableDates: ['2025-01-06'] })];
+  assert.equal(generateSchedule(input).assignments.length, 0);
+});
+
+test('允许 A主+B副、C主+D副、A主+D副 重叠搭档；只整组生成并跳过不可用搭档', () => {
+  const { evaluateAssignments } = require('../src/scheduler');
+  const employees = [1, 2, 3, 4].map((id) => makeEmployee(id, [WT.FRONT], { workTypes: [{ workTypeId: WT.FRONT, priority: 1, dutyRole: [1, 3].includes(id) ? 'primary' : 'deputy' }] }));
+  const pairs = [{ primaryUserId: 1, deputyUserId: 2 }, { primaryUserId: 3, deputyUserId: 4 }, { primaryUserId: 1, deputyUserId: 4 }];
+  const input = { period: makePeriod({ maxShiftsPerWeek: 7 }), seed: 12, employees,
+    slots: makeSlots({ dates: allDates('2025-01-06', '2025-01-12'), shiftId: 10, workTypeId: WT.FRONT, needCount: 2 }).map((s) => ({ ...s, requiresRoles: true, dutyPairs: pairs })),
+  };
+  const result = generateSchedule(input);
+  assert.equal(result.assignments.length, 14);
+  for (const date of allDates('2025-01-06', '2025-01-12')) {
+    const people = result.assignments.filter((a) => a.workDate === date);
+    assert.ok(pairs.some((p) => p.primaryUserId === people.find((a) => a.dutyRole === 'primary').userId && p.deputyUserId === people.find((a) => a.dutyRole === 'deputy').userId));
+  }
+  assert.equal(evaluateAssignments(input, result.assignments).problems.length, 0);
+  const invalid = result.assignments.filter((a) => a.workDate !== '2025-01-06');
+  invalid.push({ workDate: '2025-01-06', shiftId: 10, workTypeId: WT.FRONT, userId: 3, dutyRole: 'primary' }, { workDate: '2025-01-06', shiftId: 10, workTypeId: WT.FRONT, userId: 2, dutyRole: 'deputy' });
+  assert.equal(evaluateAssignments(input, invalid).problems[0].code, 'DUTY_PAIR_MISMATCH');
+  employees[0].unavailableDates = ['2025-01-06']; employees[3].unavailableDates = ['2025-01-06'];
+  const absent = generateSchedule(input);
+  assert.equal(absent.assignments.filter((a) => a.workDate === '2025-01-06').length, 0, '不能只排半组，也不能擅自组成 C主+B副');
+});
+
+test('同工作优先避开上次人员，周期内继续轮转；没人可替时保留补位能力', () => {
+  const dates = allDates('2025-01-06', '2025-01-12');
+  const employees = [1, 2, 3].map((id) => makeEmployee(id, [WT.KITCHEN], {
+    historyByWorkType: new Map([[WT.KITCHEN, 10]]), historyTotal: 10,
+    lastDateByWorkType: new Map([[WT.KITCHEN, id === 1 ? '2025-01-05' : '2025-01-01']]),
+  }));
+  const input = { period: makePeriod({ maxShiftsPerWeek: 7 }), employees, seed: 42,
+    slots: makeSlots({ dates, shiftId: 10, workTypeId: WT.KITCHEN, needCount: 1 }),
+  };
+  const result = generateSchedule(input);
+  assert.notEqual(result.assignments[0].userId, 1, '上次已做的人不应再次优先');
+  for (let i = 1; i < result.assignments.length; i++) assert.notEqual(result.assignments[i].userId, result.assignments[i - 1].userId, '有替代人员时避免连续做同一工作');
+  employees[1].unavailableDates = dates; employees[2].unavailableDates = dates;
+  const fallback = generateSchedule(input);
+  assert.equal(fallback.assignments.length, 7); assert.ok(fallback.assignments.every((a) => a.userId === 1));
+});
+
+test('固定搭档按两人的历史与本期记录轮转，尽量避开上次搭档', () => {
+  const pairs = [{ primaryUserId: 1, deputyUserId: 2 }, { primaryUserId: 3, deputyUserId: 4 }, { primaryUserId: 1, deputyUserId: 4 }];
+  const employees = [1, 2, 3, 4].map((id) => makeEmployee(id, [WT.FRONT], {
+    workTypes: [{ workTypeId: WT.FRONT, priority: 1, dutyRole: id % 2 ? 'primary' : 'deputy' }],
+    historyByWorkType: new Map([[WT.FRONT, 5]]), historyTotal: 5,
+    lastDateByWorkType: new Map([[WT.FRONT, id <= 2 ? '2025-01-05' : '2025-01-01']]),
+  }));
+  const dates = allDates('2025-01-06', '2025-01-12');
+  const result = generateSchedule({ period: makePeriod({ maxShiftsPerWeek: 7 }), seed: 2, employees,
+    slots: makeSlots({ dates, shiftId: 10, workTypeId: WT.FRONT, needCount: 2 }).map((s) => ({ ...s, requiresRoles: true, dutyPairs: pairs })),
+  });
+  for (let i = 0; i < dates.length; i++) {
+    const ids = result.assignments.filter((a) => a.workDate === dates[i]).map((a) => a.userId).sort();
+    assert.deepEqual(ids, i % 2 ? [1, 2] : [3, 4]);
+  }
+});
+
+test('新鲜度按距离该工作上次安排的天数递增，未来安排不作为过去记录', () => {
+  const { EmployeeState } = require('../src/scheduler/constraints');
+  const { explainScore } = require('../src/scheduler/scoring');
+  const e = new EmployeeState(makeEmployee(1, [WT.FRONT], { lastDateByWorkType: new Map([[WT.FRONT, '2025-01-01']]) }), makePeriod());
+  e.addAssignment({ date: '2025-01-20', shiftSeq: 1, workTypeId: WT.FRONT });
+  assert.equal(e.lastWorkDateBefore(WT.FRONT, '2025-01-06'), '2025-01-01');
+  const score = (date) => explainScore(e, { workDate: date, shiftId: 10, workTypeId: WT.FRONT }, { seed: 1 }).breakdown.freshness;
+  assert.ok(score('2025-01-10') > score('2025-01-02'));
+});

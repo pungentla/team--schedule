@@ -23,8 +23,9 @@ const { buildGapReport } = require('./gapReport');
 const { computeMetrics } = require('./metrics');
 const { isoWeekKey } = require('../utils/date');
 const { hashString } = require('../utils/random');
+const { pairProblem, validatePairs } = require('./dutyPairs');
 
-const ALGO_VERSION = '1.2.0';
+const ALGO_VERSION = '1.3.0';
 
 /**
  * @param {object} input
@@ -55,7 +56,7 @@ function generateSchedule(input, opts = {}) {
   // 按历史轮转的关键字排序，让确定性抖动之外的顺序也稳定
   employees.sort((a, b) => a.employeeNo.localeCompare(b.employeeNo) || a.id - b.id);
 
-  const ctx = { seed, periodStartDate: period.startDate, refDate: period.startDate };
+  const ctx = { seed, periodStartDate: period.startDate, refDate: period.startDate, employees };
 
   // 岗位稀缺度：每个工作类型有多少人报名。人越少越"难找替补"，需要额外加成。
   const rarityMap = new Map();
@@ -141,22 +142,53 @@ function generateSchedule(input, opts = {}) {
 
   const fixedSeats = new Set();
   const fixedConflicts = [];
+  const pairedWorks = new Set(slots.filter((s) => s.dutyPairs?.length).map((s) => s.workTypeId));
   for (const rule of input.fixedAssignments || []) {
     const matches = seats.filter((s) => s.workDate === rule.workDate && s.shiftId === rule.shiftId && s.workTypeId === rule.workTypeId && !fixedSeats.has(s.seatKey));
     const seat = matches.find((s) => s.dutyRole === rule.dutyRole) || matches.find((s) => s.dutyRole === 'either');
     const emp = empById.get(rule.userId);
     if (seat) fixedSeats.add(seat.seatKey);
-    const problem = !seat ? '固定人数超过需求或主副名额不足' : !emp ? '固定员工不存在或已停用' : checkSlot(emp, { ...seat, dutyRole: rule.dutyRole }, period)?.message;
+    const problem = !seat ? '固定人数超过需求或主副名额不足' : !emp ? '固定员工不存在或已停用' : checkSlot(emp, { ...seat, dutyRole: rule.dutyRole, allowConcurrent: true }, period)?.message;
     if (problem) {
       fixedConflicts.push({ ...rule, name: emp?.name || `员工 #${rule.userId}`, message: problem });
     } else {
       recordAssignment({ ...seat, dutyRole: rule.dutyRole }, emp, true);
     }
   }
+  fixedConflicts.push(...validatePairs(slots, [...assigned.values()]).map((p) => ({ ...p, message: p.message })));
+
+  function fillPairedSeats(allowConcurrent) {
+    for (const slot of slots.filter((s) => s.dutyPairs?.length)) {
+      const cellSeats = seats.filter((s) => s.workDate === slot.workDate && s.shiftId === slot.shiftId && s.workTypeId === slot.workTypeId);
+      let existing = cellSeats.flatMap((s) => assigned.has(s.seatKey) ? [assigned.get(s.seatKey)] : []);
+      if (pairProblem(slot.dutyPairs, existing)) continue;
+      const primary = cellSeats.find((s) => s.dutyRole === 'primary');
+      const deputy = cellSeats.find((s) => s.dutyRole === 'deputy');
+      if (!primary || !deputy) continue;
+      if (!assigned.has(primary.seatKey) && !assigned.has(deputy.seatKey) && !fixedSeats.has(primary.seatKey) && !fixedSeats.has(deputy.seatKey)) {
+        const candidates = slot.dutyPairs.map((p) => ({ p: empById.get(p.primaryUserId), d: empById.get(p.deputyUserId) }))
+          .filter(({ p, d }) => p && d && p.id !== d.id && canAssignWith(p, { ...primary, allowConcurrent }, period) && canAssignWith(d, { ...deputy, allowConcurrent }, period));
+        candidates.sort((a, b) => (scoreEmployee(b.p, primary, ctx) + scoreEmployee(b.d, deputy, ctx)) - (scoreEmployee(a.p, primary, ctx) + scoreEmployee(a.d, deputy, ctx)) || a.p.id - b.p.id || a.d.id - b.d.id);
+        if (candidates.length) {
+          recordAssignment(primary, candidates[0].p); recordAssignment(deputy, candidates[0].d);
+        }
+      }
+      for (const seat of cellSeats) {
+        if (assigned.has(seat.seatKey) || fixedSeats.has(seat.seatKey)) continue;
+        existing = cellSeats.flatMap((s) => assigned.has(s.seatKey) ? [assigned.get(s.seatKey)] : []);
+        if (!existing.length) continue;
+        const candidates = employees.flatMap((emp) => (seat.dutyRole === 'either' ? ['primary', 'deputy'] : [seat.dutyRole]).map((dutyRole) => ({ emp, seat: { ...seat, dutyRole, allowConcurrent } })))
+          .filter((c) => canAssignWith(c.emp, c.seat, period) && !pairProblem(slot.dutyPairs, [...existing, { userId: c.emp.id, dutyRole: c.seat.dutyRole }]));
+        candidates.sort((a, b) => scoreEmployee(b.emp, b.seat, ctx) - scoreEmployee(a.emp, a.seat, ctx) || a.emp.id - b.emp.id);
+        if (candidates.length) recordAssignment(candidates[0].seat, candidates[0].emp);
+      }
+    }
+  }
+  fillPairedSeats(false);
 
   // 贪心填充
   for (const { seat } of seatOrder) {
-    if (fixedSeats.has(seat.seatKey)) continue;
+    if (fixedSeats.has(seat.seatKey) || pairedWorks.has(seat.workTypeId)) continue;
     let best = null;
     let bestScore = -Infinity;
     for (const emp of employees) {
@@ -195,7 +227,7 @@ function generateSchedule(input, opts = {}) {
     // (a) Replace：槽位上已有分配但存在更优的人选
     for (const [slotKey, list] of [...bySlotKey.entries()]) {
       for (const current of [...list]) {
-        if (current.isFixed) continue;
+        if (current.isFixed || pairedWorks.has(current.workTypeId)) continue;
         const seat = seatByKey.get(current.seatKey);
         if (!seat) continue;
         const currentEmp = empById.get(current.userId);
@@ -228,7 +260,7 @@ function generateSchedule(input, opts = {}) {
     const entries = [...assigned.values()];
     for (let i = 0; i < entries.length; i += 1) {
       const a = entries[i];
-      if (a.isFixed) continue;
+      if (a.isFixed || pairedWorks.has(a.workTypeId)) continue;
       if (!assigned.has(a.seatKey)) continue;
       const aEmp = empById.get(a.userId);
       const aSeat = seatByKey.get(a.seatKey);
@@ -236,7 +268,7 @@ function generateSchedule(input, opts = {}) {
 
       for (let j = i + 1; j < entries.length; j += 1) {
         const b = entries[j];
-        if (b.isFixed) continue;
+        if (b.isFixed || pairedWorks.has(b.workTypeId)) continue;
         if (a.workDate === b.workDate && a.shiftId === b.shiftId) continue; // 同一班次不互换
         if (!assigned.has(a.seatKey) || !assigned.has(b.seatKey)) continue;
 
@@ -272,6 +304,15 @@ function generateSchedule(input, opts = {}) {
         recordAssignment(bSeat, bEmp);
       }
     }
+  }
+
+  // 最后才允许兼任填空，不替换已有人员，也不让一人占同一工作的多个名额。
+  fillPairedSeats(true);
+  for (const { seat } of seatOrder) {
+    if (assigned.has(seat.seatKey) || fixedSeats.has(seat.seatKey) || pairedWorks.has(seat.workTypeId)) continue;
+    const candidates = employees.filter((emp) => canAssignWith(emp, { ...seat, allowConcurrent: true }, period));
+    candidates.sort((a, b) => scoreEmployee(b, seat, ctx) - scoreEmployee(a, seat, ctx) || a.employeeNo.localeCompare(b.employeeNo));
+    if (candidates.length) recordAssignment(seat, candidates[0]);
   }
 
   // ---- 输出 ----
@@ -355,6 +396,7 @@ function buildSeats(slots) {
         workTypeId: s.workTypeId,
         needCount: s.requiresRoles ? (k < 2 ? 1 : s.needCount - 2) : s.needCount,
         dutyRole,
+        dutyPairs: s.dutyPairs || [],
         workTypeName: s.workTypeName,
         workTypeColor: s.workTypeColor,
         shiftName: s.shiftName,
@@ -383,6 +425,7 @@ function dedupeSlots(seats) {
         workTypeId: s.workTypeId,
         needCount: s.needCount,
         dutyRole: s.dutyRole,
+        dutyPairs: s.dutyPairs,
         workTypeName: s.workTypeName,
         workTypeColor: s.workTypeColor,
         shiftName: s.shiftName,
@@ -423,7 +466,7 @@ function computeInputHash(input) {
     },
     seed,
     slots: [...slots]
-      .map((s) => `${s.workDate}|${s.shiftId}|${s.shiftSeq}|${s.workTypeId}|${s.needCount}|${!!s.requiresRoles}`)
+      .map((s) => `${s.workDate}|${s.shiftId}|${s.shiftSeq}|${s.workTypeId}|${s.needCount}|${!!s.requiresRoles}|${(s.dutyPairs || []).map((p) => `${p.primaryUserId}:${p.deputyUserId}`).sort().join('/')}`)
       .sort()
       .join(';'),
     employees: [...employees]
@@ -444,6 +487,8 @@ function computeInputHash(input) {
 
 /** 校验管理员调整后的完整草稿，并重新计算缺口和指标，不自动改动其他班次。 */
 function evaluateAssignments(input, assignments) {
+  const pairProblems = validatePairs(input.slots, assignments);
+  if (pairProblems.length) return { problems: pairProblems };
   const seats = buildSeats(input.slots);
   const groups = new Map();
   for (const seat of seats) {
@@ -461,7 +506,7 @@ function evaluateAssignments(input, assignments) {
     const emp = byEmployee.get(a.userId);
     const error = !seat ? { code: 'NO_CAPACITY', message: '该日期、班次和工作没有剩余的相应岗位名额' }
       : !emp ? { code: 'NOT_ENROLLED', message: '该员工尚未提交本周期报名，也不在长期报名中' }
-      : checkSlot(emp, { ...seat, dutyRole: a.dutyRole, manualOverride: a.source === 'manual' && !a.isFixed }, input.period);
+      : checkSlot(emp, { ...seat, dutyRole: a.dutyRole, manualOverride: a.source === 'manual' && !a.isFixed, allowConcurrent: true }, input.period);
     if (error) return { problems: [{ ...error, assignmentId: a.id || null, userId: a.userId, workDate: a.workDate }] };
     used.add(seat.seatKey);
     emp.addAssignment({ date: seat.workDate, shiftSeq: seat.shiftSeq, workTypeId: seat.workTypeId });

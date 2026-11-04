@@ -158,11 +158,11 @@ function releaseAssignment(id) {
 }
 
 /** 插入一条换班产生的分配 */
-function insertSwapAssignment({ runId, periodId, workDate, shiftId, workTypeId, userId, dutyRole = 'member', source = 'swap' }) {
+function insertSwapAssignment({ runId, periodId, workDate, shiftId, workTypeId, userId, dutyRole = 'member', source = 'swap', isFixed = false }) {
   const { lastInsertRowid } = db.run(
     `INSERT INTO assignments
-       (run_id, period_id, work_date, shift_id, work_type_id, user_id, status, source, duty_role, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
+       (run_id, period_id, work_date, shift_id, work_type_id, user_id, status, source, duty_role, is_fixed, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)`,
     runId,
     periodId,
     workDate,
@@ -171,6 +171,7 @@ function insertSwapAssignment({ runId, periodId, workDate, shiftId, workTypeId, 
     userId,
     source,
     dutyRole,
+    isFixed ? 1 : 0,
     nowIso()
   );
   return lastInsertRowid;

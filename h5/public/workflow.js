@@ -42,11 +42,11 @@ function renderWorkflowPreparation() {
   }
   $$('.workflow-steps [data-flow-step]').forEach((button) => { button.classList.toggle('is-complete', ({ period: true, requirements: p.totalNeeded > 0, people: p.participants.length > 0, generate: !!p.publishedRunId })[button.dataset.flowStep]); });
   const issue = p.blockers[0];
-  $('#flow-progress').innerHTML = issue ? `${escapeHtml(issue.message)} ${issue.configTab ? flowAction(issue) : ''}` : p.draftRunId ? `草稿 #${p.draftRunId} 待检查发布，当前共有 ${p.totalNeeded} 人次需求。` : p.publishedRunId ? '本周期已发布。可直接调班，或生成新草稿并重新检查发布。' : `需求 ${p.totalNeeded} 人次，${p.participants.length} 人参与。可以生成草稿，检查后再发布。`;
+  $('#flow-progress').innerHTML = issue ? `${escapeHtml(issue.message)} ${issue.configTab ? flowAction(issue) : ''}` : p.draftRunId ? `草稿 #${p.draftRunId} 待检查发布，当前共有 ${p.totalNeeded} 人次需求。` : p.publishedRunId ? '本周期已发布，可继续报名、调班或重排。' : `需求 ${p.totalNeeded} 人次，${p.participants.length} 人参与。可以生成草稿，检查后再发布。`;
   $('#generation-readiness').innerHTML = p.canGenerate
     ? `<p class="notice">已就绪：需求 ${p.totalNeeded} 人次 · 参与 ${p.participants.length} 人。</p><div class="form-actions"><button class="btn-ghost" data-flow-step="requirements">返回查看需求</button><button class="btn-ghost" data-flow-step="people">返回查看人员</button></div>`
     : `<h3>待完成</h3>${p.blockers.map((b) => `<div class="flow-blocker"><p>${escapeHtml(b.message)}</p>${p.period.status === 'archived' ? '' : flowAction(b)}</div>`).join('')}`;
-  const locked = ['published', 'archived'].includes(p.period.status);
+  const locked = p.period.status === 'archived';
   $('#flow-participants').innerHTML = `<p class="notice">需求 ${p.totalNeeded} 人次 · <b>${p.participants.length}</b> 人参与</p>
     <p class="form-help">固定 ${p.fixedCount} 人 · 本期报名 ${p.submittedCount} 人</p>
     ${p.participants.length ? `<details><summary>人员名单</summary><ul class="participant-list">${p.participants.map((u) => `<li>${escapeHtml(u.name)}（${escapeHtml(u.employeeNo)}） · ${[u.hasFixed ? '长期固定' : '', u.hasSubmitted ? '本期已报名' : ''].filter(Boolean).join('、')}${u.maxShifts === 0 ? ' · 本期不接班' : ''}</li>`).join('')}</ul></details>` : '<p class="form-help">暂无参与人员。</p>'}

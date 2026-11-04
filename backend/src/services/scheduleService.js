@@ -32,9 +32,9 @@ function loadHistory(periodStartDate, historyPeriods = config.historyPeriods) {
        JOIN periods p ON p.id = a.period_id AND p.deleted_at IS NULL
        JOIN schedule_runs r ON r.id = a.run_id AND r.status = 'published'
       WHERE a.status = 'active'
-        AND p.start_date < ?
+        AND p.start_date < ? AND a.work_date < ?
       ORDER BY a.work_date ASC`,
-    periodStartDate
+    periodStartDate, periodStartDate
   );
 
   const map = new Map();
@@ -77,6 +77,7 @@ function buildScheduleInput(periodId, { seed } = {}) {
       workTypeId: r.work_type_id,
       needCount: r.need_count,
       requiresRoles,
+      dutyPairs: JSON.parse(workTypeMap.get(r.work_type_id).duty_pairs_json),
       workTypeName: r.work_type_name,
       workTypeColor: r.work_type_color,
       shiftName: r.shift_name,
@@ -231,7 +232,7 @@ function publish(periodId, runId, ctx, { expectedRevision, publishedRunId, publi
 
   // 负责人岗位不能以缺主或缺副的状态发布；总人数的其他缺口仍按原规则展示。
   const scope = periodRepo.getScope(period);
-  const roleRequirements = db.all(`SELECT r.*, w.name, w.weekdays_json FROM slot_requirements r JOIN work_types w ON w.id=r.work_type_id
+  const roleRequirements = db.all(`SELECT r.*, w.name, w.weekdays_json, w.duty_pairs_json FROM slot_requirements r JOIN work_types w ON w.id=r.work_type_id
     JOIN shifts s ON s.id=r.shift_id
     WHERE r.period_id=? AND r.need_count>0 AND w.requires_roles=1 AND w.active=1 AND s.active=1`, periodId).filter((r) => (scope.workTypeIds === null || scope.workTypeIds.includes(r.work_type_id)) && (scope.shiftIds === null || scope.shiftIds.includes(r.shift_id)) && JSON.parse(r.weekdays_json).includes(weekday(r.work_date)));
   const assignments = scheduleRepo.listAssignmentsWithUser(run.id);
@@ -249,6 +250,8 @@ function publish(periodId, runId, ctx, { expectedRevision, publishedRunId, publi
     throw conflict('ROLE_QUALIFICATION_CHANGED', '草稿中有员工未报名相应负责人角色，请更新报名后重新生成排班');
   }
   if (missingRoles.length) throw conflict('ROLE_COVERAGE_MISSING', `主副负责人未配齐，不能发布：${missingRoles.slice(0, 5).join('；')}`, { missingRoles });
+  const pairProblems = require('../scheduler/dutyPairs').validatePairs(roleRequirements.map((r) => ({ workDate: r.work_date, shiftId: r.shift_id, workTypeId: r.work_type_id, dutyPairs: JSON.parse(r.duty_pairs_json) })), assignments.map((a) => ({ workDate: a.work_date, shiftId: a.shift_id, workTypeId: a.work_type_id, dutyRole: a.duty_role, userId: a.user_id })));
+  if (pairProblems.length) throw conflict('DUTY_PAIR_MISMATCH', '主副搭档不匹配，不能发布', { problems: pairProblems });
 
   const live = scheduleRepo.findPublishedRun(periodId);
   if (publishedRunId !== undefined && ((live?.id || 0) !== publishedRunId || (live?.revision || 0) !== publishedRevision)) throw conflict('PUBLISHED_CHANGED', '生效排班已被换班或重新发布，请重新检查发布差异');

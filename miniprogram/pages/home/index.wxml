@@ -28,13 +28,13 @@
       </view>
     </block>
     <block wx:else>
-      <view class="empty-tip">本周期暂无你的排班{{period.status === 'enrolling' ? '，快去报名吧' : ''}}</view>
+      <view class="empty-tip">本周期暂无你的排班{{(period.status === 'enrolling' || period.status === 'scheduling' || period.status === 'published') ? '，快去报名吧' : ''}}</view>
     </block>
 
     <view class="action-row">
       <button class="btn-ghost" bindtap="goSchedule" size="mini">查看排班</button>
       <button class="btn-primary-sm" bindtap="goEnroll" size="mini"
-        wx:if="{{period.status === 'enrolling'}}">去报名</button>
+        wx:if="{{(period.status === 'enrolling' || period.status === 'scheduling' || period.status === 'published')}}">去报名</button>
     </view>
   </view>
 
@@ -49,7 +49,7 @@
       <text class="gi-label">换班</text>
       <view class="badge" wx:if="{{pendingSwapCount > 0}}">{{pendingSwapCount}}</view>
     </view>
-    <view class="grid-item" bindtap="goEnroll" wx:if="{{period && period.status === 'enrolling'}}">
+    <view class="grid-item" bindtap="goEnroll" wx:if="{{period && (period.status === 'enrolling' || period.status === 'scheduling' || period.status === 'published')}}">
       <view class="gi-icon enroll">报</view>
       <text class="gi-label">报名</text>
     </view>

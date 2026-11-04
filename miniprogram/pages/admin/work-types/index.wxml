@@ -20,6 +20,14 @@
       <view class="f-field"><text>每班至少 1 主 + 1 副</text><switch checked="{{form.requiresRoles}}" data-field="requiresRoles" bindchange="onForm" color="#2E5AAC" /></view>
       <view class="f-field"><text>开放工作日</text><checkbox-group bindchange="onWeekdays"><label wx:for="{{weekdays}}" wx:key="value"><checkbox value="{{item.value}}" checked="{{item.checked}}" />{{item.label}}</label></checkbox-group></view>
       <view class="f-field"><text>每班默认人数</text><input type="number" value="{{form.defaultNeed}}" data-field="defaultNeed" bindinput="onForm" /></view>
+      <view wx:if="{{form.requiresRoles}}">
+        <view class="f-title">固定搭档轮值</view><view class="code">可配置多组，人员可重复。两人需有本期或长期报名；留空不限制搭配。</view>
+        <view class="rule" wx:for="{{pairs}}" wx:key="index" wx:for-index="pairIndex">
+          <picker range="{{employees}}" range-key="label" value="{{item.primaryIndex}}" data-index="{{pairIndex}}" data-field="primaryUserId" bindchange="onPair"><view>主：{{item.primaryIndex >= 0 ? employees[item.primaryIndex].label : '选择人员'}} ▾</view></picker>
+          <picker range="{{employees}}" range-key="label" value="{{item.deputyIndex}}" data-index="{{pairIndex}}" data-field="deputyUserId" bindchange="onPair"><view>副：{{item.deputyIndex >= 0 ? employees[item.deputyIndex].label : '选择人员'}} ▾</view></picker>
+          <button size="mini" data-index="{{pairIndex}}" bindtap="removePair">移除此组</button>
+        </view><button bindtap="addPair" disabled="{{employees.length < 2}}">＋ 添加主副搭档</button>
+      </view>
       <view class="f-title">长期固定人员</view><view class="code">跨周期自动生效，无需重复报名。同一天可添加多位员工；到需求页应用工作日规则可补足人数。</view>
       <view class="rule" wx:for="{{rules}}" wx:key="index" wx:for-index="ruleIndex">
         <picker range="{{dayNames}}" value="{{item.weekday}}" data-index="{{ruleIndex}}" data-field="weekday" bindchange="onRule"><view>{{dayNames[item.weekday]}} ▾</view></picker>

@@ -20,11 +20,11 @@ function findWorkTypeByCode(code) {
   return db.get('SELECT * FROM work_types WHERE code = ?', code);
 }
 
-function insertWorkType({ code, name, description = null, color = '#4A90D9', sortOrder = 0, active = 1, requiresRoles = false, weekdays = [0, 1, 2, 3, 4, 5, 6], defaultNeed = requiresRoles ? 2 : 1, weeklyAssignments = [] }) {
+function insertWorkType({ code, name, description = null, color = '#4A90D9', sortOrder = 0, active = 1, requiresRoles = false, weekdays = [0, 1, 2, 3, 4, 5, 6], defaultNeed = requiresRoles ? 2 : 1, weeklyAssignments = [], dutyPairs = [] }) {
   const now = nowIso();
   const { lastInsertRowid } = db.run(
-    `INSERT INTO work_types (code, name, description, color, sort_order, active, requires_roles, weekdays_json, default_need, weekly_assignments_json, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO work_types (code, name, description, color, sort_order, active, requires_roles, weekdays_json, default_need, weekly_assignments_json, duty_pairs_json, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     code,
     name,
     description,
@@ -35,6 +35,7 @@ function insertWorkType({ code, name, description = null, color = '#4A90D9', sor
     JSON.stringify(weekdays),
     defaultNeed,
     JSON.stringify(weeklyAssignments),
+    JSON.stringify(dutyPairs),
     now,
     now
   );
@@ -52,13 +53,14 @@ function updateWorkType(id, fields) {
     weekdays: 'weekdays_json',
     defaultNeed: 'default_need',
     weeklyAssignments: 'weekly_assignments_json',
+    dutyPairs: 'duty_pairs_json',
   };
   const sets = [];
   const params = [];
   for (const [key, col] of Object.entries(map)) {
     if (fields[key] !== undefined) {
       sets.push(`${col} = ?`);
-      params.push(key === 'requiresRoles' ? Number(fields[key]) : ['weekdays', 'weeklyAssignments'].includes(key) ? JSON.stringify(fields[key]) : fields[key]);
+      params.push(key === 'requiresRoles' ? Number(fields[key]) : ['weekdays', 'weeklyAssignments', 'dutyPairs'].includes(key) ? JSON.stringify(fields[key]) : fields[key]);
     }
   }
   if (!sets.length) return 0;
@@ -138,6 +140,7 @@ function toWorkTypeDto(r) {
     weekdays: JSON.parse(r.weekdays_json),
     defaultNeed: r.default_need,
     weeklyAssignments: JSON.parse(r.weekly_assignments_json),
+    dutyPairs: JSON.parse(r.duty_pairs_json),
   };
 }
 

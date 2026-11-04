@@ -140,7 +140,7 @@ Page({
   async onSubmit() {
     if (this.data.submitting) return;
     const chosen = this.data.workTypes.filter((w) => w.selected);
-    if (!chosen.length && !this.data.fixedAssignments.length) {
+    if (!chosen.length && !this.data.existing?.submittedWorkTypeIds?.length && !this.data.existing?.withdrawnWorkTypeIds?.length && !this.data.fixedAssignments.length) {
       wx.showToast({ title: '请至少选择一种工作类型', icon: 'none' });
       return;
     }
@@ -149,6 +149,12 @@ Page({
       return;
     }
 
+    const removed = (this.data.existing?.submittedWorkTypeIds || []).filter((id) => !chosen.some((w) => w.id === id));
+    if (this.data.period.status === 'published' && removed.length) {
+      const names = removed.map((id) => this.data.workTypes.find((w) => w.id === id)?.name || `工作 #${id}`).join('、');
+      const confirmed = await new Promise((resolve) => wx.showModal({ title: '取消工作报名', content: `确认取消 ${names}？将移除本周期明天起这些工作的安排，保留今天和历史。`, success: (res) => resolve(res.confirm), fail: () => resolve(false) }));
+      if (!confirmed) return;
+    }
     const availability = [];
     const unavailability = [];
     for (const day of this.data.grid) {
@@ -164,7 +170,7 @@ Page({
 
     this.setData({ submitting: true });
     try {
-      await request(`/api/enrollments/${this.data.periodId}`, {
+      const result = await request(`/api/enrollments/${this.data.periodId}`, {
         method: 'POST',
         data: {
           workTypes: chosen.map((w) => ({ workTypeId: w.id, priority: w.priority || 3, dutyRole: w.requiresRoles ? w.dutyRole : 'member' })),
@@ -175,7 +181,7 @@ Page({
           submit: true,
         },
       });
-      wx.showToast({ title: '报名成功', icon: 'success' });
+      wx.showToast({ title: result.scheduleChanges ? `补入${result.scheduleChanges.addedCount}项，移除${result.scheduleChanges.removedCount}项` : '报名成功', icon: 'none' });
       setTimeout(() => wx.navigateBack(), 900);
     } catch (err) {
       // toast 已由 request 层处理

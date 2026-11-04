@@ -14,6 +14,17 @@ const { SCORE_WEIGHTS: W } = require('../config');
 const { diffDays } = require('../utils/date');
 const { deterministicJitter } = require('../utils/random');
 
+function rotationRecency(emp, slot, ctx) {
+  const lastDate = emp.lastWorkDateBefore(slot.workTypeId, slot.workDate);
+  const latest = (ctx.employees || []).reduce((last, person) => {
+    const date = person.lastWorkDateBefore(slot.workTypeId, slot.workDate);
+    return date && (!last || date > last) ? date : last;
+  }, null);
+  const repeatPenalty = lastDate && lastDate === latest ? W.repeatWork : 0;
+  const days = lastDate ? Math.max(0, diffDays(lastDate, slot.workDate)) : null;
+  return { repeatPenalty, freshness: days === null ? W.freshness : W.freshness * days / (1 + days) };
+}
+
 /**
  * 计算员工在某槽位上的得分（越大越优先）
  * @param {EmployeeState} emp
@@ -44,14 +55,8 @@ function scoreEmployee(emp, slot, ctx) {
   const pref = W.preference[priority] ?? 0;
 
   // 4) 新鲜度：距上次做该工作的天数越久，越该轮到他
-  let fresh = 0;
-  const lastDate = emp.lastDateByWorkType.get(workTypeId);
-  if (lastDate) {
-    const days = Math.max(0, diffDays(lastDate, ctx.refDate || workDate));
-    fresh = W.freshness / (1 + days);
-  } else {
-    fresh = W.freshness; // 从没做过 → 满分
-  }
+  const recency = rotationRecency(emp, slot, ctx);
+  const fresh = recency.freshness;
 
   // 5) 本周期已排数量惩罚 → 让同一个人不会在前面被连排
   const load = W.periodLoad * emp.total;
@@ -62,7 +67,7 @@ function scoreEmployee(emp, slot, ctx) {
   // 7) 确定性抖动：打破平局，保证可复现
   const jitter = W.jitter * deterministicJitter(ctx.seed, emp.id, workDate, shiftId, workTypeId);
 
-  return W.base + rot + rareBonus + bal + pref + fresh + load + weekLoad + jitter;
+  return W.base + rot + recency.repeatPenalty + rareBonus + bal + pref + fresh + load + weekLoad + jitter;
 }
 
 /**
@@ -73,7 +78,7 @@ function explainScore(emp, slot, ctx) {
   const hHist = emp.historyCount(workTypeId);
   const hEff = hHist + emp.assignedCount(workTypeId);
   const priority = emp.workTypes.get(workTypeId) ?? 3;
-  const lastDate = emp.lastDateByWorkType.get(workTypeId);
+  const recency = rotationRecency(emp, slot, ctx);
   const rarity = ctx.workTypeRarity ? ctx.workTypeRarity.get(workTypeId) || 0 : 0;
 
   return {
@@ -91,9 +96,8 @@ function explainScore(emp, slot, ctx) {
       historyTotal: emp.historyTotal,
       preference: W.preference[priority] ?? 0,
       priority,
-      freshness: lastDate
-        ? Number((W.freshness / (1 + Math.max(0, diffDays(lastDate, ctx.refDate || workDate)))).toFixed(2))
-        : W.freshness,
+      freshness: Number(recency.freshness.toFixed(2)),
+      previousWorkersPenalty: recency.repeatPenalty,
       periodLoad: Number((W.periodLoad * emp.total).toFixed(2)),
       totalInPeriod: emp.total,
       weekLoad: Number((W.weekLoad * emp.weekCount(workDate)).toFixed(2)),

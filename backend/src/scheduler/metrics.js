@@ -31,9 +31,14 @@ const round2 = (n) => Math.round(n * 100) / 100;
  */
 function computeMetrics({ employees, workTypes, assignments }) {
   const countByUser = new Map();
+  const userShifts = new Set();
   const countByUserWorkType = new Map();
   for (const a of assignments) {
-    countByUser.set(a.userId, (countByUser.get(a.userId) || 0) + 1);
+    const shiftKey = `${a.userId}|${a.workDate}|${a.shiftId}`;
+    if (!userShifts.has(shiftKey)) {
+      userShifts.add(shiftKey);
+      countByUser.set(a.userId, (countByUser.get(a.userId) || 0) + 1);
+    }
     const k = `${a.userId}|${a.workTypeId}`;
     countByUserWorkType.set(k, (countByUserWorkType.get(k) || 0) + 1);
   }

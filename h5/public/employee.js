@@ -1,12 +1,13 @@
 'use strict';
 
-const employee = { context: null, assignments: [], candidates: [], detail: null, saving: false, acting: false, month: null };
+const employee = { context: null, enrollment: null, assignments: [], candidates: [], detail: null, saving: false, acting: false, month: null };
 const periodLabels = { draft: '未开放', enrolling: '报名中', scheduling: '排班中', published: '已发布', archived: '已归档' };
 const swapLabels = { pending: '待确认', approved: '已生效', rejected: '已拒绝', cancelled: '已撤回', expired: '已过期' };
 const dutyRoleLabels = { member: '普通成员', primary: '主负责人', deputy: '副负责人', both: '主副皆可', either: '主/副额外名额' };
 
 function resetEmployee() {
   employee.context = null;
+  employee.enrollment = null;
   employee.assignments = [];
   employee.candidates = [];
   employee.detail = null;
@@ -29,6 +30,19 @@ function assignmentLabel(a) {
   return a ? `${a.workDate} ${a.shiftName} · ${a.workTypeName}${a.dutyRole && a.dutyRole !== 'member' ? ` · ${dutyRoleLabels[a.dutyRole]}` : ''}` : '班次记录已不可用';
 }
 
+function confirmEnrollmentRemoval(context, mine, workTypes) {
+  if (context.period.status !== 'published') return true;
+  const selected = new Set(workTypes.map((w) => w.workTypeId));
+  const removed = (mine?.submittedWorkTypeIds || []).filter((id) => !selected.has(id));
+  if (!removed.length) return true;
+  const names = removed.map((id) => context.workTypes.find((w) => w.id === id)?.name || `工作 #${id}`).join('、');
+  return window.confirm(`确认取消「${context.period.name}」的 ${names} 报名？将移除本周期从明天起这些工作的安排，今天和历史不变。`);
+}
+function enrollmentSavedMessage(result) {
+  const changes = result.scheduleChanges;
+  return changes && (changes.addedCount || changes.removedCount) ? `报名已更新：补入 ${changes.addedCount} 项，移除 ${changes.removedCount} 项安排` : '报名已提交';
+}
+
 // ------------------------------ 员工报名 ------------------------------
 
 async function renderEnrollment() {
@@ -37,6 +51,7 @@ async function renderEnrollment() {
   box.innerHTML = '<p class="empty-tip">正在加载报名信息…</p>';
   select.disabled = true;
   employee.context = null;
+  employee.enrollment = null;
   try {
     const periods = await API.listPeriods();
     if (!state.user) return;
@@ -60,12 +75,14 @@ async function loadEnrollment() {
   const id = $('#enroll-period').value;
   const box = $('#enroll-content');
   employee.context = null;
+  employee.enrollment = null;
   box.innerHTML = '<p class="empty-tip">正在加载报名信息…</p>';
   try {
     const [ctx, mine] = await Promise.all([API.enrollContext(id), API.myEnrollment(id)]);
     if (!state.user || $('#enroll-period').value !== id) return;
     employee.context = ctx;
-    const editable = ['enrolling', 'scheduling'].includes(ctx.period.status);
+    employee.enrollment = mine;
+    const editable = ['enrolling', 'scheduling', 'published'].includes(ctx.period.status);
     const chosen = new Map(mine.workTypes.map((w) => [w.workTypeId, w.priority]));
     const roles = new Map(mine.workTypes.map((w) => [w.workTypeId, w.dutyRole]));
     const available = new Set(mine.availability.map((a) => `${a.workDate}|${a.shiftId}`));
@@ -77,7 +94,7 @@ async function loadEnrollment() {
     box.innerHTML = `
       <p class="form-help">${escapeHtml(ctx.period.startDate)} 至 ${escapeHtml(ctx.period.endDate)} · ${escapeHtml(status)}</p>
       ${ctx.fixedAssignments?.length ? `<div class="notice">长期固定安排：<ul>${ctx.fixedAssignments.map((a) => `<li>${escapeHtml(a.workTypeName)} · ${weekdayLabels[a.weekday]} · ${escapeHtml(a.shiftName)} · ${dutyRoleLabels[a.dutyRole]}</li>`).join('')}</ul></div>` : ''}
-      ${editable ? '' : '<p class="notice">当前不可报名，仅供查看。</p>'}
+      ${ctx.period.status === 'published' ? '<p class="notice">提交后补入近7天空位；取消工作会移除明天起的本期安排。</p>' : editable ? '' : '<p class="notice">当前不可报名，仅供查看。</p>'}
       <form id="enroll-form">
         <fieldset>
           <legend>工作与意愿</legend>
@@ -121,10 +138,11 @@ async function saveEmployeeEnrollment(event) {
   const submit = event.submitter?.value !== 'draft';
   const form = event.target;
   const workTypes = Array.from(form.querySelectorAll('[name="workType"]:checked')).map((el) => ({ workTypeId: Number(el.value), priority: Number(form.elements[`priority-${el.value}`].value), dutyRole: form.elements[`role-${el.value}`]?.value || 'member' }));
-  if (submit && !workTypes.length && !employee.context.fixedAssignments?.length) {
+  if (submit && !workTypes.length && !employee.enrollment?.submittedWorkTypeIds?.length && !employee.enrollment?.withdrawnWorkTypeIds?.length && !employee.context.fixedAssignments?.length) {
     $('#enroll-error').textContent = '请至少选择一种工作类型。';
     return;
   }
+  if (submit && !confirmEnrollmentRemoval(employee.context, employee.enrollment, workTypes)) return;
   const availability = [];
   const unavailability = [];
   form.querySelectorAll('.availability-day').forEach((day) => {
@@ -137,8 +155,8 @@ async function saveEmployeeEnrollment(event) {
   $('#enroll-period').disabled = true;
   form.querySelector('fieldset').disabled = true;
   try {
-    await API.saveEnrollment(id, { workTypes, maxShifts: $('#enroll-max').value === '' ? null : Number($('#enroll-max').value), availability, unavailability, note: $('#enroll-note').value, submit });
-    toast(submit ? '报名已提交' : '草稿已保存');
+    const result = await API.saveEnrollment(id, { workTypes, maxShifts: $('#enroll-max').value === '' ? null : Number($('#enroll-max').value), availability, unavailability, note: $('#enroll-note').value, submit });
+    toast(submit ? enrollmentSavedMessage(result) : '草稿已保存');
     await loadEnrollment();
   } catch (err) {
     $('#enroll-error').textContent = employeeError(err);

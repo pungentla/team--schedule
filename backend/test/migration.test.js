@@ -10,7 +10,7 @@ const db = require('../src/db/db');
 const { migrate, CURRENT_VERSION } = require('../src/db/migrate');
 
 test('v1 原有用户、报名与已发布排班无损升级，新增角色不默认授予主副资格', () => {
-  const legacy = db.readSchemaSql().split('\n').filter((line) => !['requires_roles', 'duty_role', 'weekdays_json', 'default_need', 'weekly_assignments_json', 'is_fixed', 'revision', 'work_type_ids_json', 'shift_ids_json', 'deleted_at', 'deleted_by'].some((column) => line.includes(column))).join('\n');
+  const legacy = db.readSchemaSql().split('\n').filter((line) => !['duty_pairs_json', 'requires_roles', 'duty_role', 'weekdays_json', 'default_need', 'weekly_assignments_json', 'is_fixed', 'revision', 'work_type_ids_json', 'shift_ids_json', 'deleted_at', 'deleted_by', 'submitted_work_type_ids_json', 'withdrawn_work_type_ids_json'].some((column) => line.includes(column))).join('\n');
   db.exec(legacy);
   db.exec(`INSERT INTO roles(code,name) VALUES ('employee','员工');
     INSERT INTO users(id,employee_no,name,password_hash,created_at,updated_at) VALUES (1,'E1','旧员工','fixture','now','now');

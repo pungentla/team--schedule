@@ -2,7 +2,7 @@
 
 数据库：SQLite（Node 22 内置 `node:sqlite`），DDL 见 `backend/src/db/schema.sql`，共 **18 张表**。
 
-迁移用 `PRAGMA user_version` 版本化，当前版本 `1`（`backend/src/db/migrate.js`）。
+迁移用 `PRAGMA user_version` 版本化，当前版本 `9`（`backend/src/db/migrate.js`）。
 
 ---
 
@@ -157,6 +157,8 @@ audit_logs ──> (多态关联 entity_type + entity_id)
 | `period_id` / `user_id` | 唯一组合 |
 | `max_shifts` | 本人本周期最多接几个班（约束 H6） |
 | `status` | `draft` / `submitted` |
+| `submitted_work_type_ids_json` | 最近正式提交的工作 ID 快照，草稿不覆盖 |
+| `withdrawn_work_type_ids_json` | 本周期取消的工作 ID，阻止固定资格重新加入 |
 
 ### `enrollment_work_types`
 
@@ -225,7 +227,7 @@ CREATE UNIQUE INDEX uq_runs_one_published
 
 ```sql
 CREATE UNIQUE INDEX uq_assignment_active_person_slot
-  ON assignments(run_id, user_id, work_date, shift_id) WHERE status = 'active';
+  ON assignments(run_id, user_id, work_date, shift_id, work_type_id) WHERE status = 'active';
 ```
 
 > 为什么按 `run_id` 而不是 `period_id`：同一周期可能同时存在 draft 和 published 两套 run，如果用 `period_id` 建唯一索引，两套 run 的分配会互相冲突，插入时报 `UNIQUE constraint failed`。
@@ -298,7 +300,7 @@ CREATE UNIQUE INDEX uq_assignment_active_person_slot
 | 索引 | 表 | 用途 |
 |---|---|---|
 | `uq_runs_one_published` | schedule_runs | 一周期一发布版本 |
-| `uq_assignment_active_person_slot` | assignments | 防同一人同班次重复占用 |
+| `uq_assignment_active_person_slot` | assignments | 防同一人同班次重复占同一工作 |
 | `idx_assignment_period_date` | assignments | 按周期+日期查（排班表） |
 | `idx_assignment_user` | assignments | 我的排班 |
 | `idx_assignment_run` | assignments | 按版本读全部 |
@@ -352,3 +354,5 @@ tx(() => {
 ```
 
 内层抛错 → `ROLLBACK TO sp_1`，外层可选择继续或让异常上抛。换班生效就是在事务内完成"释放原分配 + 插入新分配 + 更新换班状态 + 写审计"四步，任一步失败全回滚。
+
+工作类型的 `duty_pairs_json`（v9，默认 `[]`）存储允许的 `{primaryUserId,deputyUserId}`，允许人员跨组重复。同班次不同工作可兼任，上限按日期和班次去重；同一工作的主副仍需不同人员。v8 引入报名正式提交与取消快照，v9 迁移替换人员名额唯一索引，均保留原记录。

@@ -36,8 +36,8 @@ Page({
     request('/api/periods/current', { silent: true })
       .then((p) => {
         if (!p) return;
-        if (p.status !== 'enrolling') {
-          wx.showToast({ title: '当前周期不在报名阶段', icon: 'none' });
+        if (!['enrolling', 'scheduling', 'published'].includes(p.status)) {
+          wx.showToast({ title: '当前周期不可报名', icon: 'none' });
           return;
         }
         wx.navigateTo({ url: `/pages/enroll/index?periodId=${p.id}` });

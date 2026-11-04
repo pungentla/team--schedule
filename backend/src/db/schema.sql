@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS work_types (
   weekdays_json TEXT NOT NULL DEFAULT '[0,1,2,3,4,5,6]',
   default_need INTEGER NOT NULL DEFAULT 1 CHECK (default_need BETWEEN 0 AND 99),
   weekly_assignments_json TEXT NOT NULL DEFAULT '[]',
+  duty_pairs_json TEXT NOT NULL DEFAULT '[]',
   created_at  TEXT NOT NULL,
   updated_at  TEXT NOT NULL
 );
@@ -134,6 +135,8 @@ CREATE TABLE IF NOT EXISTS enrollments (
   status        TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'submitted')),
   note          TEXT,
   submitted_at  TEXT,
+  submitted_work_type_ids_json TEXT,
+  withdrawn_work_type_ids_json TEXT NOT NULL DEFAULT '[]',
   created_at    TEXT NOT NULL,
   updated_at    TEXT NOT NULL,
   UNIQUE (period_id, user_id)
@@ -240,12 +243,12 @@ CREATE TABLE IF NOT EXISTS assignments (
   created_at    TEXT NOT NULL
 );
 
--- 核心防重：在一次排班 run 内，同一个人同一天同一个班次只能有一条 active 记录。
+-- 核心防重：在一次排班 run 内，同一个人同一天同一个班次的同一工作只能有一条 active 记录。
 -- 这是并发换班场景下的最后兜底。
 -- 注意：必须按 run_id 而不是 period_id —— 同一周期可以同时存在 draft 与 published 两套运行，
 -- 按 period_id 会让两套运行互相冲突。
 CREATE UNIQUE INDEX IF NOT EXISTS uq_assignment_active_person_slot
-  ON assignments(run_id, user_id, work_date, shift_id) WHERE status = 'active';
+  ON assignments(run_id, user_id, work_date, shift_id, work_type_id) WHERE status = 'active';
 
 CREATE INDEX IF NOT EXISTS idx_assignment_period_date ON assignments(period_id, work_date, shift_id);
 CREATE INDEX IF NOT EXISTS idx_assignment_user ON assignments(period_id, user_id, status);

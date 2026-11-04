@@ -375,7 +375,7 @@ draft → enrolling → scheduling → published → archived
 | 方法与路径（前缀 /api） | 权限与行为 |
 |---|---|
 | GET /enrollments/:periodId/users/:userId | 管理员：目标人员、报名上下文与已有报名 |
-| POST /enrollments/:periodId/users/:userId | 管理员代报：`{workTypes:[{workTypeId,priority,dutyRole}]}`；角色为 member / primary / deputy / both，须符合工作配置；直接提交并保留原个人限制，已发布或归档周期锁定 |
+| POST /enrollments/:periodId/users/:userId | 管理员代报：`{workTypes:[{workTypeId,priority,dutyRole}]}`；角色为 member / primary / deputy / both，须符合工作配置；直接提交并保留原个人限制，已发布周期可继续代报：正式提交补入今天起 7 天的合适空位；取消工作会移除本周期明天起该人的该工作安排并取消相关待确认换班，今天和历史保留；归档周期锁定 |
 | GET /schedule/mine/recent | 所有用户，本人身份取自登录态；`days` 默认 7，或 `startDate`、`endDate`（YYYY-MM-DD，最多 366 天）；返回日期范围、assignments 及各项 coworkers（userId、name、dutyRole） |
 | DELETE /periods/:id | 管理员、超级管理员：软删除，返回 `{id,deleted:true}`，重复操作幂等 |
 | GET /periods/deleted | 仅超级管理员：回收站周期、原状态、deletedAt、deletedBy、deletedByName |
@@ -384,3 +384,13 @@ draft → enrolling → scheduling → published → archived
 数据库版本 v7，periods 新增可空 deleted_at、deleted_by。既有数据迁移后默认可见；删除不会改变关联数据或版本状态。
 
 `POST /auth/password` 请求 `{oldPassword,newPassword}`。原密码须正确，新密码为 6–128 位且不能与原密码相同；更新密码与撤销本人全部会话处于同一事务。返回 `{data:{ok:true}}` 后当前令牌也失效，客户端返回登录页。审计不保存密码。
+
+## 已发布报名与搭档（v9）
+
+本人报名与管理员代报名使用相同规则。取消既有报名可传空 `workTypes`；从未报名且无固定资格的新空提交仍拒绝。正式提交回传 `scheduleChanges`：`afterDate`（今天，北京时间）、`endDate`（今天+6天）、`withdrawnWorkTypeIds`、`removedCount`、`addedCount`、`cancelledSwapCount`。草稿保存不执行排班变更。近 7 天只新增空位，不重新生成、替换或挪动已有安排；所有变更及统计刷新在同一事务中。
+
+报名详情新增 `submittedWorkTypeIds`（上次正式提交工作快照，保存草稿不覆盖）、`withdrawnWorkTypeIds`（本周期显式取消的工作，阻止固定规则重新带回）。已有草稿在报名变化后须重新生成。
+
+工作类型读写新增 `dutyPairs: [{primaryUserId,deputyUserId}]`，最多 100 组；需开启 `requiresRoles`，同组两人不同、账号启用，完全重复组拒绝，同一人员可出现在多组。空名单解除组合限制；成员仍需相应报名资格。生成、发布、草稿调配、换班和近 7 天补位检查搭档关系。额外主副也须有允许的搭档在场。
+
+空位可兼任不同工作；每日、每周及个人班次上限按人员/日期/班次去重，工作人次不去重。同一工作不能重复占名额，主副不能是同一人。数据库 v9 新增 `work_types.duty_pairs_json`，报名快照字段在 v8 引入；更新 active 人员名额唯一索引至 `(run_id,user_id,work_date,shift_id,work_type_id)`，原记录保留。

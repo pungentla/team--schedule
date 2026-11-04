@@ -16,7 +16,8 @@ const GAP_REASON_LABELS = Object.freeze({
   no_candidate: '无人报名该工作',
   overloaded: '报名人员已达班次上限',
   constraint_blocked: '报名人员受请假/可用时段/连续班次限制',
-  no_candidates_left: '报名人员已被安排在同时段其他工作',
+  no_candidates_left: '报名人员已占该工作的名额',
+  pair_unavailable: '没有可用的主副搭档，请检查两人的报名、请假和班次上限',
 });
 
 const BLOCKED_CODES = new Set([REASON.UNAVAILABLE_DATE, REASON.NOT_AVAILABLE_SLOT, REASON.CONSECUTIVE]);
@@ -51,7 +52,7 @@ function diagnoseGap({ employees, workTypeId, slot, period, checkSlot }) {
     if (!res) {
       // 理论上不该发生（还能排却没排），标记为名额用尽
       taken += 1;
-      details.push({ userId: e.id, name: e.name, code: 'free', message: '仍可安排' });
+      details.push({ userId: e.id, name: e.name, code: slot.dutyPairs?.length ? 'pair_unavailable' : 'free', message: slot.dutyPairs?.length ? '需要可用的固定搭档' : '仍可安排' });
       continue;
     }
     if (OVERLOAD_CODES.has(res.code)) overloaded += 1;
@@ -62,7 +63,8 @@ function diagnoseGap({ employees, workTypeId, slot, period, checkSlot }) {
 
   // 优先级：上限卡住 > 时段限制 > 名额用尽
   let code;
-  if (overloaded >= blocked && overloaded >= taken && overloaded > 0) code = 'overloaded';
+  if (slot.dutyPairs?.length) code = 'pair_unavailable';
+  else if (overloaded >= blocked && overloaded >= taken && overloaded > 0) code = 'overloaded';
   else if (blocked >= taken && blocked > 0) code = 'constraint_blocked';
   else code = 'no_candidates_left';
 
