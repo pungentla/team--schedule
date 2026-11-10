@@ -18,6 +18,7 @@ import { API, Heading, Load, accountRoles, dayjs, isAdmin, required, useAction, 
 import { Schedule, readScheduleFilters, saveScheduleFilters } from './Schedule';
 import { Announcement } from './Announcement';
 import { DiscussionPreview } from './DiscussionPreview';
+import { ReminderSettings, currentDeviceSubscription } from './ReminderSettings';
 import './style.css';
 
 dayjs.locale('zh-cn');
@@ -68,6 +69,7 @@ function Workspace({ user, endSession }) {
   const [workflowPage, setWorkflowPage] = useState(null);
   const [discussionTopicId, setDiscussionTopicId] = useState(null);
   const [password, setPassword] = useState(false);
+  const [reminders, setReminders] = useState(false);
   const [scheduleFilters, setScheduleFilters] = useState(() => readScheduleFilters(user.id));
   useEffect(() => saveScheduleFilters(user.id, scheduleFilters), [user.id, scheduleFilters]);
   const updateScheduleFilters = changes => setScheduleFilters(previous => ({ ...previous, ...changes }));
@@ -100,7 +102,11 @@ function Workspace({ user, endSession }) {
   }
   async function logout() {
     if (!await confirm('确认退出登录？', dirty.current ? '未保存的需求会丢失。' : '退出后需重新登录。')) return;
-    await run(() => API.logout(), null, endSession);
+    await run(async () => {
+      const subscription = await currentDeviceSubscription();
+      await API.logout(subscription?.endpoint);
+      await subscription?.unsubscribe().catch(() => {});
+    }, null, endSession);
   }
   function sessionChanged() {
     endSession(); message.success('请使用更新后的账号重新登录');
@@ -108,7 +114,9 @@ function Workspace({ user, endSession }) {
   return <div className="workspace">
     <header className="topbar"><div className="topbar-inner">
       <span className="brand">时禾</span>
-      <Space size={6} className="account-actions"><Dropdown trigger={['click']} menu={{ items: [{ key: 'password', label: '修改密码' }], onClick: () => setPassword(true) }}>
+      <Space size={6} className="account-actions"><Dropdown trigger={['click']} menu={{ items: [
+        { key: 'reminders', label: '排班提醒' }, { key: 'password', label: '修改密码' },
+      ], onClick: ({ key }) => key === 'reminders' ? setReminders(true) : setPassword(true) }}>
         <Button type="text" className="account-menu" title={`${user.name}（${user.employeeNo}）`}>{user.name}{isAdmin(user) && user.name !== accountRoles[user.role] && ` · ${accountRoles[user.role]}`} ▾</Button>
       </Dropdown><Button ghost loading={busy} onClick={logout}>退出</Button></Space>
     </div></header>
@@ -134,6 +142,7 @@ function Workspace({ user, endSession }) {
         onClick={() => id === 'discussions' ? openDiscussions() : navigate(id)}>{label}</Button>)}
     </div></nav>
     {password && <Password close={() => setPassword(false)} saved={endSession} />}
+    {reminders && <ReminderSettings close={() => setReminders(false)} />}
   </div>;
 }
 

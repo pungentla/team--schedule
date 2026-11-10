@@ -1,0 +1,85 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const webPush = require('web-push');
+
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'teamshift-reminders-'));
+const vapid = webPush.generateVAPIDKeys();
+process.env.DB_FILE = path.join(tmp, 'test.db');
+process.env.WEB_PUSH_SUBJECT = 'https://example.org';
+process.env.WEB_PUSH_PUBLIC_KEY = vapid.publicKey;
+process.env.WEB_PUSH_PRIVATE_KEY = vapid.privateKey;
+const db = require('../src/db/db');
+const { migrate, truncateAll } = require('../src/db/migrate');
+const users = require('../src/repositories/userRepo');
+const periods = require('../src/repositories/periodRepo');
+const configs = require('../src/repositories/configRepo');
+const schedules = require('../src/repositories/scheduleRepo');
+const reminders = require('../src/services/reminderService');
+const auth = require('../src/services/authService');
+const { hashToken } = require('../src/utils/security');
+
+const day = '2027-01-03';
+const subscription = suffix => ({ endpoint: `https://fcm.googleapis.com/fcm/send/${suffix}`, keys: { p256dh: vapid.publicKey, auth: Buffer.alloc(16, 1).toString('base64url') } });
+let first, second;
+test.beforeEach(() => {
+  migrate();
+  truncateAll();
+  [first, second] = ['FIRST', 'SECOND'].map(employeeNo => users.insertUser({ employeeNo, name: employeeNo, passwordHash: 'fixture', role: 'employee' }));
+});
+test.after(() => { db.close(); fs.rmSync(tmp, { recursive: true, force: true }); });
+
+test('只接受浏览器推送地址和有效密钥，重新订阅时同一设备只有一个账号', () => {
+  const device = subscription('device');
+  for (const endpoint of ['http://fcm.googleapis.com/x', 'https://localhost/x', 'https://fcm.googleapis.com.evil.test/x', 'https://fcm.googleapis.com:444/x']) {
+    assert.throws(() => reminders.saveSubscription(first, { ...device, endpoint }), error => error.status === 400);
+  }
+  assert.throws(() => reminders.saveSubscription(first, { ...device, keys: { p256dh: 'invalid', auth: device.keys.auth } }), error => error.status === 400);
+  reminders.saveSubscription(first, device);
+  reminders.removeSubscription(second, device.endpoint);
+  assert.equal(reminders.findSubscription(first, device.endpoint).user_id, first);
+  reminders.saveSubscription(second, device);
+  assert.equal(reminders.findSubscription(first, device.endpoint), undefined);
+  assert.equal(reminders.findSubscription(second, device.endpoint).user_id, second);
+});
+
+test('退出账号只关闭该用户当前设备的提醒', () => {
+  const device = subscription('logout');
+  const otherDevice = subscription('other');
+  reminders.saveSubscription(first, device);
+  reminders.saveSubscription(first, otherDevice);
+  const { token } = auth.issueSession(first);
+  auth.logout(hashToken(token), first, { pushEndpoint: device.endpoint });
+  assert.equal(reminders.findSubscription(first, device.endpoint), undefined);
+  assert.ok(reminders.findSubscription(first, otherDevice.endpoint));
+  assert.equal(db.pluck('SELECT COUNT(*) FROM sessions WHERE user_id=?', first), 0);
+});
+
+test('次日提醒只发送生效安排，同一设备每日一次，失效订阅会移除', async t => {
+  const work = configs.insertWorkType({ code: 'WORK', name: '接待' });
+  const shift = configs.insertShift({ code: 'AM', name: '早班', startTime: '08:00', endTime: '12:00', seq: 1 });
+  for (const [userId, status] of [[first, 'published'], [second, 'draft']]) {
+    const periodId = periods.insertPeriod({ name: status, startDate: day, endDate: day, status });
+    const runId = schedules.insertRun({ periodId, status, algoVersion: 'fixture', seed: 1, totalNeeded: 1, totalFilled: 1, fillRate: 1, rounds: 0, durationMs: 0, createdBy: first });
+    periods.insertSlot(periodId, day, shift);
+    schedules.bulkInsertAssignments(runId, periodId, [{ userId, workDate: day, shiftId: shift, workTypeId: work, source: 'algo' }]);
+  }
+  const good = subscription('good');
+  const expired = subscription('expired');
+  reminders.saveSubscription(first, good);
+  reminders.saveSubscription(first, expired);
+  reminders.saveSubscription(second, subscription('draft'));
+  const sent = t.mock.method(webPush, 'sendNotification', async ({ endpoint }) => {
+    if (endpoint === expired.endpoint) throw Object.assign(new Error('expired'), { statusCode: 410 });
+  });
+  await reminders.sendScheduleReminders(day);
+  await reminders.sendScheduleReminders(day);
+  assert.deepEqual(sent.mock.calls.map(call => call.arguments[0].endpoint), [good.endpoint, expired.endpoint]);
+  assert.match(JSON.parse(sent.mock.calls[0].arguments[1]).body, /2027-01-03 有 1 项排班/);
+  assert.equal(reminders.findSubscription(first, good.endpoint).reminded_date, day);
+  assert.equal(reminders.findSubscription(first, expired.endpoint), undefined);
+});

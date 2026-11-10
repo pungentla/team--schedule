@@ -49,6 +49,14 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  endpoint       TEXT PRIMARY KEY,
+  user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  p256dh         TEXT NOT NULL,
+  auth           TEXT NOT NULL,
+  reminded_date  TEXT
+);
+
 CREATE TABLE IF NOT EXISTS announcements (
   id            INTEGER PRIMARY KEY CHECK (id = 1),
   title         TEXT NOT NULL,

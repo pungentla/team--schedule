@@ -6,6 +6,7 @@ const os = require('node:os');
 const { createApp } = require('./app');
 const { config } = require('./config');
 const { migrate } = require('./db/migrate');
+const { startScheduleReminders } = require('./services/reminderService');
 const db = require('./db/db');
 
 function localIps() {
@@ -42,7 +43,9 @@ function main() {
     console.log('');
   });
 
+  const stopReminders = startScheduleReminders();
   const shutdown = (signal) => {
+    stopReminders();
     console.log(`\n[server] 收到 ${signal}，正在关闭...`);
     server.close(() => {
       db.close();

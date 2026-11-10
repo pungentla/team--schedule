@@ -101,8 +101,12 @@ export const API = (() => {
 
     // ---- 具体端点 ----
     login: (employeeNo, password) => request('/auth/login', { method: 'POST', body: { employeeNo, password } }),
-    logout: () => request('/auth/logout', { method: 'POST' }),
+    logout: (pushEndpoint) => request('/auth/logout', { method: 'POST', body: pushEndpoint ? { pushEndpoint } : undefined }),
     me: () => request('/auth/me'),
+    reminderStatus: (endpoint) => request('/reminders/status', { method: 'POST', body: { endpoint } }),
+    enableReminder: (subscription) => request('/reminders/subscription', { method: 'PUT', body: subscription }),
+    disableReminder: (endpoint) => request('/reminders/subscription', { method: 'DELETE', body: { endpoint } }),
+    testReminder: (endpoint) => request('/reminders/test', { method: 'POST', body: { endpoint } }),
     announcement: () => request('/announcements/current'),
     publishAnnouncement: (body) => request('/announcements/current', { method: 'PUT', body }),
     discussionTopics: (page, options) => request(`/discussions?${new URLSearchParams({ page, ...options })}`),

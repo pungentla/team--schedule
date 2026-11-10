@@ -6,7 +6,7 @@ const express = require('express');
 const authService = require('../services/authService');
 const userRepo = require('../repositories/userRepo');
 const { requireAuth } = require('../middleware/auth');
-const { requireString } = require('../utils/validate');
+const { optionalString, requireString } = require('../utils/validate');
 
 const router = express.Router();
 
@@ -38,7 +38,8 @@ router.post('/login', (req, res) => {
 });
 
 router.post('/logout', requireAuth, (req, res) => {
-  authService.logout(req.tokenHash, req.user.id, { requestId: req.requestId });
+  const pushEndpoint = optionalString(req.body?.pushEndpoint, '设备订阅地址', { max: 4096 });
+  authService.logout(req.tokenHash, req.user.id, { requestId: req.requestId, pushEndpoint });
   res.json({ data: { ok: true } });
 });
 

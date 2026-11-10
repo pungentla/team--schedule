@@ -19,6 +19,7 @@
     "verify:mp": "NODE_NO_WARNINGS=1 node scripts/verify-miniprogram.js"
   },
   "dependencies": {
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "web-push": "3.6.7"
   }
 }

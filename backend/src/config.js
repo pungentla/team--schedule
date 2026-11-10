@@ -31,6 +31,12 @@ const config = {
   // 部署在 Nginx 等反向代理后时置为 1，才能拿到真实客户端 IP（限流依赖）
   trustProxy: intEnv('TRUST_PROXY', 0) === 1 ? 1 : false,
 
+  webPush: {
+    subject: process.env.WEB_PUSH_SUBJECT,
+    publicKey: process.env.WEB_PUSH_PUBLIC_KEY,
+    privateKey: process.env.WEB_PUSH_PRIVATE_KEY,
+  },
+
   // 限流：生产必需，防密码爆破与刷接口
   rateLimit: {
     enabled: process.env.RATE_LIMIT_ENABLED !== '0',
