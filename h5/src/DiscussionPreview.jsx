@@ -6,9 +6,16 @@ import { API, Heading, Load, option, useLoad } from './shared';
 
 const orders = [option('recent', '最近'), option('hot', '最热')];
 
-export function DiscussionPreview({ openDiscussions }) {
+export function TopicHeat({ rank }) {
+  if (!rank) return null;
+  const label = `热门第 ${rank} 名`;
+  return <span className="topic-hottest" role="img" aria-label={label} title={label}>{'🔥'.repeat(4 - rank)}</span>;
+}
+
+export function DiscussionPreview({ openDiscussions, hotTopicsQuery, hotTopicRanks }) {
   const [sort, setSort] = useState('recent');
-  const query = useLoad(sort, () => API.discussionTopics(1, { sort, pageSize: 3 }));
+  const recentQuery = useLoad(sort === 'recent' ? sort : null, () => API.discussionTopics(1, { sort: 'recent', pageSize: 3 }));
+  const query = sort === 'hot' ? hotTopicsQuery : recentQuery;
   return <Card size="small">
     <section aria-label="互动区话题">
       <div className="inline topic-preview-heading">
@@ -20,6 +27,7 @@ export function DiscussionPreview({ openDiscussions }) {
         {items.map(topic => <li key={topic.id}>
           <button type="button" onClick={() => openDiscussions(topic.id)}>
             <span>{topic.title}</span><small>{topic.likeCount ?? 0} 赞 · {topic.replyCount} 回复</small>
+            <TopicHeat rank={hotTopicRanks.get(topic.id)} />
           </button>
         </li>)}
       </ul> : <p className="muted topic-preview-empty">暂无话题</p>}</Load>

@@ -69,4 +69,55 @@ test('v15 升级保留原有评论，删除被引用的评论时保留新回复'
   assert.deepEqual(db.all('PRAGMA foreign_key_check'), []);
 });
 
+test('v16 升级保留话题、评论、图片和原公告，旧内容不会被标记未读', () => {
+  db.close();
+  db.open(path.join(tmp, 'discussions-v16.db'));
+  db.exec(db.readSchemaSql()
+    .replace("'share', 'poll'", "'share'")
+    .replace(/,\n  poll_mode[^\n]+/, '')
+    .replace(/,\n  is_anonymous[^\n]+/, '')
+    .replace('CREATE TABLE IF NOT EXISTS announcements (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT',
+      'CREATE TABLE IF NOT EXISTS announcements (\n  id            INTEGER PRIMARY KEY CHECK (id = 1)'));
+  db.exec(`DROP TABLE discussion_unread_replies;
+    DROP TABLE discussion_poll_votes;
+    DROP TABLE discussion_poll_options;
+    INSERT INTO discussion_topics (id, category, title, content, created_at) VALUES (1, 'chat', '旧话题', '正文', 'now'), (9, 'chat', '已删除', '', 'now');
+    DELETE FROM discussion_topics WHERE id = 9;
+    INSERT INTO discussion_replies (id, topic_id, content, created_at) VALUES (1, 1, '旧评论', 'now');
+    INSERT INTO discussion_images (topic_id, position, mime_type, content) VALUES (1, 1, 'image/png', X'01');
+    INSERT INTO announcements (id, title, content, published_at) VALUES (1, '旧公告', '正文', 'now');
+    PRAGMA user_version = 16;`);
+  assert.deepEqual(migrate(), { fromVersion: 16, toVersion: CURRENT_VERSION });
+  assert.equal(db.pluck('SELECT is_anonymous FROM discussion_topics WHERE id = 1'), 0);
+  assert.equal(db.pluck('SELECT content FROM discussion_replies WHERE id = 1'), '旧评论');
+  assert.equal(db.pluck('SELECT COUNT(*) FROM discussion_images'), 1);
+  assert.equal(db.pluck('SELECT title FROM announcements WHERE id = 1'), '旧公告');
+  assert.equal(db.pluck('SELECT COUNT(*) FROM discussion_unread_replies'), 0);
+  assert.equal(db.run("INSERT INTO discussion_topics (category, title, content, created_at) VALUES ('poll', '投票', '', 'now')").lastInsertRowid, 10);
+  assert.equal(db.run("INSERT INTO announcements (title, content, published_at) VALUES ('新公告', '正文', 'now')").lastInsertRowid, 2);
+  assert.deepEqual(db.all('PRAGMA foreign_key_check'), []);
+});
+
+test('v17 升级保留既有单选投票和选票，并支持同一账号勾选多个选项', () => {
+  db.close();
+  db.open(path.join(tmp, 'poll-v17.db'));
+  db.exec(db.readSchemaSql()
+    .replace(/,\n  poll_mode[^\n]+/, '')
+    .replace('PRIMARY KEY (topic_id, user_id, position)', 'PRIMARY KEY (topic_id, user_id)'));
+  db.exec(`INSERT INTO roles (code, name) VALUES ('employee', '员工');
+    INSERT INTO users (id, employee_no, name, password_hash, created_at, updated_at) VALUES (1, 'E1', '员工', 'fixture', 'now', 'now');
+    INSERT INTO discussion_topics (id, category, title, content, created_at) VALUES (1, 'poll', '旧投票', '', 'now');
+    INSERT INTO discussion_poll_options (topic_id, position, label) VALUES (1, 1, '甲'), (1, 2, '乙');
+    INSERT INTO discussion_poll_votes (topic_id, user_id, position) VALUES (1, 1, 2);
+    PRAGMA user_version = 17;`);
+  assert.deepEqual(migrate(), { fromVersion: 17, toVersion: CURRENT_VERSION });
+  assert.equal(db.pluck('SELECT poll_mode FROM discussion_topics WHERE id = 1'), 'single');
+  assert.equal(db.pluck('SELECT position FROM discussion_poll_votes WHERE topic_id = 1 AND user_id = 1'), 2);
+  db.exec(`INSERT INTO discussion_topics (id, category, title, content, created_at, poll_mode) VALUES (2, 'poll', '新投票', '', 'now', 'multiple');
+    INSERT INTO discussion_poll_options (topic_id, position, label) VALUES (2, 1, '甲'), (2, 2, '乙');
+    INSERT INTO discussion_poll_votes (topic_id, user_id, position) VALUES (2, 1, 1), (2, 1, 2);`);
+  assert.equal(db.pluck('SELECT COUNT(*) FROM discussion_poll_votes WHERE topic_id = 2 AND user_id = 1'), 2);
+  assert.deepEqual(db.all('PRAGMA foreign_key_check'), []);
+});
+
 test.after(() => { db.close(); fs.rmSync(tmp, { recursive: true, force: true }); });

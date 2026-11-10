@@ -7,7 +7,7 @@
 
 const db = require('./db');
 
-const CURRENT_VERSION = 16;
+const CURRENT_VERSION = 18;
 
 function migrate() {
   db.open();
@@ -15,20 +15,68 @@ function migrate() {
   const fromVersion = Number(db.pluck('PRAGMA user_version') || 0);
 
   if (fromVersion < CURRENT_VERSION) {
-    db.tx(() => {
-      // 整份 schema 幂等执行
-      db.exec(db.readSchemaSql());
+    const topicColumns = db.all('PRAGMA table_info(discussion_topics)');
+    const rebuildTopics = topicColumns.length > 0 && !topicColumns.some(column => column.name === 'is_anonymous');
+    if (rebuildTopics) db.exec('PRAGMA foreign_keys = OFF');
+    try {
+      db.tx(() => {
+        if (rebuildTopics) migrateDiscussionTopics();
+        const announcements = db.pluck("SELECT sql FROM sqlite_master WHERE name = 'announcements'");
+        const rebuildAnnouncements = announcements && !announcements.includes('AUTOINCREMENT');
+        if (rebuildAnnouncements) db.exec('ALTER TABLE announcements RENAME TO announcements_legacy');
+        const rebuildVotes = db.all('PRAGMA table_info(discussion_poll_votes)').some(column => column.name === 'position' && !column.pk);
+        if (rebuildVotes) db.exec('ALTER TABLE discussion_poll_votes RENAME TO discussion_poll_votes_legacy');
+        db.exec(db.readSchemaSql());
+        if (rebuildAnnouncements) {
+          db.exec(`INSERT INTO announcements (id, title, content, published_by, published_at)
+            SELECT id, title, content, published_by, published_at FROM announcements_legacy;
+            DROP TABLE announcements_legacy;`);
+        }
+        if (rebuildVotes) {
+          db.exec(`INSERT INTO discussion_poll_votes (topic_id, user_id, position)
+            SELECT topic_id, user_id, position FROM discussion_poll_votes_legacy;
+            DROP TABLE discussion_poll_votes_legacy;`);
+        }
+        if (!db.all('PRAGMA table_info(discussion_topics)').some(column => column.name === 'poll_mode')) {
+          db.exec("ALTER TABLE discussion_topics ADD COLUMN poll_mode TEXT NOT NULL DEFAULT 'single' CHECK (poll_mode IN ('single', 'multiple'))");
+        }
 
-      if (fromVersion < 9) migrateLegacySchema();
-      if (!db.all('PRAGMA table_info(discussion_replies)').some(column => column.name === 'parent_reply_id')) {
-        db.exec('ALTER TABLE discussion_replies ADD COLUMN parent_reply_id INTEGER REFERENCES discussion_replies(id) ON DELETE SET NULL');
-      }
-      db.exec(`PRAGMA user_version = ${CURRENT_VERSION}`);
-    });
+        if (fromVersion < 9) migrateLegacySchema();
+        if (!db.all('PRAGMA table_info(discussion_replies)').some(column => column.name === 'parent_reply_id')) {
+          db.exec('ALTER TABLE discussion_replies ADD COLUMN parent_reply_id INTEGER REFERENCES discussion_replies(id) ON DELETE SET NULL');
+        }
+        if (rebuildTopics && db.get('PRAGMA foreign_key_check')) throw new Error('数据库迁移后存在无效引用');
+        db.exec(`PRAGMA user_version = ${CURRENT_VERSION}`);
+      });
+    } finally {
+      if (rebuildTopics) db.exec('PRAGMA foreign_keys = ON');
+    }
   }
 
   const toVersion = Number(db.pluck('PRAGMA user_version') || 0);
   return { fromVersion, toVersion };
+}
+
+function migrateDiscussionTopics() {
+  const sequence = db.pluck("SELECT seq FROM sqlite_sequence WHERE name = 'discussion_topics'");
+  db.exec(`CREATE TABLE discussion_topics_new (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    author_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    category TEXT NOT NULL CHECK (category IN ('chat', 'feedback', 'share', 'poll')),
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    article_url TEXT,
+    created_at TEXT NOT NULL,
+    is_anonymous INTEGER NOT NULL DEFAULT 0 CHECK (is_anonymous IN (0, 1))
+  );
+  INSERT INTO discussion_topics_new (id, author_id, category, title, content, article_url, created_at)
+    SELECT id, author_id, category, title, content, article_url, created_at FROM discussion_topics;
+  DROP TABLE discussion_topics;
+  ALTER TABLE discussion_topics_new RENAME TO discussion_topics;`);
+  if (sequence != null) {
+    db.run("DELETE FROM sqlite_sequence WHERE name = 'discussion_topics'");
+    db.run("INSERT INTO sqlite_sequence (name, seq) VALUES ('discussion_topics', ?)", sequence);
+  }
 }
 
 function migrateLegacySchema() {
@@ -91,9 +139,12 @@ function truncateAll() {
     'invites',
     'audit_logs',
     'announcements',
+    'discussion_unread_replies',
     'discussion_replies',
     'discussion_images',
     'discussion_likes',
+    'discussion_poll_votes',
+    'discussion_poll_options',
     'discussion_topics',
     'push_events',
     'push_subscriptions',

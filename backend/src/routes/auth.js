@@ -39,8 +39,8 @@ router.post('/login', (req, res) => {
 
 router.post('/logout', requireAuth, (req, res) => {
   const pushEndpoint = optionalString(req.body?.pushEndpoint, '设备订阅地址', { max: 4096 });
-  authService.logout(req.tokenHash, req.user.id, { requestId: req.requestId, pushEndpoint });
-  res.json({ data: { ok: true } });
+  const deviceReminderWasEnabled = authService.logout(req.tokenHash, req.user.id, { requestId: req.requestId, pushEndpoint });
+  res.json({ data: { ok: true, deviceReminderWasEnabled } });
 });
 
 router.get('/me', requireAuth, (req, res) => {

@@ -90,9 +90,10 @@ function login({ employeeNo, password }, ctx = {}) {
 }
 
 function logout(tokenHash, userId, ctx = {}) {
-  db.tx(() => {
+  return db.tx(() => {
     if (tokenHash) userRepo.deleteSession(tokenHash);
-    if (ctx.pushEndpoint) db.run('DELETE FROM push_subscriptions WHERE user_id=? AND endpoint=?', userId, ctx.pushEndpoint);
+    const deviceReminderWasEnabled = !!ctx.pushEndpoint && !!db.run('DELETE FROM push_subscriptions WHERE user_id=? AND endpoint=?',
+      userId, ctx.pushEndpoint).changes;
     auditRepo.log({
       action: auditRepo.ACTIONS.AUTH_LOGOUT,
       entityType: 'user',
@@ -100,6 +101,7 @@ function logout(tokenHash, userId, ctx = {}) {
       actorId: userId,
       requestId: ctx.requestId,
     });
+    return deviceReminderWasEnabled;
   });
 }
 

@@ -1,19 +1,28 @@
 import React, { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from 'react';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
+import Badge from 'antd/es/badge';
 import Button from 'antd/es/button';
 import Card from 'antd/es/card';
+import Checkbox from 'antd/es/checkbox';
 import Form from 'antd/es/form';
 import Image from 'antd/es/image';
 import Input from 'antd/es/input';
 import Modal from 'antd/es/modal';
 import Pagination from 'antd/es/pagination';
+import Radio from 'antd/es/radio';
+import Segmented from 'antd/es/segmented';
 import Select from 'antd/es/select';
+import Tabs from 'antd/es/tabs';
 import Tag from 'antd/es/tag';
 import Upload from 'antd/es/upload';
+import { TopicHeat } from './DiscussionPreview';
 import { API, Blank, Heading, Load, option, timeText, useAction, useLoad } from './shared';
 
-const categories = { chat: '闲聊', feedback: '吐槽', share: '文章分享' };
-const colors = { chat: 'blue', feedback: 'orange', share: 'green' };
+const categories = { chat: '闲聊', feedback: '吐槽', share: '文章分享', poll: '投票' };
+const categoryTabs = [{ key: 'all', label: '全部' }, ...Object.entries(categories).map(([key, label]) => ({ key, label }))];
+const topicOrders = [option('recent', '最新'), option('hot', '最热')];
+const pollModeLabels = { single: '单选', multiple: '多选' };
+const colors = { chat: 'blue', feedback: 'orange', share: 'green', poll: 'purple' };
 const filled = message => ({ required: true, whitespace: true, message });
 const maxImageBytes = 480 * 1024;
 const acceptedImages = ['image/jpeg', 'image/png', 'image/webp'];
@@ -50,17 +59,29 @@ async function encodeTopicImage(file) {
   });
 }
 
-export default function Discussions({ topicId, back, open }) {
-  const [cursor, setCursor] = useState(0);
-  const [feed, setFeed] = useState({ items: [], nextCursor: null });
+export default function Discussions({ topicId, openVersion, back, open, unreadCounts, refreshUnread, hotTopicRanks, refreshHotTopics }) {
+  const [category, setCategory] = useState('all');
+  const [sort, setSort] = useState('recent');
+  const [anonymousOnly, setAnonymousOnly] = useState(false);
+  const [pageKey, setPageKey] = useState(null);
+  const [feed, setFeed] = useState({ items: [], nextKey: null });
   const [expandedTopics, setExpandedTopics] = useState(() => new Set());
   const position = useRef(null);
-  const query = useLoad(cursor, () => API.discussionTopics(1, cursor ? { before: cursor } : undefined));
+  const page = sort === 'hot' ? pageKey ?? 1 : 1;
+  const query = useLoad(`${category}:${sort}:${anonymousOnly}:${pageKey ?? ''}`, () => API.discussionTopics(page, {
+    sort, ...(category === 'all' ? {} : { category }), ...(anonymousOnly ? { anonymous: true } : {}),
+    ...(sort === 'recent' && pageKey ? { before: pageKey } : {}),
+  }));
   useLayoutEffect(() => {
     if (!query.data) return;
-    const { items, nextCursor } = query.data;
-    setFeed(current => ({ items: cursor ? [...current.items, ...items] : items, nextCursor }));
-  }, [cursor, query.data]);
+    const { items, nextCursor, pageSize, total } = query.data;
+    const nextKey = sort === 'hot' ? (page * pageSize < total ? page + 1 : null) : nextCursor;
+    setFeed(current => {
+      if (pageKey == null) return { items, nextKey };
+      const loaded = new Set(current.items.map(topic => topic.id));
+      return { items: [...current.items, ...items.filter(topic => !loaded.has(topic.id))], nextKey };
+    });
+  }, [page, pageKey, query.data, sort]);
 
   const updateTopic = useCallback((id, changes) => {
     setFeed(current => ({ ...current, items: current.items.map(topic => topic.id === id ? { ...topic, ...changes } : topic) }));
@@ -68,6 +89,8 @@ export default function Discussions({ topicId, back, open }) {
   function removeTopic(id) {
     setFeed(current => ({ ...current, items: current.items.filter(topic => topic.id !== id) }));
     setExpandedTopics(current => new Set([...current].filter(topicId => topicId !== id)));
+    refreshUnread();
+    refreshHotTopics();
   }
   function toggleDiscussion(id) {
     setExpandedTopics(current => {
@@ -77,57 +100,80 @@ export default function Discussions({ topicId, back, open }) {
       return next;
     });
   }
-  function reload() {
+  function reload(nextCategory = category, nextSort = sort, nextAnonymousOnly = anonymousOnly) {
     position.current = null;
-    setFeed({ items: [], nextCursor: null });
-    setCursor(0);
+    setFeed({ items: [], nextKey: null });
+    setExpandedTopics(new Set());
+    setCategory(nextCategory);
+    setSort(nextSort);
+    setAnonymousOnly(nextAnonymousOnly);
+    setPageKey(null);
     query.refresh();
+    refreshHotTopics();
     window.scrollTo(0, 0);
   }
-  const nextCursor = feed.nextCursor;
+  const { nextKey } = feed;
   const loadMore = useCallback(() => {
-    if (nextCursor && !query.loading && !query.error) setCursor(nextCursor);
-  }, [nextCursor, query.loading, query.error]);
+    if (nextKey && !query.loading && !query.error) setPageKey(nextKey);
+  }, [nextKey, query.loading, query.error]);
 
-  return topicId ? <TopicDetail key={topicId} topicId={topicId} back={back} updateTopic={updateTopic}
+  return topicId ? <TopicDetail key={`${topicId}:${openVersion}`} topicId={topicId} back={back} updateTopic={updateTopic}
+    refreshUnread={refreshUnread} heatRank={hotTopicRanks.get(topicId)} refreshHotTopics={refreshHotTopics}
     deleted={() => { removeTopic(topicId); back(); }} />
-    : <TopicList items={feed.items} hasMore={!!nextCursor} query={query} loadMore={loadMore} reload={reload}
+    : <TopicList items={feed.items} hasMore={!!nextKey} query={query} loadMore={loadMore} reload={reload}
       updateTopic={updateTopic} removeTopic={removeTopic} position={position} open={open}
+      category={category} sort={sort} anonymousOnly={anonymousOnly} unreadCounts={unreadCounts} refreshUnread={refreshUnread}
+      hotTopicRanks={hotTopicRanks} refreshHotTopics={refreshHotTopics}
       expandedTopics={expandedTopics} toggleDiscussion={toggleDiscussion} />;
 }
 
-function TopicDetail({ topicId, back, updateTopic, deleted }) {
+function TopicDetail({ topicId, back, updateTopic, deleted, refreshUnread, heatRank, refreshHotTopics }) {
   const [expanded, setExpanded] = useState(true);
   const query = useLoad(topicId, () => API.discussionTopic(topicId), true);
   useLayoutEffect(() => { window.scrollTo(0, 0); }, []);
   useEffect(() => {
-    if (query.data && !query.loading) updateTopic(topicId, query.data);
+    if (query.data && !query.loading) {
+      const { poll, ...summary } = query.data;
+      updateTopic(topicId, poll ? { ...summary, pollOptions: poll.options } : summary);
+    }
   }, [topicId, query.data, query.loading, updateTopic]);
   return <>
     <Card size="small"><Button type="link" onClick={back}>← 返回话题列表</Button></Card>
-    <Load query={query}>{topic => <TopicCard topic={topic} updated={query.refresh} deleted={deleted} loading={query.loading}
+    <Load query={query}>{topic => <TopicCard topic={topic} updated={query.refresh} deleted={deleted} loading={query.loading} refreshUnread={refreshUnread}
+      heatRank={heatRank} refreshHotTopics={refreshHotTopics}
       expanded={expanded} toggleDiscussion={() => setExpanded(value => !value)} />}</Load>
   </>;
 }
 
-function TopicList({ items, hasMore, query, loadMore, reload, updateTopic, removeTopic, position, open, expandedTopics, toggleDiscussion }) {
+function TopicList({ items, hasMore, query, loadMore, reload, updateTopic, removeTopic, position, open, category, sort, anonymousOnly,
+  expandedTopics, toggleDiscussion, unreadCounts, refreshUnread, hotTopicRanks, refreshHotTopics }) {
   const [creating, setCreating] = useState(false);
   const [scrollMargin, setScrollMargin] = useState(position.current?.margin ?? 0);
+  const [stickyTop, setStickyTop] = useState(0);
   const list = useRef(null);
   const bottom = useRef(null);
   const getItemKey = useCallback(index => items[index].id, [items]);
   const virtualizer = useWindowVirtualizer({
-    count: items.length, getItemKey, estimateSize: index => items[index].imageCount ? 255 : 155,
+    count: items.length, getItemKey, estimateSize: index => {
+      const topic = items[index];
+      const cardHeight = topic.imageCount ? 255 : 155;
+      return topic.pollOptions?.length ? cardHeight + 48 + 24 * topic.pollOptions.length : cardHeight;
+    },
     gap: 12, overscan: 3, scrollMargin,
     initialOffset: position.current?.offset ?? 0,
     initialMeasurementsCache: position.current?.measurements,
   });
 
   useLayoutEffect(() => {
-    const updateMargin = () => setScrollMargin(list.current.getBoundingClientRect().top + window.scrollY);
-    updateMargin();
-    const observer = new ResizeObserver(updateMargin);
+    const workspaceTop = list.current.closest('.workspace').querySelector('.workspace-top');
+    const measure = () => {
+      setStickyTop(workspaceTop.getBoundingClientRect().height);
+      setScrollMargin(list.current.getBoundingClientRect().top + window.scrollY);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
     observer.observe(list.current.closest('main'));
+    observer.observe(workspaceTop);
     return () => observer.disconnect();
   }, []);
   useEffect(() => {
@@ -144,26 +190,39 @@ function TopicList({ items, hasMore, query, loadMore, reload, updateTopic, remov
     open(id);
   }
   return <>
-    <Card><div className="row-between">
-      <Heading>互动区</Heading>
-      <Button type="primary" onClick={() => setCreating(true)}>发起话题</Button>
-    </div></Card>
+    <Card className="topic-list-controls" style={{ top: stickyTop }}>
+      <div className="row-between">
+        <div className="inline topic-list-heading">
+          <Heading>互动区</Heading>
+          <Segmented size="small" options={topicOrders} value={sort} onChange={order => reload(category, order)} aria-label="话题排序" />
+        </div>
+        <Button type="primary" onClick={() => setCreating(true)}>发起话题</Button>
+      </div>
+      <Tabs className="topic-category-tabs" size="small" activeKey={category} onChange={reload} items={categoryTabs}
+        tabBarExtraContent={{ right: <Checkbox className="topic-anonymous-filter" checked={anonymousOnly} aria-label="仅看匿名话题"
+          onChange={event => reload(category, sort, event.target.checked)}>匿名</Checkbox> }} />
+    </Card>
     <div ref={list} className="topic-virtual-list" style={{ height: virtualizer.getTotalSize() }}>
       {virtualizer.getVirtualItems().map(row => {
         const topic = items[row.index];
         return <div key={row.key} data-index={row.index} ref={virtualizer.measureElement} className="topic-virtual-row"
           style={{ transform: `translateY(${row.start - scrollMargin}px)` }}>
           <TopicCard topic={topic} open={() => openTopic(topic.id)} updated={changes => updateTopic(topic.id, changes)}
+            unreadCount={unreadCounts.get(topic.id)} refreshUnread={refreshUnread}
+            heatRank={hotTopicRanks.get(topic.id)} refreshHotTopics={refreshHotTopics}
             deleted={() => removeTopic(topic.id)} expanded={expandedTopics.has(topic.id)} toggleDiscussion={() => toggleDiscussion(topic.id)} />
         </div>;
       })}
     </div>
-    {!items.length && !hasMore && !query.loading && !query.error && <Card><Blank>还没有话题</Blank></Card>}
+    {!items.length && !hasMore && !query.loading && !query.error && <Card><Blank>{anonymousOnly ? '没有符合条件的匿名话题' : '还没有话题'}</Blank></Card>}
     <div ref={bottom} className="topic-feed-end">
       {query.error ? <div className="inline"><span className="muted">话题加载失败</span><Button onClick={query.refresh}>重试</Button></div>
         : (hasMore || query.loading) && <Button loading={query.loading} onClick={loadMore}>加载更多</Button>}
     </div>
-    {creating && <NewTopic close={() => setCreating(false)} saved={() => { setCreating(false); reload(); }} />}
+    {creating && <NewTopic close={() => setCreating(false)} saved={topic => {
+      setCreating(false);
+      reload(category === 'all' ? 'all' : topic.category, 'recent', anonymousOnly && topic.anonymous);
+    }} />}
   </>;
 }
 
@@ -173,18 +232,31 @@ function NewTopic({ close, saved }) {
   const category = Form.useWatch('category', form);
   const { run, busy } = useAction();
   return <Modal open title="发起话题" onCancel={() => !busy && close()} footer={null}>
-    <Form form={form} layout="vertical" initialValues={{ category: 'chat' }} disabled={busy}
+    <Form form={form} layout="vertical" initialValues={{ category: 'chat', anonymous: false, pollMode: 'single', pollOptions: ['', ''] }} disabled={busy}
       onFinish={values => run(async () => {
         const images = await Promise.all(files.map(file => encodeTopicImage(file.originFileObj || file)));
         return API.createTopic({ ...values, images });
       }, '话题已发布', saved)}>
       <Form.Item name="category" label="分类"><Select options={Object.entries(categories).map(([key, label]) => option(key, label))} /></Form.Item>
       <Form.Item name="title" label="话题标题" rules={[filled('请输入话题标题')]}><Input maxLength={80} /></Form.Item>
+      <Form.Item name="anonymous" valuePropName="checked"><Checkbox>匿名发布（话题内的评论和回复也匿名）</Checkbox></Form.Item>
+      {category === 'poll' && <Form.Item name="pollMode" label="投票方式">
+        <Radio.Group options={Object.entries(pollModeLabels).map(([mode, label]) => option(mode, label))} />
+      </Form.Item>}
+      {category === 'poll' && <Form.List name="pollOptions">{(fields, { add, remove }) => <div className="form-section">
+        {fields.map((field, index) => <div className="poll-option-row" key={field.key}>
+          <Form.Item name={field.name} label={`选项 ${index + 1}`} rules={[filled('请输入选项')]}>
+            <Input maxLength={80} />
+          </Form.Item>
+          {fields.length > 2 && <Button onClick={() => remove(field.name)} aria-label={`删除选项 ${index + 1}`}>删除</Button>}
+        </div>)}
+        {fields.length < 6 && <Button onClick={() => add('')}>添加选项</Button>}
+      </div>}</Form.List>}
       {category === 'share' && <Form.Item name="articleUrl" label="文章链接（可选）" preserve={false}>
         <Input inputMode="url" placeholder="https://" maxLength={2048} />
       </Form.Item>}
       <Form.Item name="content" label="正文" dependencies={['articleUrl']} rules={[({ getFieldValue }) => ({
-        validator: (_, value) => value?.trim() || files.length || (category === 'share' && getFieldValue('articleUrl')?.trim())
+        validator: (_, value) => category === 'poll' || value?.trim() || files.length || (category === 'share' && getFieldValue('articleUrl')?.trim())
           ? Promise.resolve() : Promise.reject(new Error(category === 'share' ? '请填写正文、文章链接或添加图片' : '请填写正文或添加图片')),
       })]}>
         <Input.TextArea rows={4} maxLength={3000} showCount />
@@ -201,9 +273,13 @@ function NewTopic({ close, saved }) {
   </Modal>;
 }
 
-function TopicCard({ topic, open, updated, deleted, loading, expanded, toggleDiscussion }) {
+function TopicCard({ topic, open, updated, deleted, loading, expanded, toggleDiscussion, unreadCount, refreshUnread, heatRank, refreshHotTopics }) {
   const { run, busy, confirm } = useAction();
   const liked = !!topic.liked;
+  function updateEngagement(changes) {
+    updated(changes);
+    refreshHotTopics();
+  }
   async function deleteTopic() {
     if (await confirm('删除这个话题？', '话题下的回复、图片和点赞会一并删除。', true)) {
       await run(() => API.deleteTopic(topic.id), '话题已删除', deleted);
@@ -216,14 +292,27 @@ function TopicCard({ topic, open, updated, deleted, loading, expanded, toggleDis
     <div className="inline topic-card-heading">
       <h3>{open ? <button type="button" className="topic-title-button" onClick={open}>{topic.title}</button> : topic.title}</h3>
       <Tag color={colors[topic.category]}>{categories[topic.category]}</Tag>
+      {!!topic.anonymous && <Tag>匿名</Tag>}
+      <Badge size="small" count={unreadCount} title={unreadCount ? `${unreadCount} 条未读回复` : undefined} />
+      <TopicHeat rank={heatRank} />
     </div>
-    <div className="muted">{topic.authorName || '成员'} · {timeText(topic.createdAt)}</div>
+    <div className="muted">{topic.anonymous ? '匿名成员' : topic.authorName || '成员'} · {timeText(topic.createdAt)}</div>
     {topic.content && <p className={`discussion-text${open ? ' topic-preview' : ''}`}>{topic.content}</p>}
     {topic.articleUrl && <a className="article-link" href={topic.articleUrl} target="_blank" rel="noopener noreferrer">打开文章 ↗</a>}
     {topic.imageCount > 0 && <TopicImages topicId={topic.id} count={topic.imageCount} compact={!!open} />}
+    {topic.poll && <TopicPoll topicId={topic.id} poll={topic.poll} loading={loading} updated={updated} />}
+    {!topic.poll && topic.pollOptions?.length > 0 && <section className="topic-poll" aria-label="投票内容">
+      <strong>{pollModeLabels[topic.pollMode]}</strong>
+      <ul className="poll-preview-options">
+        {topic.pollOptions.map(item => <li className="row-between" key={item.position}>
+          <span className="poll-option-label">{item.label}</span>
+          {item.votes != null && <small className="muted">{item.votes} 票</small>}
+        </li>)}
+      </ul>
+    </section>}
     <div className="topic-actions inline">
       <Button type="text" danger={liked} aria-pressed={liked} loading={busy} disabled={loading}
-        title={liked ? '取消点赞' : '点赞'} onClick={() => run(() => API.setTopicLike(topic.id, !liked), null, updated)}>
+        title={liked ? '取消点赞' : '点赞'} onClick={() => run(() => API.setTopicLike(topic.id, !liked), null, updateEngagement)}>
         {liked ? '♥ 已点赞' : '♡ 点赞'} {topic.likeCount ?? 0}
       </Button>
       <Button type="link" aria-expanded={expanded} aria-controls={`topic-replies-${topic.id}`} onClick={toggleDiscussion}>
@@ -232,9 +321,40 @@ function TopicCard({ topic, open, updated, deleted, loading, expanded, toggleDis
       {!!topic.canDelete && <Button type="text" className="topic-delete" disabled={busy || loading} onClick={deleteTopic}>删除话题</Button>}
     </div>
     <div id={`topic-replies-${topic.id}`} hidden={!expanded} onClick={event => event.stopPropagation()}>
-      {expanded && <TopicReplies topicId={topic.id} replyCount={topic.replyCount} updated={updated} close={toggleDiscussion} />}
+      {expanded && <TopicReplies topicId={topic.id} replyCount={topic.replyCount} anonymous={topic.anonymous}
+        updated={updateEngagement} close={toggleDiscussion} refreshUnread={refreshUnread} />}
     </div>
   </Card>;
+}
+
+function TopicPoll({ topicId, poll, loading, updated }) {
+  const [choice, setChoice] = useState([]);
+  const { run, busy } = useAction();
+  const multiple = poll.mode === 'multiple';
+  const hasVoted = poll.votedPositions.length > 0;
+  const VoteGroup = multiple ? Checkbox.Group : Radio.Group;
+  const VoteOption = multiple ? Checkbox : Radio;
+  const selected = hasVoted ? poll.votedPositions : choice;
+  const total = hasVoted ? poll.options.reduce((sum, item) => sum + item.votes, 0) : null;
+  return <section className="topic-poll stack" aria-label="话题投票">
+    <strong>{pollModeLabels[poll.mode]}</strong>
+    <VoteGroup className="stack" value={multiple ? selected : selected[0]} disabled={hasVoted || busy || loading}
+      onChange={multiple ? setChoice : event => setChoice([event.target.value])}>
+      {poll.options.map(item => <div className="row-between" key={item.position}>
+        <VoteOption value={item.position}>{item.label}</VoteOption>
+        {hasVoted && <span className="muted">{item.votes} 票</span>}
+      </div>)}
+    </VoteGroup>
+    <div className="inline">
+      <Button type="primary" loading={busy} disabled={hasVoted || loading || !selected.length}
+        onClick={() => run(() => API.voteTopic(topicId, selected), '已记录投票', updated)}>
+        {hasVoted ? '已投票' : '投票'}
+      </Button>
+      <span className="muted">{hasVoted
+        ? `${multiple ? `${poll.voterCount} 人参与 · ` : ''}共 ${total} 票`
+        : '提交后可查看结果，选票不可更改'}</span>
+    </div>
+  </section>;
 }
 
 function TopicImages({ topicId, count, compact }) {
@@ -273,14 +393,15 @@ function TopicImages({ topicId, count, compact }) {
   </div>;
 }
 
-function TopicReplies({ topicId, replyCount, updated, close }) {
-  const [page, setPage] = useState(1);
+function TopicReplies({ topicId, replyCount, anonymous, updated, close, refreshUnread }) {
+  const [page, setPage] = useState(null);
   const [replyTo, setReplyTo] = useState(null);
   const replyInput = useRef(null);
   const [form] = Form.useForm();
-  const query = useLoad(page, () => API.topicReplies(topicId, page), true);
+  const query = useLoad(page ?? 'initial', () => API.topicReplies(topicId, page), true);
   const { run, busy } = useAction();
   const { run: remove, busy: removing, confirm } = useAction();
+  const { run: markRead } = useAction();
   const syncReplyCount = useEffectEvent(total => {
     if (total !== replyCount) updated({ replyCount: total });
   });
@@ -288,12 +409,19 @@ function TopicReplies({ topicId, replyCount, updated, close }) {
   useEffect(() => {
     if (total != null) syncReplyCount(total);
   }, [total]);
+  const clearUnread = useEffectEvent(through => {
+    markRead(() => API.markTopicRepliesRead(topicId, through), null, refreshUnread);
+  });
+  useEffect(() => {
+    if (query.data?.unreadThrough != null) clearUnread(query.data.unreadThrough);
+  }, [query.data]);
   async function deleteReply(id) {
     if (await confirm('删除这条回复？', null, true)) {
       await remove(() => API.deleteTopicReply(topicId, id), '回复已删除', ({ total }) => {
         setReplyTo(current => current?.id === id ? null : current);
-        setPage(current => Math.min(current, Math.max(1, Math.ceil(total / query.data.pageSize))));
+        setPage(Math.min(query.data.page, Math.max(1, Math.ceil(total / query.data.pageSize))));
         query.refresh();
+        refreshUnread();
       });
     }
   }
@@ -302,7 +430,7 @@ function TopicReplies({ topicId, replyCount, updated, close }) {
       {data.items.length ? data.items.map(reply => <article className="topic-reply" key={reply.id}>
         <div className="row-between">
           <div className="inline topic-reply-meta">
-            <strong>{reply.authorName || '成员'}</strong>
+            <strong>{anonymous ? '匿名成员' : reply.authorName || '成员'}</strong>
             <time className="muted" dateTime={reply.createdAt}>{timeText(reply.createdAt)}</time>
           </div>
           <div className="inline topic-reply-actions">
@@ -314,12 +442,12 @@ function TopicReplies({ topicId, replyCount, updated, close }) {
           </div>
         </div>
         {reply.replyToId && <div className="topic-reply-reference muted">
-          <strong>回复 {reply.replyToName || '成员'}</strong>
+          <strong>回复 {anonymous ? '匿名成员' : reply.replyToName || '成员'}</strong>
           <p className="topic-preview">{reply.replyToExcerpt}</p>
         </div>}
         <p className="discussion-text">{reply.content}</p>
       </article>) : <span className="muted">暂无回复</span>}
-      <TopicPagination data={data} page={page} changePage={setPage} />
+      <TopicPagination data={data} page={data.page} changePage={setPage} />
     </>}</Load>
     <Form form={form} className="topic-reply-form" layout="vertical" disabled={busy || removing} onFinish={({ content }) => run(
       () => API.replyToTopic(topicId, content, replyTo?.id), replyTo ? '回复已发布' : '评论已发布', reply => {
@@ -330,7 +458,7 @@ function TopicReplies({ topicId, replyCount, updated, close }) {
       }
     )}>
       {replyTo && <div className="topic-reply-reference muted">
-        <strong>回复 {replyTo.authorName || '成员'}</strong>
+        <strong>回复 {anonymous ? '匿名成员' : replyTo.authorName || '成员'}</strong>
         <p className="topic-preview">{replyTo.content}</p>
       </div>}
       <Form.Item name="content" label={replyTo ? '回复' : '评论'} rules={[filled(replyTo ? '请输入回复内容' : '请输入评论内容')]}>

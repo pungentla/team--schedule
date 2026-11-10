@@ -70,7 +70,7 @@ CREATE INDEX IF NOT EXISTS idx_push_events_ready ON push_events(next_attempt_at,
 CREATE INDEX IF NOT EXISTS idx_push_events_endpoint ON push_events(endpoint);
 
 CREATE TABLE IF NOT EXISTS announcements (
-  id            INTEGER PRIMARY KEY CHECK (id = 1),
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
   title         TEXT NOT NULL,
   content       TEXT NOT NULL,
   published_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
@@ -80,12 +80,15 @@ CREATE TABLE IF NOT EXISTS announcements (
 CREATE TABLE IF NOT EXISTS discussion_topics (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   author_id   INTEGER REFERENCES users(id) ON DELETE SET NULL,
-  category    TEXT NOT NULL CHECK (category IN ('chat', 'feedback', 'share')),
+  category    TEXT NOT NULL CHECK (category IN ('chat', 'feedback', 'share', 'poll')),
   title       TEXT NOT NULL,
   content     TEXT NOT NULL,
   article_url TEXT,
-  created_at  TEXT NOT NULL
+  created_at  TEXT NOT NULL,
+  is_anonymous INTEGER NOT NULL DEFAULT 0 CHECK (is_anonymous IN (0, 1)),
+  poll_mode   TEXT NOT NULL DEFAULT 'single' CHECK (poll_mode IN ('single', 'multiple'))
 );
+CREATE INDEX IF NOT EXISTS idx_discussion_topics_category ON discussion_topics(category, id);
 
 CREATE TABLE IF NOT EXISTS discussion_replies (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -97,6 +100,13 @@ CREATE TABLE IF NOT EXISTS discussion_replies (
 );
 
 CREATE INDEX IF NOT EXISTS idx_discussion_replies_topic ON discussion_replies(topic_id, id);
+
+CREATE TABLE IF NOT EXISTS discussion_unread_replies (
+  user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  reply_id INTEGER NOT NULL REFERENCES discussion_replies(id) ON DELETE CASCADE,
+  PRIMARY KEY (user_id, reply_id)
+);
+CREATE INDEX IF NOT EXISTS idx_discussion_unread_reply ON discussion_unread_replies(reply_id);
 
 CREATE TABLE IF NOT EXISTS discussion_images (
   topic_id  INTEGER NOT NULL REFERENCES discussion_topics(id) ON DELETE CASCADE,
@@ -110,6 +120,21 @@ CREATE TABLE IF NOT EXISTS discussion_likes (
   topic_id INTEGER NOT NULL REFERENCES discussion_topics(id) ON DELETE CASCADE,
   user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   PRIMARY KEY (topic_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS discussion_poll_options (
+  topic_id INTEGER NOT NULL REFERENCES discussion_topics(id) ON DELETE CASCADE,
+  position INTEGER NOT NULL CHECK (position BETWEEN 1 AND 6),
+  label    TEXT NOT NULL,
+  PRIMARY KEY (topic_id, position)
+);
+
+CREATE TABLE IF NOT EXISTS discussion_poll_votes (
+  topic_id INTEGER NOT NULL,
+  user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  position INTEGER NOT NULL,
+  PRIMARY KEY (topic_id, user_id, position),
+  FOREIGN KEY (topic_id, position) REFERENCES discussion_poll_options(topic_id, position) ON DELETE CASCADE
 );
 
 -- ---------------------------------------------------------------------------

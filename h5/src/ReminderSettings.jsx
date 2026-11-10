@@ -3,7 +3,9 @@ import Button from 'antd/es/button';
 import Modal from 'antd/es/modal';
 import { API, Load, useAction, useLoad } from './shared';
 
-export async function currentDeviceSubscription() {
+const reminderOwnerKey = 'teamshift_pending_reminder_owner';
+
+async function currentDeviceSubscription() {
   if (window.isSecureContext && navigator.serviceWorker) {
     const registration = await navigator.serviceWorker.getRegistration().catch(() => null);
     return registration?.pushManager?.getSubscription().catch(() => null);
@@ -11,8 +13,25 @@ export async function currentDeviceSubscription() {
   return null;
 }
 
+export async function logoutDevice(userId) {
+  const subscription = await currentDeviceSubscription();
+  const result = await API.logout(subscription?.endpoint);
+  if (result.deviceReminderWasEnabled) localStorage.setItem(reminderOwnerKey, String(userId));
+}
+
+export async function restoreDeviceReminder(userId) {
+  const owner = String(userId);
+  if (localStorage.getItem(reminderOwnerKey) !== owner || window.Notification?.permission !== 'granted') return;
+  const token = API.getToken();
+  const subscription = await currentDeviceSubscription();
+  if (!subscription || !token || API.getToken() !== token || localStorage.getItem(reminderOwnerKey) !== owner) return;
+  await API.enableReminder(subscription.toJSON());
+  if (API.getToken() === token && localStorage.getItem(reminderOwnerKey) === owner) localStorage.removeItem(reminderOwnerKey);
+}
+
 async function disableDeviceReminder(subscription) {
   await API.disableReminder(subscription.endpoint);
+  localStorage.removeItem(reminderOwnerKey);
   await subscription.unsubscribe().catch(() => {});
 }
 
@@ -37,7 +56,8 @@ export function ReminderSettings({ close }) {
         if (error.name === 'NotAllowedError') throw new Error('请在设备设置中允许时禾发送通知。');
         throw error;
       }
-      return API.enableReminder(subscription.toJSON());
+      await API.enableReminder(subscription.toJSON());
+      localStorage.removeItem(reminderOwnerKey);
     }, '已开启本机提醒', query.refresh);
   }
 

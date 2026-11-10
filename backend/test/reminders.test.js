@@ -53,7 +53,9 @@ test('退出账号只关闭该用户当前设备的提醒', () => {
   reminders.saveSubscription(first, device);
   reminders.saveSubscription(first, otherDevice);
   const { token } = auth.issueSession(first);
-  auth.logout(hashToken(token), first, { pushEndpoint: device.endpoint });
+  assert.equal(auth.logout(hashToken(auth.issueSession(second).token), second, { pushEndpoint: device.endpoint }), false);
+  assert.ok(reminders.findSubscription(first, device.endpoint));
+  assert.equal(auth.logout(hashToken(token), first, { pushEndpoint: device.endpoint }), true);
   assert.equal(reminders.findSubscription(first, device.endpoint), undefined);
   assert.ok(reminders.findSubscription(first, otherDevice.endpoint));
   assert.equal(db.pluck('SELECT COUNT(*) FROM sessions WHERE user_id=?', first), 0);

@@ -1,7 +1,8 @@
-import React, { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useEffectEvent, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import Alert from 'antd/es/alert';
 import App from 'antd/es/app';
+import Badge from 'antd/es/badge';
 import Button from 'antd/es/button';
 import Card from 'antd/es/card';
 import ConfigProvider from 'antd/es/config-provider';
@@ -9,16 +10,16 @@ import Dropdown from 'antd/es/dropdown';
 import Form from 'antd/es/form';
 import Input from 'antd/es/input';
 import Modal from 'antd/es/modal';
-import Space from 'antd/es/space';
 import Spin from 'antd/es/spin';
 import zhCN from 'antd/es/locale/zh_CN';
+import BellOutlined from '@ant-design/icons/es/icons/BellOutlined';
 import 'dayjs/locale/zh-cn';
 import 'antd/dist/reset.css';
 import { API, Heading, Load, accountRoles, dayjs, isAdmin, required, useAction, useLoad } from './shared';
 import { Schedule, readScheduleFilters, saveScheduleFilters } from './Schedule';
 import { Announcement } from './Announcement';
 import { DiscussionPreview } from './DiscussionPreview';
-import { ReminderSettings, currentDeviceSubscription } from './ReminderSettings';
+import { ReminderSettings, logoutDevice, restoreDeviceReminder } from './ReminderSettings';
 import './style.css';
 
 dayjs.locale('zh-cn');
@@ -27,6 +28,7 @@ const Workflow = lazy(() => import('./Workflow').then(m => ({ default: m.Workflo
 const Swaps = lazy(() => import('./Swaps').then(m => ({ default: m.Swaps })));
 const Enrollment = lazy(() => import('./Enrollment').then(m => ({ default: m.Enrollment })));
 const Discussions = lazy(() => import('./Discussions'));
+const replyNotificationKey = 'new-discussion-reply';
 
 const theme = {
   token: { colorPrimary: '#2e59ae', colorBgLayout: '#f2f5f9', colorText: '#1f2a3c', colorTextSecondary: '#58677e', borderRadius: 10, controlHeight: 42, fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif' },
@@ -67,9 +69,10 @@ function readNotificationTarget() {
   const params = new URLSearchParams(window.location.search);
   const topic = Number(params.get('topic'));
   const swap = Number(params.get('swap'));
+  const notice = Number(params.get('notice'));
   if (Number.isSafeInteger(topic) && topic > 0) return { tab: 'discussions', topic };
   if (Number.isSafeInteger(swap) && swap > 0) return { tab: 'swaps', swap };
-  return { tab: 'schedule', notice: params.get('notice') === '1' };
+  return { tab: 'schedule', notice: Number.isSafeInteger(notice) && notice > 0 ? notice : null };
 }
 
 function Workspace({ user, endSession }) {
@@ -78,10 +81,12 @@ function Workspace({ user, endSession }) {
   const [settingsTab, setSettingsTab] = useState('worktypes');
   const [workflowPage, setWorkflowPage] = useState(null);
   const [discussionTopicId, setDiscussionTopicId] = useState(notificationTarget.topic ?? null);
+  const [discussionOpenVersion, setDiscussionOpenVersion] = useState(0);
   const [password, setPassword] = useState(false);
   const [reminders, setReminders] = useState(false);
   const [scheduleFilters, setScheduleFilters] = useState(() => readScheduleFilters(user.id));
   useEffect(() => saveScheduleFilters(user.id, scheduleFilters), [user.id, scheduleFilters]);
+  useEffect(() => { restoreDeviceReminder(user.id).catch(() => {}); }, [user.id]);
   useEffect(() => {
     const url = new URL(window.location.href);
     if (!['topic', 'swap', 'notice'].some(key => url.searchParams.has(key))) return;
@@ -93,6 +98,26 @@ function Workspace({ user, endSession }) {
   const { confirm, busy, run } = useAction();
   const { message } = App.useApp();
   const periodsQuery = useLoad('periods', () => Promise.all([API.listPeriods(), API.currentPeriod()]), true);
+  const unreadQuery = useLoad(user.id, API.unreadTopicReplies, true);
+  const hotTopicsQuery = useLoad(tab === 'schedule' || tab === 'discussions' ? 'hot-topics' : null,
+    () => API.discussionTopics(1, { sort: 'hot', pageSize: 3 }), true);
+  const hotTopicRanks = new Map(hotTopicsQuery.data?.items
+    .filter(topic => topic.likeCount + topic.replyCount > 0)
+    .map((topic, index) => [topic.id, index + 1]));
+  const refreshUnread = useEffectEvent(() => unreadQuery.refresh());
+  useEffect(() => {
+    const refreshVisible = () => { if (!document.hidden) refreshUnread(); };
+    window.addEventListener('focus', refreshVisible);
+    document.addEventListener('visibilitychange', refreshVisible);
+    const timer = window.setInterval(refreshVisible, 30000);
+    return () => {
+      window.removeEventListener('focus', refreshVisible);
+      document.removeEventListener('visibilitychange', refreshVisible);
+      window.clearInterval(timer);
+    };
+  }, []);
+  const unreadTopics = unreadQuery.data ?? [];
+  const unreadCounts = new Map(unreadTopics.map(topic => [topic.id, topic.unreadCount]));
   const [periods, current] = periodsQuery.data || [[], null];
   const period = periods.find(p => p.id === scheduleFilters.periodId) || current || periods.find(p => p.status !== 'archived') || periods[0];
   const tabs = [
@@ -115,37 +140,47 @@ function Workspace({ user, endSession }) {
     if (await navigate('settings')) setSettingsTab(section);
   }
   async function openDiscussions(topicId = null) {
-    if (await navigate('discussions')) setDiscussionTopicId(topicId);
+    if (await navigate('discussions')) {
+      setDiscussionTopicId(topicId);
+      if (topicId === discussionTopicId && topicId != null) setDiscussionOpenVersion(version => version + 1);
+      unreadQuery.refresh();
+    }
   }
   async function logout() {
     if (!await confirm('确认退出登录？', dirty.current ? '未保存的需求会丢失。' : '退出后需重新登录。')) return;
-    await run(async () => {
-      const subscription = await currentDeviceSubscription();
-      await API.logout(subscription?.endpoint);
-      await subscription?.unsubscribe().catch(() => {});
-    }, null, endSession);
+    await run(() => logoutDevice(user.id), null, endSession);
   }
   function sessionChanged() {
     endSession(); message.success('请使用更新后的账号重新登录');
   }
   return <div className="workspace">
-    <header className="topbar"><div className="topbar-inner">
-      <span className="brand">时禾</span>
-      <Space size={6} className="account-actions"><Dropdown trigger={['click']} menu={{ items: [
-        { key: 'reminders', label: '消息提醒' }, { key: 'password', label: '修改密码' },
-      ], onClick: ({ key }) => key === 'reminders' ? setReminders(true) : setPassword(true) }}>
-        <Button type="text" className="account-menu" title={`${user.name}（${user.employeeNo}）`}>{user.name}{isAdmin(user) && user.name !== accountRoles[user.role] && ` · ${accountRoles[user.role]}`} ▾</Button>
-      </Dropdown><Button ghost loading={busy} onClick={logout}>退出</Button></Space>
-    </div></header>
+    <div className="workspace-top">
+      <header className="topbar"><div className="topbar-inner">
+        <div className="brand-lockup"><span className="brand">时禾</span><span className="brand-caption">传3:2 栽种有时</span></div>
+        <div className="account-actions">
+          <ReplyNotifications query={unreadQuery} open={openDiscussions} />
+          <Dropdown trigger={['click']} menu={{ items: [
+            { key: 'reminders', label: '消息提醒' }, { key: 'password', label: '修改密码' },
+          ], onClick: ({ key }) => key === 'reminders' ? setReminders(true) : setPassword(true) }}>
+            <Button type="text" className="account-menu" title={`${user.name}（${user.employeeNo}）`}>{user.name}{isAdmin(user) && user.name !== accountRoles[user.role] && ` · ${accountRoles[user.role]}`} ▾</Button>
+          </Dropdown>
+          <Button ghost loading={busy} onClick={logout}>退出</Button>
+        </div>
+      </div></header>
+      {(tab === 'schedule' || tab === 'discussions') && <div className="announcement-area">
+        <Announcement key={tab} user={user} initialId={notificationTarget.notice} />
+      </div>}
+    </div>
     <main className="content stack">
-      {(tab === 'schedule' || tab === 'discussions') && <Announcement key={tab} user={user} initiallyReading={notificationTarget.notice} />}
-      {tab === 'schedule' && <DiscussionPreview openDiscussions={openDiscussions} />}
+      {tab === 'schedule' && <DiscussionPreview openDiscussions={openDiscussions} hotTopicsQuery={hotTopicsQuery} hotTopicRanks={hotTopicRanks} />}
       {isAdmin(user) && (tab === 'workflow' || tab === 'settings') && <Alert type="info" showIcon message="仅管理员可见" />}
       <Suspense fallback={<div className="loading"><Spin /></div>}>
         {tab === 'schedule' && <Schedule user={user} periods={periods} period={period} filters={scheduleFilters} updateFilters={updateScheduleFilters} />}
         {tab === 'enrollment' && <Load query={periodsQuery}>{() => <Enrollment periods={periods} period={period} />}</Load>}
         {tab === 'swaps' && <Swaps user={user} initialDetail={notificationTarget.swap} />}
-        {tab === 'discussions' && <Discussions topicId={discussionTopicId} open={openDiscussions}
+        {tab === 'discussions' && <Discussions topicId={discussionTopicId} openVersion={discussionOpenVersion} open={openDiscussions}
+          unreadCounts={unreadCounts} refreshUnread={unreadQuery.refresh}
+          hotTopicRanks={hotTopicRanks} refreshHotTopics={hotTopicsQuery.refresh}
           back={() => setDiscussionTopicId(null)} />}
         {tab === 'workflow' && isAdmin(user) && <Load query={periodsQuery}>{() => (
           <Workflow user={user} periods={periods} page={workflowPage} setPage={setWorkflowPage}
@@ -162,6 +197,40 @@ function Workspace({ user, endSession }) {
     {password && <Password close={() => setPassword(false)} saved={endSession} />}
     {reminders && <ReminderSettings close={() => setReminders(false)} />}
   </div>;
+}
+
+function ReplyNotifications({ query, open }) {
+  const { notification } = App.useApp();
+  const seenThrough = useRef(null);
+  const openTopic = useRef(open);
+  useEffect(() => { openTopic.current = open; }, [open]);
+  useEffect(() => () => notification.destroy(replyNotificationKey), [notification]);
+  useEffect(() => {
+    if (!query.data) return;
+    const latest = query.data[0];
+    const previous = seenThrough.current;
+    seenThrough.current = Math.max(previous ?? 0, latest?.latestReplyId ?? 0);
+    if (previous == null || !latest || latest.latestReplyId <= previous) return;
+    notification.open({ key: replyNotificationKey, message: '收到话题回复', duration: 5, placement: 'bottomRight',
+      description: <div className="reply-notification-copy">
+        <strong>{latest.title}</strong><p>{latest.excerpt}</p>
+        <Button type="link" onClick={() => { notification.destroy(replyNotificationKey); openTopic.current(latest.id); }}>查看话题</Button>
+      </div>,
+    });
+  }, [query.data, notification]);
+  const topics = query.data ?? [];
+  const total = topics.reduce((sum, topic) => sum + topic.unreadCount, 0);
+  const label = `话题回复，${total} 条未读`;
+  const button = <Button ghost className="reply-notification-button" aria-label={label} title={label}
+    icon={<Badge count={total} size="small" overflowCount={999}><BellOutlined /></Badge>} />;
+  const items = topics.length ? topics.map(topic => ({ key: String(topic.id), label: <div className="reply-notification-copy">
+    <div className="reply-notification-item"><span>{topic.title}</span><small className="muted">{topic.unreadCount} 条未读</small></div>
+    <p className="muted">{topic.excerpt}</p>
+  </div> })) : [query.error ? { key: 'retry', label: '提醒加载失败，点击重试' }
+    : { key: 'empty', label: query.loading ? '正在加载' : '暂无未读话题回复', disabled: true }];
+  return <Dropdown trigger={['click']} onOpenChange={visible => { if (visible) notification.destroy(replyNotificationKey); }}
+    menu={{ items, className: 'reply-notification-menu',
+    onClick: ({ key }) => key === 'retry' ? query.refresh() : open(Number(key)) }}>{button}</Dropdown>;
 }
 
 function Password({ close, saved }) {
@@ -182,5 +251,5 @@ function Password({ close, saved }) {
 }
 
 createRoot(document.getElementById('root')).render(
-  <ConfigProvider locale={zhCN} theme={theme} button={{ autoInsertSpace: false }}><App><Root /></App></ConfigProvider>
+  <ConfigProvider locale={zhCN} theme={theme} button={{ autoInsertSpace: false }}><App notification={{ bottom: 68 }}><Root /></App></ConfigProvider>
 );

@@ -6,15 +6,19 @@ const { ROLES } = require('../config');
 const { requireAuth } = require('../middleware/auth');
 const { queuePushEvent } = require('../services/reminderService');
 const { nowIso } = require('../utils/date');
-const { badRequest, forbidden, notFound } = require('../utils/errors');
-const { intParam, optionalInt, requireArray, requireBoolean, requireEnum, requireString } = require('../utils/validate');
+const { badRequest, conflict, forbidden, notFound } = require('../utils/errors');
+const { intParam, optionalInt, requireArray, requireBoolean, requireEnum, requireInt, requireString } = require('../utils/validate');
 
 const router = express.Router();
 const PAGE_SIZE = 15;
 const MAX_IMAGE_BYTES = 480 * 1024;
+const CATEGORIES = ['chat', 'feedback', 'share', 'poll'];
 const isSuperAdmin = user => user.role === ROLES.SUPER_ADMIN;
+const participantSelect = `SELECT author_id FROM discussion_topics WHERE id=?
+  UNION SELECT author_id FROM discussion_replies WHERE topic_id=?`;
 const topicSelect = `SELECT t.id, t.category, t.title, t.content, t.article_url AS articleUrl,
-    t.created_at AS createdAt, u.name AS authorName,
+    t.created_at AS createdAt, t.is_anonymous AS anonymous, t.poll_mode AS pollMode,
+    CASE WHEN t.is_anonymous = 0 THEN u.name END AS authorName,
     (SELECT COUNT(*) FROM discussion_replies r WHERE r.topic_id = t.id) AS replyCount,
     (SELECT COUNT(*) FROM discussion_images i WHERE i.topic_id = t.id) AS imageCount,
     (SELECT COUNT(*) FROM discussion_likes l WHERE l.topic_id = t.id) AS likeCount,
@@ -23,11 +27,10 @@ const topicSelect = `SELECT t.id, t.category, t.title, t.content, t.article_url 
   FROM discussion_topics t LEFT JOIN users u ON u.id = t.author_id`;
 router.use(requireAuth);
 
-function notifyParticipants(topicId, actorId, body, replyToUserId = null) {
-  const participants = db.all(`SELECT author_id FROM discussion_topics WHERE id=?
-    UNION SELECT author_id FROM discussion_replies WHERE topic_id=?`, topicId, topicId);
+function notifyParticipants(topicId, actorId, body, replyToUserId = null, replyId = null) {
+  const participants = db.all(participantSelect, topicId, topicId);
   const notification = {
-    title: '时禾 · 话题互动', body, tag: `shihe-topic-${topicId}`, path: `/?topic=${topicId}`,
+    title: '时禾 · 话题互动', body, tag: replyId == null ? `shihe-topic-${topicId}` : `shihe-topic-reply-${replyId}`, path: `/?topic=${topicId}`,
   };
   const otherParticipants = participants.map(row => row.author_id).filter(id => id !== replyToUserId);
   queuePushEvent(actorId, otherParticipants, notification);
@@ -60,37 +63,93 @@ function parseImage(value) {
   throw badRequest('图片仅支持 JPG、PNG 或 WebP');
 }
 
+function loadPollOptions(topicIds, userId) {
+  const byTopic = new Map(topicIds.map(id => [id, []]));
+  if (!topicIds.length) return byTopic;
+  const rows = db.all(`SELECT o.topic_id AS topicId, o.position, o.label,
+      CASE WHEN EXISTS (SELECT 1 FROM discussion_poll_votes own WHERE own.topic_id = o.topic_id AND own.user_id = ?)
+        THEN COUNT(v.user_id) END AS votes
+    FROM discussion_poll_options o LEFT JOIN discussion_poll_votes v
+      ON v.topic_id = o.topic_id AND v.position = o.position
+    WHERE o.topic_id IN (${topicIds.map(() => '?').join(', ')})
+    GROUP BY o.topic_id, o.position ORDER BY o.topic_id, o.position`, userId, ...topicIds);
+  for (const { topicId, ...option } of rows) byTopic.get(topicId).push(option);
+  return byTopic;
+}
+
+function loadVotedPositions(topicId, userId) {
+  return db.all('SELECT position FROM discussion_poll_votes WHERE topic_id = ? AND user_id = ? ORDER BY position',
+    topicId, userId).map(row => row.position);
+}
+
+function pollResults(topicId, userId, mode) {
+  const options = loadPollOptions([topicId], userId).get(topicId);
+  const votedPositions = loadVotedPositions(topicId, userId);
+  const voterCount = votedPositions.length
+    ? db.pluck('SELECT COUNT(DISTINCT user_id) FROM discussion_poll_votes WHERE topic_id = ?', topicId) : null;
+  return { mode, options, voterCount, votedPositions, votedFor: mode === 'single' ? votedPositions[0] ?? null : null };
+}
+
 router.get('/', (req, res) => {
   const page = getPage(req.query);
   const pageSize = optionalInt(req.query.pageSize, '每页条数', { min: 1, max: PAGE_SIZE }) ?? PAGE_SIZE;
   const sort = requireEnum(req.query.sort ?? 'recent', '话题排序', ['recent', 'hot']);
+  const category = req.query.category == null ? null : requireEnum(req.query.category, '话题分类', CATEGORIES);
+  const anonymous = req.query.anonymous == null ? null : requireEnum(req.query.anonymous, '匿名筛选', ['true', 'false']) === 'true';
   const before = optionalInt(req.query.before, '话题游标', { min: 1, max: Number.MAX_SAFE_INTEGER });
   if (before != null && (page !== 1 || sort !== 'recent')) throw badRequest('话题游标仅支持按最新顺序加载');
   const order = sort === 'hot' ? '(likeCount + replyCount) DESC, t.id DESC' : 't.id DESC';
-  const filter = before == null ? '' : 'WHERE t.id < ?';
-  const rows = db.all(`${topicSelect} ${filter} ORDER BY ${order} LIMIT ? OFFSET ?`, req.user.id, isSuperAdmin(req.user),
-    ...(before == null ? [] : [before]), pageSize + 1, (page - 1) * pageSize);
+  const filters = [];
+  const params = [];
+  if (category) { filters.push('t.category = ?'); params.push(category); }
+  if (anonymous != null) { filters.push('t.is_anonymous = ?'); params.push(anonymous); }
+  const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+  const pageWhere = before == null ? where : `${where ? `${where} AND` : 'WHERE'} t.id < ?`;
+  const rows = db.all(`${topicSelect} ${pageWhere} ORDER BY ${order} LIMIT ? OFFSET ?`, req.user.id, isSuperAdmin(req.user),
+    ...params, ...(before == null ? [] : [before]), pageSize + 1, (page - 1) * pageSize);
   const items = rows.slice(0, pageSize);
+  const polls = items.filter(topic => topic.category === 'poll');
+  const optionsByTopic = loadPollOptions(polls.map(topic => topic.id), req.user.id);
+  for (const topic of polls) topic.pollOptions = optionsByTopic.get(topic.id);
   const nextCursor = sort === 'recent' && rows.length > pageSize ? items.at(-1).id : null;
-  const total = db.pluck('SELECT COUNT(*) FROM discussion_topics');
-  res.json({ data: { items, total, pageSize, nextCursor } });
+  const total = db.pluck(`SELECT COUNT(*) FROM discussion_topics t ${where}`, ...params);
+  res.set('Cache-Control', 'no-store').json({ data: { items, total, pageSize, nextCursor } });
+});
+
+router.get('/unread-replies', (req, res) => {
+  const items = db.all(`WITH unread AS (
+    SELECT r.topic_id, COUNT(*) AS unreadCount, MAX(r.id) AS latestReplyId
+    FROM discussion_unread_replies u JOIN discussion_replies r ON r.id = u.reply_id
+    WHERE u.user_id = ? GROUP BY r.topic_id
+  ) SELECT t.id, t.title, unread.unreadCount, unread.latestReplyId, substr(r.content, 1, 120) AS excerpt
+    FROM unread JOIN discussion_topics t ON t.id = unread.topic_id
+    JOIN discussion_replies r ON r.id = unread.latestReplyId ORDER BY unread.latestReplyId DESC`, req.user.id);
+  res.set('Cache-Control', 'no-store').json({ data: items });
 });
 
 router.post('/', (req, res) => {
   const body = req.body || {};
-  const category = requireEnum(body.category, '话题分类', ['chat', 'feedback', 'share']);
+  const category = requireEnum(body.category, '话题分类', CATEGORIES);
   const title = requireString(body.title, '话题标题', { max: 80 });
+  const anonymous = body.anonymous === undefined ? false : requireBoolean(body.anonymous, '匿名发布');
+  const pollMode = category === 'poll' && body.pollMode !== undefined
+    ? requireEnum(body.pollMode, '投票方式', ['single', 'multiple']) : 'single';
+  const pollOptions = category === 'poll' ? requireArray(body.pollOptions, '投票选项', { min: 2, max: 6 })
+    .map(value => requireString(value, '投票选项', { max: 80 })) : [];
+  if (new Set(pollOptions.map(value => value.toLowerCase())).size !== pollOptions.length) throw badRequest('投票选项不能重复');
   const articleUrl = category === 'share' ? parseArticleUrl(body.articleUrl) : null;
   const images = requireArray(body.images === undefined ? [] : body.images, '图片', { max: 3 }).map(parseImage);
-  const content = requireString(body.content ?? '', '话题正文', { min: articleUrl || images.length ? 0 : 1, max: 3000 });
+  const content = requireString(body.content ?? '', '话题正文', { min: articleUrl || images.length || pollOptions.length ? 0 : 1, max: 3000 });
   const id = db.tx(() => {
-    const { lastInsertRowid } = db.run(`INSERT INTO discussion_topics (author_id, category, title, content, article_url, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)`, req.user.id, category, title, content, articleUrl, nowIso());
+    const { lastInsertRowid } = db.run(`INSERT INTO discussion_topics (author_id, category, title, content, article_url, created_at, is_anonymous, poll_mode)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, req.user.id, category, title, content, articleUrl, nowIso(), anonymous, pollMode);
+    pollOptions.forEach((label, index) => db.run('INSERT INTO discussion_poll_options (topic_id, position, label) VALUES (?, ?, ?)',
+      lastInsertRowid, index + 1, label));
     images.forEach((image, index) => db.run('INSERT INTO discussion_images (topic_id, position, mime_type, content) VALUES (?, ?, ?, ?)',
       lastInsertRowid, index + 1, image.mimeType, image.content));
     return lastInsertRowid;
   });
-  res.status(201).json({ data: { id } });
+  res.status(201).json({ data: { id, category, anonymous } });
 });
 
 router.param('id', (req, _res, next, value) => {
@@ -101,7 +160,37 @@ router.param('id', (req, _res, next, value) => {
 });
 
 router.get('/:id', (req, res) => {
-  res.json({ data: db.get(`${topicSelect} WHERE t.id = ?`, req.user.id, isSuperAdmin(req.user), req.topicId) });
+  const topic = db.get(`${topicSelect} WHERE t.id = ?`, req.user.id, isSuperAdmin(req.user), req.topicId);
+  if (topic.category === 'poll') topic.poll = pollResults(req.topicId, req.user.id, topic.pollMode);
+  res.set('Cache-Control', 'no-store').json({ data: topic });
+});
+
+router.put('/:id/vote', (req, res) => {
+  const { topicId, user } = req;
+  const poll = db.tx(() => {
+    const mode = db.pluck("SELECT poll_mode FROM discussion_topics WHERE id = ? AND category = 'poll'", topicId);
+    if (!mode) throw badRequest('该话题不支持投票');
+    const body = req.body || {};
+    const input = mode === 'single' && body.positions === undefined ? [body.position]
+      : requireArray(body.positions, '投票选项', { min: 1, max: mode === 'single' ? 1 : 6 });
+    const positions = input.map(value => requireInt(value, '投票选项', { min: 1, max: 6 }));
+    if (new Set(positions).size !== positions.length) throw badRequest('投票选项不能重复');
+    const saved = loadVotedPositions(topicId, user.id);
+    if (saved.length) {
+      if (saved.length === positions.length && saved.every(position => positions.includes(position))) {
+        return pollResults(topicId, user.id, mode);
+      }
+      throw conflict('POLL_ALREADY_VOTED', '投票已提交，不能更改');
+    }
+    const valid = db.pluck(`SELECT COUNT(*) FROM discussion_poll_options
+      WHERE topic_id = ? AND position IN (${positions.map(() => '?').join(', ')})`, topicId, ...positions);
+    if (valid !== positions.length) throw badRequest('投票选项不存在');
+    for (const position of positions) {
+      db.run('INSERT INTO discussion_poll_votes (topic_id, user_id, position) VALUES (?, ?, ?)', topicId, user.id, position);
+    }
+    return pollResults(topicId, user.id, mode);
+  });
+  res.json({ data: poll });
 });
 
 router.delete('/:id', (req, res) => {
@@ -137,15 +226,30 @@ router.get('/:id/images', (req, res) => {
 });
 
 router.get('/:id/replies', (req, res) => {
-  const page = getPage(req.query);
-  const items = db.all(`SELECT r.id, r.content, r.created_at AS createdAt, u.name AS authorName, (r.author_id IS ? OR ?) AS canDelete,
-      parent.id AS replyToId, parent_user.name AS replyToName, substr(parent.content, 1, 120) AS replyToExcerpt
-    FROM discussion_replies r LEFT JOIN users u ON u.id = r.author_id
+  const { firstUnread, unreadThrough } = db.get(`SELECT MIN(u.reply_id) AS firstUnread, MAX(u.reply_id) AS unreadThrough
+    FROM discussion_unread_replies u JOIN discussion_replies r ON r.id = u.reply_id
+    WHERE u.user_id = ? AND r.topic_id = ?`, req.user.id, req.topicId);
+  const page = req.query.page == null && firstUnread != null
+    ? 1 + Math.floor(db.pluck('SELECT COUNT(*) FROM discussion_replies WHERE topic_id = ? AND id < ?', req.topicId, firstUnread) / PAGE_SIZE)
+    : getPage(req.query);
+  const items = db.all(`SELECT r.id, r.content, r.created_at AS createdAt,
+      CASE WHEN t.is_anonymous = 0 THEN u.name END AS authorName, (r.author_id IS ? OR ?) AS canDelete,
+      parent.id AS replyToId, CASE WHEN t.is_anonymous = 0 THEN parent_user.name END AS replyToName,
+      substr(parent.content, 1, 120) AS replyToExcerpt
+    FROM discussion_replies r JOIN discussion_topics t ON t.id = r.topic_id LEFT JOIN users u ON u.id = r.author_id
     LEFT JOIN discussion_replies parent ON parent.id = r.parent_reply_id AND parent.topic_id = r.topic_id
     LEFT JOIN users parent_user ON parent_user.id = parent.author_id WHERE r.topic_id = ?
     ORDER BY r.id ASC LIMIT ? OFFSET ?`, req.user.id, isSuperAdmin(req.user), req.topicId, PAGE_SIZE, (page - 1) * PAGE_SIZE);
   const total = db.pluck('SELECT COUNT(*) FROM discussion_replies WHERE topic_id = ?', req.topicId);
-  res.json({ data: { items, total, pageSize: PAGE_SIZE } });
+  res.set('Cache-Control', 'no-store').json({ data: { items, total, pageSize: PAGE_SIZE, page, unreadThrough } });
+});
+
+router.put('/:id/replies/read', (req, res) => {
+  const through = intParam(req.body?.through, '已读回复');
+  db.run(`DELETE FROM discussion_unread_replies WHERE user_id = ? AND reply_id IN (
+    SELECT id FROM discussion_replies WHERE topic_id = ? AND id <= ?
+  )`, req.user.id, req.topicId, through);
+  res.status(204).end();
 });
 
 router.post('/:id/replies', (req, res) => {
@@ -157,7 +261,9 @@ router.post('/:id/replies', (req, res) => {
     if (replyToId != null && !parent) throw notFound('要回复的评论不存在，请重新选择');
     const { lastInsertRowid } = db.run(`INSERT INTO discussion_replies (topic_id, author_id, parent_reply_id, content, created_at)
       VALUES (?, ?, ?, ?, ?)`, req.topicId, req.user.id, replyToId ?? null, content, nowIso());
-    notifyParticipants(req.topicId, req.user.id, '你参与的话题有新回复。', parent?.author_id ?? null);
+    db.run(`INSERT INTO discussion_unread_replies (user_id, reply_id)
+      SELECT author_id, ? FROM (${participantSelect}) WHERE author_id <> ?`, lastInsertRowid, req.topicId, req.topicId, req.user.id);
+    notifyParticipants(req.topicId, req.user.id, '你参与的话题有新回复。', parent?.author_id ?? null, lastInsertRowid);
     const total = db.pluck('SELECT COUNT(*) FROM discussion_replies WHERE topic_id = ?', req.topicId);
     return { id: lastInsertRowid, page: Math.ceil(total / PAGE_SIZE) };
   });
