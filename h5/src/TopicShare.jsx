@@ -5,7 +5,7 @@ import Input from 'antd/es/input';
 import Modal from 'antd/es/modal';
 import QRCode from 'antd/es/qr-code';
 import Tabs from 'antd/es/tabs';
-import { API, Load, timeText, useLoad } from './shared';
+import { API, Load, discussionName, timeText, useLoad } from './shared';
 
 const fontFamily = 'system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
 const width = 720;
@@ -67,7 +67,7 @@ async function renderPoster(topic, category, replies, images, qr) {
   addText(`时禾 · ${category}${topic.anonymous ? ' · 匿名' : ''}`, 24, { color: '#2e59ae', weight: 700 });
   y += 12;
   addText(topic.title, 40, { weight: 700, maxLines: 4 });
-  addText(`${topic.anonymous ? '匿名成员' : topic.authorName || '成员'} · ${timeText(topic.createdAt)}`, 22, { color: '#58677e' });
+  addText(`${discussionName(topic)} · ${timeText(topic.createdAt)}`, 22, { color: '#58677e' });
   y += 16;
   if (topic.content) addText(topic.content, 28, { maxLines: 12 });
   if (topic.articleUrl) addText(topic.articleUrl, 22, { color: '#2e59ae', maxLines: 2 });
@@ -94,7 +94,7 @@ async function renderPoster(topic, category, replies, images, qr) {
     addText('话题评论', 28, { weight: 700 });
     for (const reply of replies) {
       y += 12;
-      const author = topic.anonymous ? '匿名成员' : reply.authorName || '成员';
+      const author = discussionName(reply, topic.anonymous);
       addText(`${author} · ${timeText(reply.createdAt)}`, 21, { color: '#58677e' });
       addText(reply.content, 25, { maxLines: 4 });
     }
@@ -141,7 +141,7 @@ export function TopicShare({ topic, category, close }) {
   async function copyText() {
     try {
       await navigator.clipboard.writeText(text);
-      message.success('已复制，可粘贴到微信');
+      message.success('图文链接已复制');
     } catch {
       textInput.current?.focus({ cursor: 'all' });
       message.info('请复制选中的图文链接');
@@ -156,13 +156,18 @@ export function TopicShare({ topic, category, close }) {
     }
   }
 
-  return <Modal open title="分享话题" onCancel={close} footer={null} width={520}>
+  return <Modal open title={
+    <span className="inline">
+      <span>分享话题</span>
+      <small className="muted" style={{ fontWeight: 400 }}>注意信息安全</small>
+    </span>
+  } onCancel={close} footer={null} width={520}>
     <Tabs activeKey={tab} onChange={setTab} items={[
       { key: 'link', label: '图文链接', children: <div className="stack">
         <Input.TextArea ref={textInput} readOnly aria-label="分享文字" value={text} autoSize={{ minRows: 3, maxRows: 6 }} />
         <div className="inline">
           <Button type="primary" onClick={copyText}>复制图文链接</Button>
-          {navigator.share && <Button onClick={() => share({ text }, '可复制图文链接，再粘贴到微信')}>系统分享</Button>}
+          {navigator.share && <Button onClick={() => share({ text }, '可复制图文链接后分享')}>系统分享</Button>}
         </div>
       </div> },
       { key: 'image', label: '分享图', children: tab === 'image' && <SharePoster topic={topic} category={category} url={url.href} share={share} /> },
@@ -204,9 +209,9 @@ function SharePoster({ topic, category, url, share }) {
         <div className="topic-share-image"><img src={preview.src} alt="话题正文、评论和二维码分享图" /></div>
         <div className="inline">
           <Button type="primary" href={preview.src} download={file.name}>保存图片</Button>
-          {navigator.canShare?.(data) && <Button onClick={() => share(data, '可先保存图片，再发送到微信')}>系统分享</Button>}
+          {navigator.canShare?.(data) && <Button onClick={() => share(data, '可保存图片后分享')}>系统分享</Button>}
         </div>
-        <small className="muted">也可长按图片保存，或在微信里识别图中的二维码。</small>
+        <small className="muted">长按可保存图片，扫码可打开话题。</small>
       </>;
     }}</Load>
   </div>;

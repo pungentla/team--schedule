@@ -6,8 +6,9 @@
  */
 
 const db = require('./db');
+const { ensureAlias } = require('../repositories/discussionAliasRepo');
 
-const CURRENT_VERSION = 20;
+const CURRENT_VERSION = 21;
 
 function migrate() {
   db.open();
@@ -48,6 +49,11 @@ function migrate() {
         if (!db.all('PRAGMA table_info(discussion_replies)').some(column => column.name === 'parent_reply_id')) {
           db.exec('ALTER TABLE discussion_replies ADD COLUMN parent_reply_id INTEGER REFERENCES discussion_replies(id) ON DELETE SET NULL');
         }
+        const anonymousAuthors = db.all(`SELECT id AS topicId, author_id AS userId FROM discussion_topics
+          WHERE is_anonymous = 1 AND author_id IS NOT NULL
+          UNION SELECT r.topic_id, r.author_id FROM discussion_replies r JOIN discussion_topics t ON t.id = r.topic_id
+          WHERE t.is_anonymous = 1 AND r.author_id IS NOT NULL`);
+        for (const { topicId, userId } of anonymousAuthors) ensureAlias(topicId, userId);
         if (rebuildTopics && db.get('PRAGMA foreign_key_check')) throw new Error('数据库迁移后存在无效引用');
         db.exec(`PRAGMA user_version = ${CURRENT_VERSION}`);
       });
@@ -149,6 +155,7 @@ function truncateAll() {
     'discussion_likes',
     'discussion_poll_votes',
     'discussion_poll_options',
+    'discussion_aliases',
     'discussion_topics',
     'push_events',
     'push_subscriptions',

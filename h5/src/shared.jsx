@@ -18,6 +18,8 @@ export const swapLabels = { pending: '待确认', approved: '已生效', rejecte
 export const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 export const option = (value, label) => ({ value, label });
 export const personLabel = p => `${p.name}（${p.employeeNo}）`;
+export const discussionName = (entry, anonymous = entry.anonymous) => anonymous
+  ? entry.anonymousName || '匿名成员' : entry.authorName || '成员';
 export const periodOptions = periods => periods.map(p => option(p.id, `${p.name}（${periodLabels[p.status]}）`));
 export const roleOptions = (...roles) => roles.map(r => option(r, roleLabels[r]));
 export const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());

@@ -4,6 +4,7 @@ const express = require('express');
 const db = require('../db/db');
 const { ROLES } = require('../config');
 const { requireAuth } = require('../middleware/auth');
+const { ensureAlias } = require('../repositories/discussionAliasRepo');
 const { queuePushEvent } = require('../services/reminderService');
 const { nowIso } = require('../utils/date');
 const { badRequest, conflict, forbidden, notFound } = require('../utils/errors');
@@ -19,12 +20,14 @@ const participantSelect = `SELECT author_id FROM discussion_topics WHERE id=?
 const topicSelect = `SELECT t.id, t.category, t.title, t.content, t.article_url AS articleUrl,
     t.created_at AS createdAt, t.is_anonymous AS anonymous, t.poll_mode AS pollMode, t.poll_closes_at AS pollClosesAt,
     CASE WHEN t.is_anonymous = 0 THEN u.name END AS authorName,
+    a.name AS anonymousName,
     (SELECT COUNT(*) FROM discussion_replies r WHERE r.topic_id = t.id) AS replyCount,
     (SELECT COUNT(*) FROM discussion_images i WHERE i.topic_id = t.id) AS imageCount,
     (SELECT COUNT(*) FROM discussion_likes l WHERE l.topic_id = t.id) AS likeCount,
     EXISTS(SELECT 1 FROM discussion_likes l WHERE l.topic_id = t.id AND l.user_id = ?1) AS liked,
     (t.author_id IS ?1 OR ?2) AS canDelete
-  FROM discussion_topics t LEFT JOIN users u ON u.id = t.author_id`;
+  FROM discussion_topics t LEFT JOIN users u ON u.id = t.author_id
+  LEFT JOIN discussion_aliases a ON t.is_anonymous = 1 AND a.topic_id = t.id AND a.user_id = t.author_id`;
 router.use(requireAuth);
 
 function notifyParticipants(topicId, actorId, body, replyToUserId = null, replyId = null) {
@@ -170,6 +173,7 @@ router.post('/', (req, res) => {
   const id = db.tx(() => {
     const { lastInsertRowid } = db.run(`INSERT INTO discussion_topics (author_id, category, title, content, article_url, created_at, is_anonymous, poll_mode, poll_closes_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, req.user.id, category, title, content, articleUrl, nowIso(), anonymous, pollMode, pollClosesAt);
+    if (anonymous) ensureAlias(lastInsertRowid, req.user.id);
     pollOptions.forEach((label, index) => db.run('INSERT INTO discussion_poll_options (topic_id, position, label) VALUES (?, ?, ?)',
       lastInsertRowid, index + 1, label));
     images.forEach((image, index) => db.run('INSERT INTO discussion_images (topic_id, position, mime_type, content) VALUES (?, ?, ?, ?)',
@@ -181,8 +185,10 @@ router.post('/', (req, res) => {
 
 router.param('id', (req, _res, next, value) => {
   const topicId = intParam(value, '话题');
-  if (!db.pluck('SELECT id FROM discussion_topics WHERE id = ?', topicId)) return next(notFound('话题不存在'));
+  const topic = db.get('SELECT is_anonymous FROM discussion_topics WHERE id = ?', topicId);
+  if (!topic) return next(notFound('话题不存在'));
   req.topicId = topicId;
+  req.topicAnonymous = topic.is_anonymous;
   next();
 });
 
@@ -281,11 +287,14 @@ router.get('/:id/replies', (req, res) => {
   }
   const items = db.all(`SELECT r.id, r.content, r.created_at AS createdAt, (unread.reply_id IS NOT NULL) AS unread,
       CASE WHEN t.is_anonymous = 0 THEN u.name END AS authorName, (r.author_id IS ? OR ?) AS canDelete,
+      a.name AS anonymousName, parent_alias.name AS replyToAnonymousName,
       parent.id AS replyToId, CASE WHEN t.is_anonymous = 0 THEN parent_user.name END AS replyToName,
       substr(parent.content, 1, 120) AS replyToExcerpt
     FROM discussion_replies r JOIN discussion_topics t ON t.id = r.topic_id LEFT JOIN users u ON u.id = r.author_id
     LEFT JOIN discussion_replies parent ON parent.id = r.parent_reply_id AND parent.topic_id = r.topic_id
     LEFT JOIN users parent_user ON parent_user.id = parent.author_id
+    LEFT JOIN discussion_aliases a ON t.is_anonymous = 1 AND a.topic_id = t.id AND a.user_id = r.author_id
+    LEFT JOIN discussion_aliases parent_alias ON t.is_anonymous = 1 AND parent_alias.topic_id = t.id AND parent_alias.user_id = parent.author_id
     LEFT JOIN discussion_unread_replies unread ON unread.reply_id = r.id AND unread.user_id = ? WHERE r.topic_id = ?
     ORDER BY r.id ASC LIMIT ? OFFSET ?`, user.id, isSuperAdmin(user), user.id, topicId, PAGE_SIZE, (page - 1) * PAGE_SIZE);
   const total = db.pluck('SELECT COUNT(*) FROM discussion_replies WHERE topic_id = ?', topicId);
@@ -322,6 +331,7 @@ router.post('/:id/replies', (req, res) => {
     if (replyToId != null && !parent) throw notFound('要回复的评论不存在，请重新选择');
     const { lastInsertRowid } = db.run(`INSERT INTO discussion_replies (topic_id, author_id, parent_reply_id, content, created_at)
       VALUES (?, ?, ?, ?, ?)`, req.topicId, req.user.id, replyToId ?? null, content, nowIso());
+    if (req.topicAnonymous) ensureAlias(req.topicId, req.user.id);
     db.run(`INSERT INTO discussion_unread_replies (user_id, reply_id)
       SELECT author_id, ? FROM (${participantSelect}) WHERE author_id <> ?`, lastInsertRowid, req.topicId, req.topicId, req.user.id);
     notifyParticipants(req.topicId, req.user.id, '你参与的话题有新回复。', parent?.author_id ?? null, lastInsertRowid);

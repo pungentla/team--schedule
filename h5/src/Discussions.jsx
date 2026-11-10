@@ -18,7 +18,7 @@ import Upload from 'antd/es/upload';
 import ShareAltOutlined from '@ant-design/icons/es/icons/ShareAltOutlined';
 import { TopicHeat } from './DiscussionPreview';
 import { TopicShare } from './TopicShare';
-import { API, Blank, Heading, Load, option, timeText, useAction, useLoad } from './shared';
+import { API, Blank, Heading, Load, discussionName, option, timeText, useAction, useLoad } from './shared';
 
 const categories = { chat: '闲聊', feedback: '吐槽', share: '文章分享', poll: '投票' };
 const categoryTabs = [{ key: 'all', label: '全部' }, ...Object.entries(categories).map(([key, label]) => ({ key, label }))];
@@ -253,7 +253,7 @@ function NewTopic({ close, saved }) {
       }, '话题已发布', saved)}>
       <Form.Item name="category" label="分类"><Select options={Object.entries(categories).map(([key, label]) => option(key, label))} /></Form.Item>
       <Form.Item name="title" label="话题标题" rules={[filled('请输入话题标题')]}><Input maxLength={80} /></Form.Item>
-      <Form.Item name="anonymous" valuePropName="checked"><Checkbox>匿名发布（话题内的评论和回复也匿名）</Checkbox></Form.Item>
+      <Form.Item name="anonymous" valuePropName="checked"><Checkbox>匿名发布（话题内使用随机昵称）</Checkbox></Form.Item>
       {category === 'poll' && <Form.Item name="pollMode" label="投票方式">
         <Radio.Group options={Object.entries(pollModeLabels).map(([mode, label]) => option(mode, label))} />
       </Form.Item>}
@@ -317,7 +317,7 @@ function TopicCard({ topic, replyId, now, open, updated, deleted, loading, expan
       <Badge size="small" count={unreadCount} title={unreadCount ? `${unreadCount} 条未读回复` : undefined} />
       <TopicHeat rank={heatRank} />
     </div>
-    <div className="muted">{topic.anonymous ? '匿名成员' : topic.authorName || '成员'} · {timeText(topic.createdAt)}</div>
+    <div className="muted">{discussionName(topic)} · {timeText(topic.createdAt)}</div>
     {topic.content && <p className={`discussion-text${open ? ' topic-preview' : ''}`}>{topic.content}</p>}
     {topic.articleUrl && <a className="article-link" href={topic.articleUrl} target="_blank" rel="noopener noreferrer">打开文章 ↗</a>}
     {topic.imageCount > 0 && <TopicImages topicId={topic.id} count={topic.imageCount} compact={!!open} />}
@@ -520,7 +520,7 @@ function TopicReplies({ topicId, replyId, replyCount, anonymous, updated, close,
         key={reply.id} data-reply-id={reply.id}>
         <div className="row-between" data-unread-reply={reply.unread ? reply.id : undefined}>
           <div className="inline topic-reply-meta">
-            <strong>{anonymous ? '匿名成员' : reply.authorName || '成员'}</strong>
+            <strong>{discussionName(reply, anonymous)}</strong>
             <time className="muted" dateTime={reply.createdAt}>{timeText(reply.createdAt)}</time>
           </div>
           <div className="inline topic-reply-actions">
@@ -532,7 +532,7 @@ function TopicReplies({ topicId, replyId, replyCount, anonymous, updated, close,
           </div>
         </div>
         {reply.replyToId && <div className="topic-reply-reference muted">
-          <strong>回复 {anonymous ? '匿名成员' : reply.replyToName || '成员'}</strong>
+          <strong>回复 {anonymous ? reply.replyToAnonymousName || '匿名成员' : reply.replyToName || '成员'}</strong>
           <p className="topic-preview">{reply.replyToExcerpt}</p>
         </div>}
         <p className="discussion-text">{reply.content}</p>
@@ -548,7 +548,7 @@ function TopicReplies({ topicId, replyId, replyCount, anonymous, updated, close,
       }
     )}>
       {replyTo && <div className="topic-reply-reference muted">
-        <strong>回复 {anonymous ? '匿名成员' : replyTo.authorName || '成员'}</strong>
+        <strong>回复 {discussionName(replyTo, anonymous)}</strong>
         <p className="topic-preview">{replyTo.content}</p>
       </div>}
       <Form.Item name="content" label={replyTo ? '回复' : '评论'} rules={[filled(replyTo ? '请输入回复内容' : '请输入评论内容')]}>

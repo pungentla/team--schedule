@@ -91,6 +91,14 @@ CREATE TABLE IF NOT EXISTS discussion_topics (
 );
 CREATE INDEX IF NOT EXISTS idx_discussion_topics_category ON discussion_topics(category, id);
 
+CREATE TABLE IF NOT EXISTS discussion_aliases (
+  topic_id INTEGER NOT NULL REFERENCES discussion_topics(id) ON DELETE CASCADE,
+  user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name     TEXT NOT NULL,
+  PRIMARY KEY (topic_id, user_id),
+  UNIQUE (topic_id, name)
+);
+
 CREATE TABLE IF NOT EXISTS discussion_replies (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   topic_id    INTEGER NOT NULL REFERENCES discussion_topics(id) ON DELETE CASCADE,
