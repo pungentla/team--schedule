@@ -23,7 +23,7 @@ let txDepth = 0;
 
 /**
  * 值规整：把 JS 值转成 node:sqlite 能绑定的类型。
- * undefined → null（SQL NULL），boolean → 0/1，bigint → Number，Date → ISO
+ * undefined → null（SQL NULL），boolean → 0/1，bigint → Number，Date → ISO，Uint8Array → BLOB
  */
 function normalizeValue(value) {
   if (value === undefined || value === null) return null;
@@ -31,6 +31,7 @@ function normalizeValue(value) {
   if (t === 'boolean') return value ? 1 : 0;
   if (t === 'bigint') return Number(value);
   if (value instanceof Date) return value.toISOString();
+  if (value instanceof Uint8Array) return value;
   if (t === 'object') return JSON.stringify(value);
   return value;
 }

@@ -42,10 +42,12 @@ services:
 
   # H5 预览（可选）：把 /api 代理到 backend，方便浏览器验收
   h5:
-    image: node:22-alpine
+    build:
+      context: .
+      dockerfile: h5/Dockerfile
+      target: preview
     container_name: teamshift-h5
     restart: unless-stopped
-    working_dir: /app
     ports:
       - "8080:8080"
     environment:
@@ -53,9 +55,6 @@ services:
       API_HOST: backend
       API_PORT: "3000"
       TZ: Asia/Shanghai
-    volumes:
-      - ./h5:/app
-    command: node server.js
     depends_on:
       backend:
         condition: service_healthy

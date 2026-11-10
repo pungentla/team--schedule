@@ -61,7 +61,9 @@ test('已发布周期删除后所有排班、统计、换班待办隐藏，恢�
   const original = snapshot();
   assert.equal(swaps.getPendingCount(recipient), 1);
   assert.equal(schedule.getDashboard().pendingParticipantConfirmations, 1);
-  periodService.deletePeriod(period, ctx());
+  assert.throws(() => periodService.deletePeriod(period, ctx()), (e) => e.status === 403);
+  assert.equal(periods.findPeriod(period).deleted_at, null);
+  periodService.deletePeriod(period, ctx(root));
   assert.deepEqual(snapshot(), original);
   assert.deepEqual(periodService.listPeriods(), []); assert.equal(periods.findCurrentPeriod(), undefined);
   assert.deepEqual(schedule.getMyAssignments(assignment.user_id), []);
@@ -84,7 +86,7 @@ test('删除后拒绝旧周期的读写、旧草稿调配和已发布直接换�
   const { assignment, recipient } = publishedFixture();
   const draft = schedule.generate(period, {}, ctx());
   const other = periodService.createPeriod({ name: '保留', startDate: '2026-11-07', endDate: '2026-11-07' }, ctx()).id;
-  periodService.deletePeriod(period, ctx());
+  periodService.deletePeriod(period, ctx(root));
   for (const fn of [
     () => periodService.getPeriod(period), () => periodService.getRequirementMatrix(period), () => periodService.updatePeriod(period, { name: '不应写入' }, ctx()),
     () => periodService.prepareRequirements(period, ctx()), () => enrollment.getMyEnrollment(period, employee),
@@ -100,14 +102,15 @@ test('删除后拒绝旧周期的读写、旧草稿调配和已发布直接换�
 test('重复删除或恢复幂等，审计保留实际操作者；各阶段均按原状态恢复', () => {
   for (const status of ['draft', 'enrolling', 'scheduling', 'published', 'archived']) {
     db.run('UPDATE periods SET status=? WHERE id=?', status, period);
-    periodService.deletePeriod(period, ctx()); periodService.deletePeriod(period, ctx(root));
-    assert.equal(periods.findPeriod(period, { includeDeleted: true }).deleted_by, admin);
+    const operator = status === 'published' ? root : admin;
+    periodService.deletePeriod(period, ctx(operator)); periodService.deletePeriod(period, ctx(root));
+    assert.equal(periods.findPeriod(period, { includeDeleted: true }).deleted_by, operator);
     assert.equal(periodService.restorePeriod(period, ctx(root)).status, status);
     periodService.restorePeriod(period, ctx(root));
   }
   const logs = db.all("SELECT action,actor_id FROM audit_logs WHERE action IN ('PERIOD_DELETE','PERIOD_RESTORE') ORDER BY id");
   assert.equal(logs.length, 10);
-  assert.ok(logs.every((l) => l.actor_id === (l.action === 'PERIOD_DELETE' ? admin : root)));
+  assert.deepEqual(logs.map((l) => l.actor_id), [admin, root, admin, root, admin, root, root, root, admin, root]);
   missing(() => periodService.deletePeriod(999, ctx())); missing(() => periodService.restorePeriod(999, ctx(root)));
 });
 test('v6 数据无损迁移到回收站字段，原有周期默认可见且重复迁移幂等', () => {

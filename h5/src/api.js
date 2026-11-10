@@ -5,7 +5,7 @@
  * 与后端约定：成功返回 { data }, 失败返回 { error: { code, message } }
  */
 
-const API = (() => {
+export const API = (() => {
   const TOKEN_KEY = 'teamshift_token';
   const USER_KEY = 'teamshift_user';
 
@@ -65,7 +65,10 @@ const API = (() => {
     if (!res.ok) {
       const e = payload && payload.error ? payload.error : {};
       // 登录态失效 → 清会话，回到登录页
-      if (res.status === 401) clearSession();
+      if (res.status === 401 && token && getToken() === token) {
+        clearSession();
+        window.dispatchEvent(new Event('teamshift:session-expired'));
+      }
       throw new ApiError(e.code || `HTTP_${res.status}`, e.message || `请求失败(${res.status})`, res.status, e.details);
     }
 
@@ -100,6 +103,15 @@ const API = (() => {
     login: (employeeNo, password) => request('/auth/login', { method: 'POST', body: { employeeNo, password } }),
     logout: () => request('/auth/logout', { method: 'POST' }),
     me: () => request('/auth/me'),
+    announcement: () => request('/announcements/current'),
+    publishAnnouncement: (body) => request('/announcements/current', { method: 'PUT', body }),
+    discussionTopics: (page, options) => request(`/discussions?${new URLSearchParams({ page, ...options })}`),
+    discussionTopic: id => request(`/discussions/${id}`),
+    setTopicLike: (id, liked) => request(`/discussions/${id}/like`, { method: 'PUT', body: { liked } }),
+    topicImages: id => request(`/discussions/${id}/images`),
+    createTopic: body => request('/discussions', { method: 'POST', body }),
+    topicReplies: (id, page) => request(`/discussions/${id}/replies?page=${page}`),
+    replyToTopic: (id, content) => request(`/discussions/${id}/replies`, { method: 'POST', body: { content } }),
 
     currentPeriod: () => request('/periods/current'),
     listPeriods: () => request('/periods'),
@@ -136,7 +148,7 @@ const API = (() => {
 
     mySwaps: () => request('/swaps?scope=mine'),
     swapInbox: () => request('/swaps?scope=inbox'),
-    recentSchedule: (params) => request(`/schedule/mine/recent?${new URLSearchParams(params)}`),
+    recentSchedule: (params, scope = 'mine') => request(`/schedule/${scope === 'mine' ? 'mine' : 'team'}/recent?${new URLSearchParams(params)}`),
     myAssignments: () => request('/schedule/mine?upcoming=1'),
     swapCandidates: (id) => request(`/swaps/candidates/${id}`),
     createSwap: (body) => request('/swaps', { method: 'POST', body }),

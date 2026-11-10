@@ -558,13 +558,18 @@ function getMyAssignments(userId, { upcomingOnly = false } = {}) {
   }));
 }
 
-/** 跨周期的本人近期安排，同行人员按生效版本、日期、班次和工作精确匹配。 */
-function getRecentSchedule(userId, { startDate = today(), endDate, days = 7 } = {}) {
+function recentDateRange({ startDate = today(), endDate, days = 7 } = {}) {
   if (!isDateString(startDate)) throw badRequest('开始日期格式错误');
   if (!Number.isInteger(days) || days < 1 || days > 366) throw badRequest('天数必须为 1–366');
   endDate = endDate ?? addDays(startDate, days - 1);
   if (!isDateString(endDate) || endDate < startDate) throw badRequest('结束日期必须有效且不早于开始日期');
   if (diffDays(startDate, endDate) > 365) throw badRequest('一次最多查看 366 天');
+  return { startDate, endDate };
+}
+
+/** 跨周期的本人近期安排，同行人员按生效版本、日期、班次和工作精确匹配。 */
+function getRecentSchedule(userId, range) {
+  const { startDate, endDate } = recentDateRange(range);
   const rows = db.all(`SELECT a.*, p.name AS period_name, s.name AS shift_name, s.start_time, s.end_time,
       w.name AS work_type_name, w.color AS work_type_color,
       peer.user_id AS peer_id, u.name AS peer_name, peer.duty_role AS peer_role
@@ -589,6 +594,25 @@ function getRecentSchedule(userId, { startDate = today(), endDate, days = 7 } = 
     if (row.peer_id) assignments.get(row.id).coworkers.push({ userId: row.peer_id, name: row.peer_name, dutyRole: row.peer_role });
   }
   return { startDate, endDate, assignments: [...assignments.values()] };
+}
+
+function getTeamSchedule(range) {
+  const { startDate, endDate } = recentDateRange(range);
+  const rows = db.all(`SELECT a.id, a.user_id, a.work_date, a.duty_role, a.work_type_id, u.name, p.name AS period_name,
+      s.name AS shift_name, s.start_time, s.end_time, w.name AS work_type_name
+    FROM assignments a
+    JOIN schedule_runs r ON r.id=a.run_id AND r.status='published'
+    JOIN periods p ON p.id=a.period_id AND p.deleted_at IS NULL
+    JOIN users u ON u.id=a.user_id
+    JOIN shifts s ON s.id=a.shift_id
+    JOIN work_types w ON w.id=a.work_type_id
+    WHERE a.status='active' AND a.work_date BETWEEN ? AND ?
+    ORDER BY a.work_date,u.name,a.user_id,s.seq,w.sort_order,a.id`, startDate, endDate);
+  return { startDate, endDate, assignments: rows.map((r) => ({
+    id: r.id, userId: r.user_id, name: r.name, workDate: r.work_date, dutyRole: r.duty_role,
+    periodName: r.period_name, shiftName: r.shift_name, startTime: r.start_time.slice(0, 5),
+    endTime: r.end_time.slice(0, 5), workTypeId: r.work_type_id, workTypeName: r.work_type_name,
+  })) };
 }
 
 /** 管理员总览 */
@@ -638,6 +662,7 @@ function getDashboard() {
 
 module.exports = {
   getRecentSchedule,
+  getTeamSchedule,
   getDraftCandidates,
   adjustDraft,
   buildScheduleInput,

@@ -5,6 +5,7 @@
 const periodRepo = require('../repositories/periodRepo');
 const configRepo = require('../repositories/configRepo');
 const enrollmentRepo = require('../repositories/enrollmentRepo');
+const scheduleRepo = require('../repositories/scheduleRepo');
 const auditRepo = require('../repositories/auditRepo');
 const db = require('../db/db');
 const { PERIOD_STATUS, PERIOD_DEFAULTS } = require('../config');
@@ -72,12 +73,8 @@ function createPeriod({ name, startDate, endDate, maxShiftsPerDay, maxShiftsPerW
 
 function updatePeriod(id, fields, ctx) {
   const p = assertPeriod(id);
-  if (p.status === PERIOD_STATUS.PUBLISHED && fields.status === undefined) {
-    // 已发布的周期仍允许改约束（影响的是下次生成），但改名/改日期要谨慎
-    const dateChanged =
-      (fields.startDate && fields.startDate !== p.start_date) ||
-      (fields.endDate && fields.endDate !== p.end_date);
-    if (dateChanged) throw conflict('PERIOD_PUBLISHED', '已发布的周期不能修改起止日期');
+  if ([PERIOD_STATUS.PUBLISHED, PERIOD_STATUS.ARCHIVED].includes(p.status)) {
+    throw conflict('PERIOD_LOCKED', '已发布或已归档的周期设置仅供查看');
   }
   if (fields.startDate && !isDateString(fields.startDate)) throw badRequest('日期格式错误');
   if (fields.endDate && !isDateString(fields.endDate)) throw badRequest('日期格式错误');
@@ -111,6 +108,9 @@ function changeStatus(id, nextStatus, ctx) {
       'INVALID_STATUS_TRANSITION',
       `周期状态不能从 ${p.status} 变为 ${nextStatus}（允许：${allowed.join(', ') || '无'}）`
     );
+  }
+  if ([PERIOD_STATUS.DRAFT, PERIOD_STATUS.ENROLLING].includes(nextStatus) && scheduleRepo.findLatestDraftRun(id)) {
+    throw conflict('PERIOD_HAS_DRAFT', '已有待发布草稿，不能退回报名阶段');
   }
   periodRepo.updatePeriod(id, { status: nextStatus });
   auditRepo.log({
@@ -249,6 +249,11 @@ function setRequirements(periodId, items, ctx) {
   return { updated, totalNeeded: periodRepo.totalNeeded(periodId) };
 }
 
+function defaultNeedForSlot(work, day, shiftId) {
+  const fixedCount = work.weeklyAssignments.filter((r) => r.weekday === day && r.shiftId === shiftId).length;
+  return Math.max(work.defaultNeed, fixedCount, work.requiresRoles && fixedCount > 0 ? 2 : 0);
+}
+
 /**
  * 读取完整需求矩阵：日期 × 班次 × 工作类型
  * 返回结构便于前端直接渲染表格
@@ -256,7 +261,8 @@ function setRequirements(periodId, items, ctx) {
 function getRequirementMatrix(periodId) {
   const p = assertPeriod(periodId);
   const scope = periodRepo.getScope(p);
-  const activeShifts = new Set(configRepo.listShifts({ includeInactive: false }).map((s) => s.id));
+  const activeShifts = new Set(configRepo.listShifts({ includeInactive: false })
+    .filter((s) => scope.shiftIds === null || scope.shiftIds.includes(s.id)).map((s) => s.id));
   const locked = ['published', 'archived'].includes(p.status);
   const slots = periodRepo.listSlots(periodId).filter((s) => (locked || activeShifts.has(s.shift_id)) && (scope.shiftIds === null || scope.shiftIds.includes(s.shift_id)));
   const allWorkTypes = configRepo.listWorkTypes({ includeInactive: false }).filter((w) => scope.workTypeIds === null || scope.workTypeIds.includes(w.id)).map(configRepo.toWorkTypeDto);
@@ -283,6 +289,8 @@ function getRequirementMatrix(periodId) {
 
   const dates = [];
   const byDate = new Map();
+  const expectedSlots = (diffDays(p.start_date, p.end_date) + 1) * activeShifts.size;
+  let matchesDefaultRules = !locked && slots.length > 0 && slots.length === expectedSlots && allWorkTypes.length > 0;
   for (const s of slots) {
     if (!byDate.has(s.work_date)) {
       byDate.set(s.work_date, {
@@ -293,6 +301,7 @@ function getRequirementMatrix(periodId) {
     }
     const entry = byDate.get(s.work_date);
     if (entry.shifts.some((x) => x.shiftId === s.shift_id)) continue;
+    const day = weekday(s.work_date);
     entry.shifts.push({
       shiftId: s.shift_id,
       shiftName: s.shift_name,
@@ -300,13 +309,12 @@ function getRequirementMatrix(periodId) {
       startTime: s.start_time.slice(0, 5),
       endTime: s.end_time.slice(0, 5),
       shiftColor: s.shift_color,
-      requirements: allWorkTypes.map((wt) => ({
-        workTypeId: wt.id,
-        workTypeName: wt.name,
-        workTypeColor: wt.color,
-        allowed: wt.weekdays.includes(weekday(s.work_date)),
-        needCount: wt.weekdays.includes(weekday(s.work_date)) ? (reqMap.get(`${s.work_date}|${s.shift_id}|${wt.id}`) || 0) : 0,
-      })),
+      requirements: allWorkTypes.map((wt) => {
+        const allowed = wt.weekdays.includes(day);
+        const needCount = allowed ? (reqMap.get(`${s.work_date}|${s.shift_id}|${wt.id}`) || 0) : 0;
+        if (matchesDefaultRules && allowed && needCount !== defaultNeedForSlot(wt, day, s.shift_id)) matchesDefaultRules = false;
+        return { workTypeId: wt.id, workTypeName: wt.name, workTypeColor: wt.color, allowed, needCount };
+      }),
     });
   }
 
@@ -318,6 +326,7 @@ function getRequirementMatrix(periodId) {
     workTypes: allWorkTypes,
     shifts: [...shiftMap.values()].sort((a, b) => a.shiftSeq - b.shiftSeq),
     dates: dates.map((d) => byDate.get(d)),
+    matchesDefaultRules,
     totalNeeded: [...byDate.values()].reduce((total, day) => total + day.shifts.reduce((n, shift) => n + shift.requirements.reduce((m, r) => m + r.needCount, 0), 0), 0),
   };
 }
@@ -328,18 +337,19 @@ function applyWorkRules(periodId, ctx, { skipSlots = null } = {}) {
   const slots = periodRepo.listSlots(periodId);
   if (!slots.length) throw badRequest('请先生成日期和班次格子');
   const scope = periodRepo.getScope(p);
-  const workTypes = configRepo.listWorkTypes({ includeInactive: false }).filter((w) => scope.workTypeIds === null || scope.workTypeIds.includes(w.id));
+  const workTypes = configRepo.listWorkTypes({ includeInactive: false })
+    .filter((w) => scope.workTypeIds === null || scope.workTypeIds.includes(w.id)).map(configRepo.toWorkTypeDto);
   const shifts = new Set(configRepo.listShifts({ includeInactive: false }).filter((s) => scope.shiftIds === null || scope.shiftIds.includes(s.id)).map((s) => s.id));
   let updated = 0;
   db.tx(() => {
     for (const slot of slots) {
       if (scope.shiftIds !== null && !scope.shiftIds.includes(slot.shift_id)) continue;
       if (skipSlots?.has(`${slot.work_date}|${slot.shift_id}`)) continue;
+      const day = weekday(slot.work_date);
       for (const work of workTypes) {
-        const allowed = shifts.has(slot.shift_id) && JSON.parse(work.weekdays_json).includes(weekday(slot.work_date));
-        const fixedCount = JSON.parse(work.weekly_assignments_json).filter((r) => r.weekday === weekday(slot.work_date) && r.shiftId === slot.shift_id).length;
-        const need = Math.max(work.default_need, fixedCount, work.requires_roles && fixedCount > 0 ? 2 : 0);
-        periodRepo.upsertRequirement(periodId, slot.work_date, slot.shift_id, work.id, allowed ? need : 0);
+        const allowed = shifts.has(slot.shift_id) && work.weekdays.includes(day);
+        const need = allowed ? defaultNeedForSlot(work, day, slot.shift_id) : 0;
+        periodRepo.upsertRequirement(periodId, slot.work_date, slot.shift_id, work.id, need);
         updated += 1;
       }
     }
@@ -380,7 +390,10 @@ function findCurrentPeriod(list) {
   return active.slice().sort((a, b) => b.endDate.localeCompare(a.endDate))[0] || list[0] || null;
 }
 
-function listPeriods() {
+function listPeriods({ includeDraftStatus = false } = {}) {
+  const draftPeriods = includeDraftStatus
+    ? new Set(db.all("SELECT DISTINCT period_id FROM schedule_runs WHERE status = 'draft'").map(run => run.period_id))
+    : null;
   return periodRepo.listPeriods().map((p) => {
     const dto = periodRepo.toPeriodDto(p);
     const enrolled = enrollmentRepo.countSubmittedEnrollments(p.id);
@@ -391,6 +404,7 @@ function listPeriods() {
     );
     return {
       ...dto,
+      ...(draftPeriods && { hasDraft: draftPeriods.has(p.id) }),
       enrolledCount: enrolled,
       totalEmployees,
       totalNeeded: periodRepo.totalNeeded(p.id),
@@ -429,6 +443,9 @@ function deletePeriod(id, ctx) {
   return db.tx(() => {
     const period = periodRepo.findPeriod(id, { includeDeleted: true });
     if (!period) throw notFound('排班周期不存在');
+    if (period.status === PERIOD_STATUS.PUBLISHED && ctx.user.role !== 'super_admin') {
+      throw forbidden('仅超级管理员可以删除已发布的周期');
+    }
     if (!period.deleted_at) {
       db.run('UPDATE periods SET deleted_at=?, deleted_by=?, updated_at=? WHERE id=?', nowIso(), ctx.user.id, nowIso(), id);
       auditRepo.log({ action: auditRepo.ACTIONS.PERIOD_DELETE, entityType: 'period', entityId: id, periodId: id, actorId: ctx.user.id, detail: { name: period.name, status: period.status }, requestId: ctx.requestId });

@@ -230,6 +230,7 @@ function getMyEnrollment(periodId, userId) {
     maxShifts: e.max_shifts,
     note: e.note,
     submittedAt: e.submitted_at,
+    submittedByName: auditRepo.enrollmentProxyName(e),
     workTypes: enrollmentRepo.listEnrollmentWorkTypes(e.id).map((w) => ({
       workTypeId: w.work_type_id,
       name: w.name,

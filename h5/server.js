@@ -2,7 +2,7 @@
 
 /**
  * H5 预览服务器 —— 零依赖。
- * 静态托管 public/ + 把 /api 代理到后端(默认 127.0.0.1:3000)。
+ * 静态托管 dist/ + 把 /api 代理到后端(默认 127.0.0.1:3000)。
  */
 
 const http = require('node:http');
@@ -12,7 +12,7 @@ const path = require('node:path');
 const PORT = Number(process.env.H5_PORT || 8080);
 const API_HOST = process.env.API_HOST || '127.0.0.1';
 const API_PORT = Number(process.env.API_PORT || 3000);
-const PUBLIC_DIR = path.join(__dirname, 'public');
+const PUBLIC_DIR = path.join(__dirname, 'dist');
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',

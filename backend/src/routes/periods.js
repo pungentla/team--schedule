@@ -26,7 +26,8 @@ function parseDate(v, field) {
 }
 
 router.get('/', requireAuth, (req, res) => {
-  res.json({ data: periodService.listPeriods() });
+  const includeDraftStatus = ['admin', 'super_admin'].includes(req.user.role);
+  res.json({ data: periodService.listPeriods({ includeDraftStatus }) });
 });
 
 router.get('/current', requireAuth, (req, res) => {

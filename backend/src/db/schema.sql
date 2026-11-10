@@ -49,6 +49,48 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
+CREATE TABLE IF NOT EXISTS announcements (
+  id            INTEGER PRIMARY KEY CHECK (id = 1),
+  title         TEXT NOT NULL,
+  content       TEXT NOT NULL,
+  published_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  published_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS discussion_topics (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  author_id   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  category    TEXT NOT NULL CHECK (category IN ('chat', 'feedback', 'share')),
+  title       TEXT NOT NULL,
+  content     TEXT NOT NULL,
+  article_url TEXT,
+  created_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS discussion_replies (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  topic_id    INTEGER NOT NULL REFERENCES discussion_topics(id) ON DELETE CASCADE,
+  author_id   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  content     TEXT NOT NULL,
+  created_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_discussion_replies_topic ON discussion_replies(topic_id, id);
+
+CREATE TABLE IF NOT EXISTS discussion_images (
+  topic_id  INTEGER NOT NULL REFERENCES discussion_topics(id) ON DELETE CASCADE,
+  position  INTEGER NOT NULL CHECK (position BETWEEN 1 AND 3),
+  mime_type TEXT NOT NULL,
+  content   BLOB NOT NULL,
+  PRIMARY KEY (topic_id, position)
+);
+
+CREATE TABLE IF NOT EXISTS discussion_likes (
+  topic_id INTEGER NOT NULL REFERENCES discussion_topics(id) ON DELETE CASCADE,
+  user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  PRIMARY KEY (topic_id, user_id)
+);
+
 -- ---------------------------------------------------------------------------
 -- 2. 基础配置：工作类型 / 班次
 -- ---------------------------------------------------------------------------

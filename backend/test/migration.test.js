@@ -38,4 +38,18 @@ test('v1 原有用户、报名与已发布排班无损升级，新增角色不�
   assert.deepEqual(JSON.parse(work.weekdays_json), [0, 1, 2, 3, 4, 5, 6]);
   assert.deepEqual(migrate(), { fromVersion: CURRENT_VERSION, toVersion: CURRENT_VERSION });
 });
+test('v11 升级保留旧话题并能原样读写图片二进制', () => {
+  db.close();
+  db.open(path.join(tmp, 'discussion-v11.db'));
+  migrate();
+  db.exec(`DROP TABLE discussion_images;
+    INSERT INTO discussion_topics (id, category, title, content, created_at) VALUES (1, 'chat', '旧话题', '正文', 'now');
+    PRAGMA user_version = 11;`);
+  assert.deepEqual(migrate(), { fromVersion: 11, toVersion: CURRENT_VERSION });
+  assert.equal(db.pluck('SELECT title FROM discussion_topics WHERE id = 1'), '旧话题');
+  const image = Buffer.from([0, 127, 128, 255]);
+  db.run("INSERT INTO discussion_images (topic_id, position, mime_type, content) VALUES (1, 1, 'image/png', ?)", image);
+  assert.deepEqual(Buffer.from(db.pluck('SELECT content FROM discussion_images')), image);
+});
+
 test.after(() => { db.close(); fs.rmSync(tmp, { recursive: true, force: true }); });

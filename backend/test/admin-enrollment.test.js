@@ -37,6 +37,9 @@ test('管理员和超级管理员无需开放本人报名即可代报，直接�
   assert.deepEqual(logs.map((l) => l.actor_id), [admin, root]);
   assert.deepEqual(logs.map((l) => JSON.parse(l.detail_json).targetUserId), [employee, second]);
   assert.ok(logs.every((l) => JSON.parse(l.detail_json).submittedByAdmin));
+  assert.ok(first.submittedAt);
+  assert.equal(first.submittedByName, '人员0');
+  assert.equal(enrollment.getMyEnrollment(period, second).submittedByName, '人员1');
   const run = schedule.generate(period, {}, ctx()); assert.equal(run.assignments.length, 4);
   schedule.publish(period, run.runId, ctx());
   assert.equal(schedule.getMyAssignments(employee).length, 2);
@@ -50,6 +53,18 @@ test('普通员工不能读取或修改代报名；停用与不存在的人员�
   users.updateUser(second, { status: 'disabled' });
   assert.throws(() => proxy(second), /已停用/);
   assert.equal(db.pluck('SELECT COUNT(*) FROM enrollments'), 0);
+});
+test('本人重新提交和保存草稿后不沿用旧的代报名人', () => {
+  periodService.changeStatus(period, 'enrolling', ctx());
+  assert.equal(proxy(employee).submittedByName, '人员0');
+  const submitted = enrollment.saveEnrollment(period, employee, choices(), ctx(employee));
+  assert.ok(submitted.submittedAt);
+  assert.equal(submitted.submittedByName, null);
+
+  assert.equal(proxy(employee, 'primary', root).submittedByName, '人员1');
+  const draft = enrollment.saveEnrollment(period, employee, { ...choices(), submit: false }, ctx(employee));
+  assert.equal(draft.submittedAt, null);
+  assert.equal(draft.submittedByName, null);
 });
 test('更新已有报名时保留请假、可用时间、个人上限及备注，并幂等更新原记录', () => {
   periodService.changeStatus(period, 'enrolling', ctx());

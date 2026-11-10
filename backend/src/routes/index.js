@@ -16,6 +16,8 @@ const scheduleRoutes = require('./schedule');
 const swapRoutes = require('./swaps');
 const statsRoutes = require('./stats');
 const adminRoutes = require('./admin');
+const announcementRoutes = require('./announcements');
+const discussionRoutes = require('./discussions');
 
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 
@@ -56,6 +58,8 @@ router.use('/enrollments', enrollmentRoutes);
 router.use('/schedule', scheduleRoutes);
 router.use('/swaps', swapRoutes);
 router.use('/stats', statsRoutes);
+router.use('/announcements', announcementRoutes);
+router.use('/discussions', discussionRoutes);
 router.use('/admin', requireAuth, requireAdmin, adminRoutes);
 
 module.exports = router;

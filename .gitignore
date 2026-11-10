@@ -17,3 +17,6 @@ data/
 backups/
 deploy/certs/
 .certbot-webroot/
+
+# H5 构建产物
+/h5/dist/

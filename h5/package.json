@@ -2,11 +2,22 @@
   "name": "@teamshift/h5",
   "version": "1.0.0",
   "private": true,
-  "description": "排班宝 TeamShift H5 预览版（共用同一后端 API，用于浏览器验收演示）",
+  "description": "排班宝 TeamShift H5",
   "type": "commonjs",
   "main": "server.js",
   "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "prestart": "npm run build",
     "start": "node server.js"
   },
-  "dependencies": {}
+  "dependencies": {
+    "antd": "^5.29.3",
+    "dayjs": "^1.11.23",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "vite": "^6.4.6"
+  }
 }

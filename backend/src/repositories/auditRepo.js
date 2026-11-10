@@ -115,6 +115,27 @@ function safeParse(s) {
   }
 }
 
+/** 只从与当前提交对应的最近一条日志读取代报名人。 */
+function enrollmentProxyName(enrollment) {
+  if (!enrollment.submitted_at) return null;
+  const event = db.get(
+    `SELECT a.actor_id, a.detail_json, u.name AS actor_name
+       FROM audit_logs a
+       LEFT JOIN users u ON u.id = a.actor_id
+      WHERE a.action = ? AND a.entity_type = 'enrollment'
+        AND a.period_id = ? AND a.entity_id = ? AND a.created_at >= ?
+      ORDER BY a.id DESC
+      LIMIT 1`,
+    ACTIONS.ENROLL_SUBMIT,
+    enrollment.period_id,
+    enrollment.id,
+    enrollment.submitted_at
+  );
+  if (!event || event.actor_id === enrollment.user_id) return null;
+  const detail = safeParse(event.detail_json);
+  return detail?.submittedByAdmin && detail.submitted !== false ? event.actor_name : null;
+}
+
 const ACTION_LABELS = {
   AUTH_REGISTER: '注册账号',
   AUTH_LOGIN: '登录',
@@ -144,4 +165,4 @@ const ACTION_LABELS = {
   SWAP_APPLY_FAILED: '换班生效失败'
 };
 
-module.exports = { log, list, ACTIONS, ACTION_LABELS };
+module.exports = { log, list, enrollmentProxyName, ACTIONS, ACTION_LABELS };

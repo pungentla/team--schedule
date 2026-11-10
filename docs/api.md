@@ -377,6 +377,7 @@ draft → enrolling → scheduling → published → archived
 | GET /enrollments/:periodId/users/:userId | 管理员：目标人员、报名上下文与已有报名 |
 | POST /enrollments/:periodId/users/:userId | 管理员代报：`{workTypes:[{workTypeId,priority,dutyRole}]}`；角色为 member / primary / deputy / both，须符合工作配置；直接提交并保留原个人限制，已发布周期可继续代报：正式提交补入今天起 7 天的合适空位；取消工作会移除本周期明天起该人的该工作安排并取消相关待确认换班，今天和历史保留；归档周期锁定 |
 | GET /schedule/mine/recent | 所有用户，本人身份取自登录态；`days` 默认 7，或 `startDate`、`endDate`（YYYY-MM-DD，最多 366 天）；返回日期范围、assignments 及各项 coworkers（userId、name、dutyRole） |
+| GET /schedule/team/recent | 所有登录用户；日期参数同个人近期接口，返回跨周期已发布安排中的姓名、日期、工作 ID、班次、时间及主副角色；不返回工号或联系方式 |
 | DELETE /periods/:id | 管理员、超级管理员：软删除，返回 `{id,deleted:true}`，重复操作幂等 |
 | GET /periods/deleted | 仅超级管理员：回收站周期、原状态、deletedAt、deletedBy、deletedByName |
 | POST /periods/:id/restore | 仅超级管理员：恢复原周期 DTO，重复操作幂等；不自动重新生成或发布 |
@@ -390,6 +391,8 @@ draft → enrolling → scheduling → published → archived
 本人报名与管理员代报名使用相同规则。取消既有报名可传空 `workTypes`；从未报名且无固定资格的新空提交仍拒绝。正式提交回传 `scheduleChanges`：`afterDate`（今天，北京时间）、`endDate`（今天+6天）、`withdrawnWorkTypeIds`、`removedCount`、`addedCount`、`cancelledSwapCount`。草稿保存不执行排班变更。近 7 天只新增空位，不重新生成、替换或挪动已有安排；所有变更及统计刷新在同一事务中。
 
 报名详情新增 `submittedWorkTypeIds`（上次正式提交工作快照，保存草稿不覆盖）、`withdrawnWorkTypeIds`（本周期显式取消的工作，阻止固定规则重新带回）。已有草稿在报名变化后须重新生成。
+
+报名详情的 `submittedAt` 为当前报名的提交时间。当前报名由他人代为提交且有对应审计记录时，`submittedByName` 返回代报名人的姓名。
 
 工作类型读写新增 `dutyPairs: [{primaryUserId,deputyUserId}]`，最多 100 组；需开启 `requiresRoles`，同组两人不同、账号启用，完全重复组拒绝，同一人员可出现在多组。空名单解除组合限制；成员仍需相应报名资格。生成、发布、草稿调配、换班和近 7 天补位检查搭档关系。额外主副也须有允许的搭档在场。
 

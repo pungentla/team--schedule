@@ -192,7 +192,7 @@ else
   exit 1
 fi
 
-"${HEALTH_CURL[@]}" "$CHECK_URL/" >/dev/null || die "H5 页面访问失败，请检查 Nginx 日志和 h5/public 挂载"
+"${HEALTH_CURL[@]}" "$CHECK_URL/" >/dev/null || die "H5 页面访问失败，请检查 Nginx 日志和 H5 镜像构建结果"
 info "H5 页面检查通过"
 
 # 检查是否有用户数据，没有则提示灌种子

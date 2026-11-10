@@ -6,8 +6,32 @@
       <text class="p-range">{{period.startDate}} ~ {{period.endDate}}</text>
     </view>
     <view class="tabs">
-      <view class="tab {{tab === 'all' ? 'active' : ''}}" data-tab="all" bindtap="switchTab">全部</view>
-      <view class="tab {{tab === 'mine' ? 'active' : ''}}" data-tab="mine" bindtap="switchTab">我的</view>
+      <button class="tab {{tab === 'mine' ? 'active' : ''}}" data-tab="mine" bindtap="switchTab">个人视角</button>
+      <button class="tab {{tab === 'team' ? 'active' : ''}}" data-tab="team" bindtap="switchTab">团队视角</button>
+      <button class="tab {{tab === 'work' ? 'active' : ''}}" data-tab="work" bindtap="switchTab">工作类型</button>
+    </view>
+  </view>
+
+  <view class="schedule-filters">
+    <picker range="{{ranges}}" value="{{range}}" bindchange="onRange"><view class="schedule-picker">{{ranges[range]}} ▾</view></picker>
+    <picker wx:if="{{tab === 'work' && !loading && !error && workTypes.length}}" range="{{workTypes}}" range-key="name" value="{{workIndex}}" bindchange="onWork">
+      <view class="schedule-picker">{{workTypes[workIndex].name}} ▾</view>
+    </picker>
+    <text class="p-range" wx:if="{{dateRange}}">{{dateRange}}</text>
+  </view>
+  <view class="matrix" wx:if="{{days.length}}">
+    <view class="day-card" wx:for="{{days}}" wx:key="date" wx:for-item="day">
+      <view class="day-head">{{day.label}}<text wx:if="{{tab !== 'mine'}}"> · {{day.people.length}} 人</text></view>
+      <view class="team-person" wx:for="{{day.people}}" wx:key="id" wx:for-item="person">
+        <view class="team-name">{{person.name}}<text wx:if="{{person.mine}}"> · 我</text></view>
+        <view class="team-jobs">
+          <view class="team-job" wx:for="{{person.jobs}}" wx:key="id" wx:for-item="job" data-assignment-id="{{job.id}}" data-user-id="{{person.id}}" bindtap="onTapAssignment">
+            <text>{{job.workTypeName}}{{job.roleLabel ? ' · ' + job.roleLabel : ''}}</text>
+            <text class="team-meta">{{job.shiftName}} · {{job.startTime}}–{{job.endTime}} · {{job.periodName}}</text>
+            <text class="team-meta" wx:if="{{job.peers}}">同伴：{{job.peers}}</text>
+          </view>
+        </view>
+      </view>
     </view>
   </view>
 
@@ -23,7 +47,6 @@
       <view class="shift-block" wx:for="{{day.shifts}}" wx:key="shiftId" wx:for-item="shift">
         <view class="shift-head">
           <text class="shift-name">{{shift.shiftName}}</text>
-          <text class="shift-time">{{shift.workTypes[0].startTime}}-{{shift.workTypes[0].endTime}}</text>
         </view>
         <view class="wt-row" wx:for="{{shift.workTypes}}" wx:key="workTypeId" wx:for-item="wt">
           <view class="wt-name">
@@ -41,7 +64,7 @@
               bindtap="onTapAssignment"
             >{{a.name}}{{a.dutyRole === 'primary' ? '·主' : a.dutyRole === 'deputy' ? '·副' : ''}}</view>
             <view class="count-tag" wx:if="{{wt.needCount > 1}}">{{wt.filled}}/{{wt.needCount}}</view>
-            <view class="gap-badge" wx:if="{{wt.gap > 0}}">{{wt.gapLabel}}</view>
+            <view class="gap-badge" wx:if="{{wt.gap > 0}}">缺{{wt.gap}}</view>
             <view class="gap-badge" wx:for="{{wt.roleGaps}}" wx:key="*this" wx:for-item="role">缺{{role === 'primary' ? '主负责人' : '副负责人'}}</view>
           </view>
         </view>
@@ -49,8 +72,8 @@
     </view>
   </view>
 
-  <view class="empty" wx:if="{{!loading && !filtered.length}}">
-    <text>{{tab === 'mine' ? '本周期暂无你的排班' : '该周期还没有生成排班'}}</text>
+  <view class="empty" wx:if="{{!loading && !days.length && !filtered.length}}">
+    <text>{{error || (tab === 'mine' ? '这段时间暂无我的安排' : tab === 'work' ? (workTypes.length ? '这段时间该工作暂无排班' : '暂无可查看的工作类型') : '这段时间暂无团队排班')}}</text>
   </view>
 
   <view class="loading" wx:if="{{loading}}">加载中...</view>

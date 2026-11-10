@@ -66,12 +66,20 @@ router.get('/periods/:periodId', requireAuth, (req, res) => {
   res.json({ data: scheduleService.getSchedule(periodId, req.user, { runId: runId ?? undefined, version }) });
 });
 
-/** 本人近期安排与同班同事；忽略外部 userId，身份来自登录态。 */
-router.get('/mine/recent', requireAuth, (req, res) => {
-  res.json({ data: scheduleService.getRecentSchedule(req.user.id, {
+function recentRange(req) {
+  return {
     startDate: req.query.startDate, endDate: req.query.endDate,
     days: optionalInt(req.query.days, '天数', { min: 1, max: 366 }) ?? 7,
-  }) });
+  };
+}
+
+/** 本人近期安排与同班同事；忽略外部 userId，身份来自登录态。 */
+router.get('/mine/recent', requireAuth, (req, res) => {
+  res.json({ data: scheduleService.getRecentSchedule(req.user.id, recentRange(req)) });
+});
+
+router.get('/team/recent', requireAuth, (req, res) => {
+  res.json({ data: scheduleService.getTeamSchedule(recentRange(req)) });
 });
 
 /** 我的排班（跨周期） */

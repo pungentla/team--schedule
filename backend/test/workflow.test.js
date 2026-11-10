@@ -29,8 +29,10 @@ test.after(() => { db.close(); fs.rmSync(tmp, { recursive: true, force: true });
 
 test('新建周期一步准备日期班次及默认需求，固定人员自动参与并可直接生成发布', () => {
   configs.insertShift({ code: 'DISABLED', name: '停用班次', startTime: '14:00', endTime: '18:00', seq: 2, active: 0 });
+  configs.updateWorkType(work, { defaultNeed: 0 });
   const p = create();
   const matrix = service.getRequirementMatrix(p.id);
+  assert.equal(matrix.matchesDefaultRules, true);
   assert.equal(matrix.dates.length, 7); assert.equal(matrix.shifts.length, 1); assert.equal(matrix.totalNeeded, 1);
   assert.equal(matrix.dates.find((d) => d.workDate === '2026-11-15').shifts[0].requirements[0].needCount, 1);
   assert.equal(matrix.dates[0].shifts[0].requirements[0].needCount, 0);
@@ -39,14 +41,17 @@ test('新建周期一步准备日期班次及默认需求，固定人员自动�
   assert.equal(ready.nextStep, 'people'); assert.equal(p.status, 'draft');
   const run = schedule.generate(p.id, {}, ctx()); schedule.publish(p.id, run.runId, ctx());
   assert.equal(getPreparation(p.id).nextStep, 'generate');
+  assert.throws(() => service.updatePeriod(p.id, { name: '已发布后改名' }, ctx()), (e) => e.code === 'PERIOD_LOCKED');
 });
 test('初始化旧周期补齐缺失需求，重复执行保留手工人数及显式0，不重置已有工作日规则', () => {
   const p = create({ initializeRequirements: false });
   assert.equal(periods.listSlots(p.id).length, 0); assert.equal(getPreparation(p.id).nextStep, 'requirements');
+  assert.equal(service.getRequirementMatrix(p.id).matchesDefaultRules, false);
   service.prepareRequirements(p.id, ctx());
   service.setRequirements(p.id, [{ workDate: '2026-11-15', shiftId: shift, workTypeId: work, needCount: 0 }], ctx());
   service.prepareRequirements(p.id, ctx());
   assert.equal(service.getRequirementMatrix(p.id).totalNeeded, 0);
+  assert.equal(service.getRequirementMatrix(p.id).matchesDefaultRules, false);
   assert.equal(getPreparation(p.id).canGenerate, false);
   service.setRequirements(p.id, [{ workDate: '2026-11-15', shiftId: shift, workTypeId: work, needCount: 4 }], ctx());
   service.prepareRequirements(p.id, ctx());
@@ -54,6 +59,22 @@ test('初始化旧周期补齐缺失需求，重复执行保留手工人数及�
   service.changeStatus(p.id, 'archived', ctx());
   assert.throws(() => service.prepareRequirements(p.id, ctx()), (e) => e.code === 'PERIOD_LOCKED');
   assert.equal(getPreparation(p.id).canGenerate, false);
+});
+test('生成草稿后不能切回报名中，仍可归档', () => {
+  const p = create();
+  service.changeStatus(p.id, 'enrolling', ctx());
+  service.changeStatus(p.id, 'scheduling', ctx());
+  assert.equal(service.changeStatus(p.id, 'enrolling', ctx()).status, 'enrolling');
+
+  const run = schedule.generate(p.id, {}, ctx());
+  assert.throws(() => service.changeStatus(p.id, 'enrolling', ctx()), (e) => e.code === 'PERIOD_HAS_DRAFT');
+  assert.equal(periods.findPeriod(p.id).status, 'scheduling');
+  assert.equal(getPreparation(p.id).draftRunId, run.runId);
+  periods.updatePeriod(p.id, { status: 'enrolling' });
+  assert.equal(service.listPeriods({ includeDraftStatus: true })[0].hasDraft, true);
+  assert.equal(service.listPeriods()[0].hasDraft, undefined);
+  assert.throws(() => service.changeStatus(p.id, 'draft', ctx()), (e) => e.code === 'PERIOD_HAS_DRAFT');
+  assert.equal(service.changeStatus(p.id, 'archived', ctx()).status, 'archived');
 });
 test('缺少基础配置或初始化中途失败时，不留下半成品周期和日期需求', () => {
   configs.updateShift(shift, { active: 0 });

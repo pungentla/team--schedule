@@ -76,3 +76,26 @@ test('默认从上海时区今天起7天，自定义日期校验边界及空结�
   }
   assert.equal(schedule.getRecentSchedule(me, { startDate: '2026-11-09', endDate: '2026-11-09' }).endDate, '2026-11-09');
 });
+
+test('团队近期安排跨周期包含所有在岗人员及工作 ID，排除草稿、回收站和已释放记录', () => {
+  const first = run('第一周期', '2026-11-09', '2026-11-10');
+  const next = run('第二周期', '2026-11-15', '2026-11-16');
+  assign(first, me, '2026-11-09', shift, work, 'primary');
+  assign(first, friend, '2026-11-09', shift, work, 'deputy');
+  assign(next, other, '2026-11-15', late, otherWork);
+  assign(next, other, '2026-11-16');
+  repo.releaseAssignment(assign(first, manager, '2026-11-10'));
+  assign(run('草稿', '2026-11-10', '2026-11-10', 'draft'), manager, '2026-11-10');
+  assign(run('作废', '2026-11-10', '2026-11-10', 'discarded'), manager, '2026-11-10');
+  const deleted = run('已删除', '2026-11-10', '2026-11-10');
+  assign(deleted, manager, '2026-11-10');
+  db.run('UPDATE periods SET deleted_at=? WHERE id=?', '2026-11-10T00:00:00Z', deleted.period);
+
+  const { startDate, endDate, assignments } = schedule.getTeamSchedule({ startDate: '2026-11-09', days: 7 });
+  assert.equal(startDate, '2026-11-09');
+  assert.equal(endDate, '2026-11-15');
+  assert.deepEqual(assignments.map((a) => a.userId).sort(), [me, friend, other].sort());
+  assert.deepEqual(assignments.filter((a) => a.workTypeId === otherWork).map((a) => [a.name, a.periodName, a.shiftName, a.startTime]), [['其他人', '第二周期', '晚班', '16:00']]);
+  assert.deepEqual(Object.keys(assignments[0]).sort(), ['id', 'userId', 'name', 'workDate', 'dutyRole', 'periodName', 'shiftName', 'startTime', 'endTime', 'workTypeId', 'workTypeName'].sort());
+  assert.throws(() => schedule.getTeamSchedule({ startDate: '2026-11-09', endDate: '2026-11-08' }), (e) => e.status === 400);
+});

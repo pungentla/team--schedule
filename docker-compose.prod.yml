@@ -55,14 +55,16 @@ services:
         max-file: "3"
 
   nginx:
-    image: nginx:1.27-alpine
+    build:
+      context: .
+      dockerfile: h5/Dockerfile
+      target: production
     container_name: teamshift-nginx
     restart: unless-stopped
     ports:
       - "80:80"
     volumes:
       - ./deploy/nginx.${DEPLOY_SCHEME:-http}.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./h5/public:/usr/share/nginx/html:ro
       # 证书目录（certbot 签发后会写到这里）
       - ./deploy/certs:/etc/nginx/certs:ro
       - certbot-webroot:/var/www/certbot:ro
