@@ -1,10 +1,11 @@
 <view class="page">
   <view class="logo-wrap" bindtouchstart="onLogoTouchStart" bindtouchend="onLogoTouchEnd">
     <view class="logo">
-      <text class="logo-text">排</text>
+      <text class="logo-text">禾</text>
     </view>
-    <text class="app-name">排班宝</text>
+    <text class="app-name">时禾</text>
     <text class="slogan">团队轮值 · 公平轮转 · 协商换班</text>
+    <text class="slogan name-origin">取意于《传道书》3:2 的「栽种有时」，寓意顺时耕耘，一起成长。</text>
     <!-- 服务器地址入口：不再只靠长按，显式给一个可点的入口 -->
     <view class="server-entry" catchtap="openServerPanel">
       <text class="server-entry-text">{{envLabel}} · {{serverUrl}}</text>

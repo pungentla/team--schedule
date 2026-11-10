@@ -41,6 +41,11 @@
   color: rgba(255, 255, 255, 0.8);
 }
 
+.name-origin {
+  margin-top: 8rpx;
+  text-align: center;
+}
+
 .card {
   background: #fff;
   border-radius: 24rpx;

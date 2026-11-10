@@ -52,7 +52,8 @@ function Root() {
 function Login({ loggedIn }) {
   const { run, busy } = useAction();
   return <main className="login"><Card className="login-card">
-    <h1>排班宝</h1><p className="muted">登录后查看排班、报名与换班</p>
+    <h1>时禾</h1>
+    <p className="muted">取意于《传道书》3:2 的「栽种有时」，寓意顺时耕耘，一起成长。</p>
     <Form layout="vertical" requiredMark={false} disabled={busy} onFinish={({ employeeNo, password }) => run(() => API.login(employeeNo.trim(), password), null, loggedIn)}>
       <Form.Item name="employeeNo" label="账号 / 工号" rules={required}><Input autoComplete="username" maxLength={32} placeholder="输入工号" /></Form.Item>
       <Form.Item name="password" label="密码" rules={required}><Input.Password autoComplete="current-password" maxLength={128} placeholder="输入密码" /></Form.Item>
@@ -105,7 +106,7 @@ function Workspace({ user, endSession }) {
   }
   return <div className="workspace">
     <header className="topbar"><div className="topbar-inner">
-      <span className="brand">排班宝</span>
+      <span className="brand">时禾</span>
       <Space size={6} className="account-actions"><Dropdown trigger={['click']} menu={{ items: [{ key: 'password', label: '修改密码' }], onClick: () => setPassword(true) }}>
         <Button type="text" className="account-menu" title={`${user.name}（${user.employeeNo}）`}>{user.name}{isAdmin(user) && user.name !== accountRoles[user.role] && ` · ${accountRoles[user.role]}`} ▾</Button>
       </Dropdown><Button ghost loading={busy} onClick={logout}>退出</Button></Space>
