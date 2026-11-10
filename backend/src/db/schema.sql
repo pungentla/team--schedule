@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS discussion_replies (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   topic_id    INTEGER NOT NULL REFERENCES discussion_topics(id) ON DELETE CASCADE,
   author_id   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  parent_reply_id INTEGER REFERENCES discussion_replies(id) ON DELETE SET NULL,
   content     TEXT NOT NULL,
   created_at  TEXT NOT NULL
 );

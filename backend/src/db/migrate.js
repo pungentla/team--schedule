@@ -7,7 +7,7 @@
 
 const db = require('./db');
 
-const CURRENT_VERSION = 15;
+const CURRENT_VERSION = 16;
 
 function migrate() {
   db.open();
@@ -20,6 +20,9 @@ function migrate() {
       db.exec(db.readSchemaSql());
 
       if (fromVersion < 9) migrateLegacySchema();
+      if (!db.all('PRAGMA table_info(discussion_replies)').some(column => column.name === 'parent_reply_id')) {
+        db.exec('ALTER TABLE discussion_replies ADD COLUMN parent_reply_id INTEGER REFERENCES discussion_replies(id) ON DELETE SET NULL');
+      }
       db.exec(`PRAGMA user_version = ${CURRENT_VERSION}`);
     });
   }

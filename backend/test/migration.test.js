@@ -52,4 +52,21 @@ test('v11 升级保留旧话题并能原样读写图片二进制', () => {
   assert.deepEqual(Buffer.from(db.pluck('SELECT content FROM discussion_images')), image);
 });
 
+test('v15 升级保留原有评论，删除被引用的评论时保留新回复', () => {
+  db.close();
+  db.open(path.join(tmp, 'discussion-v15.db'));
+  db.exec(db.readSchemaSql().split('\n').filter(line => !line.includes('parent_reply_id')).join('\n'));
+  db.exec(`INSERT INTO discussion_topics (id, category, title, content, created_at) VALUES (1, 'chat', '旧话题', '正文', 'now');
+    INSERT INTO discussion_replies (id, topic_id, content, created_at) VALUES (1, 1, '旧评论', 'now');
+    PRAGMA user_version = 15;`);
+  assert.deepEqual(migrate(), { fromVersion: 15, toVersion: CURRENT_VERSION });
+  assert.equal(db.pluck('SELECT content FROM discussion_replies WHERE id=1'), '旧评论');
+  assert.equal(db.pluck('SELECT parent_reply_id FROM discussion_replies WHERE id=1'), null);
+  db.run("INSERT INTO discussion_replies (id, topic_id, parent_reply_id, content, created_at) VALUES (2, 1, 1, '新回复', 'now')");
+  db.run('DELETE FROM discussion_replies WHERE id=1');
+  assert.equal(db.pluck('SELECT content FROM discussion_replies WHERE id=2'), '新回复');
+  assert.equal(db.pluck('SELECT parent_reply_id FROM discussion_replies WHERE id=2'), null);
+  assert.deepEqual(db.all('PRAGMA foreign_key_check'), []);
+});
+
 test.after(() => { db.close(); fs.rmSync(tmp, { recursive: true, force: true }); });

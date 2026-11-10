@@ -116,7 +116,7 @@ export const API = (() => {
     topicImages: id => request(`/discussions/${id}/images`),
     createTopic: body => request('/discussions', { method: 'POST', body }),
     topicReplies: (id, page) => request(`/discussions/${id}/replies?page=${page}`),
-    replyToTopic: (id, content) => request(`/discussions/${id}/replies`, { method: 'POST', body: { content } }),
+    replyToTopic: (id, content, replyToId) => request(`/discussions/${id}/replies`, { method: 'POST', body: { content, replyToId } }),
     deleteTopicReply: (topicId, replyId) => request(`/discussions/${topicId}/replies/${replyId}`, { method: 'DELETE' }),
 
     currentPeriod: () => request('/periods/current'),

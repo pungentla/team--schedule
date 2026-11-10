@@ -23,12 +23,17 @@ const topicSelect = `SELECT t.id, t.category, t.title, t.content, t.article_url 
   FROM discussion_topics t LEFT JOIN users u ON u.id = t.author_id`;
 router.use(requireAuth);
 
-function notifyParticipants(topicId, actorId, body) {
+function notifyParticipants(topicId, actorId, body, replyToUserId = null) {
   const participants = db.all(`SELECT author_id FROM discussion_topics WHERE id=?
     UNION SELECT author_id FROM discussion_replies WHERE topic_id=?`, topicId, topicId);
-  queuePushEvent(actorId, participants.map(row => row.author_id), {
+  const notification = {
     title: '时禾 · 话题互动', body, tag: `shihe-topic-${topicId}`, path: `/?topic=${topicId}`,
-  });
+  };
+  const otherParticipants = participants.map(row => row.author_id).filter(id => id !== replyToUserId);
+  queuePushEvent(actorId, otherParticipants, notification);
+  if (replyToUserId !== null) {
+    queuePushEvent(actorId, [replyToUserId], { ...notification, body: '有人回复了你的评论。' });
+  }
 }
 
 function getPage(query) {
@@ -59,10 +64,16 @@ router.get('/', (req, res) => {
   const page = getPage(req.query);
   const pageSize = optionalInt(req.query.pageSize, '每页条数', { min: 1, max: PAGE_SIZE }) ?? PAGE_SIZE;
   const sort = requireEnum(req.query.sort ?? 'recent', '话题排序', ['recent', 'hot']);
+  const before = optionalInt(req.query.before, '话题游标', { min: 1, max: Number.MAX_SAFE_INTEGER });
+  if (before != null && (page !== 1 || sort !== 'recent')) throw badRequest('话题游标仅支持按最新顺序加载');
   const order = sort === 'hot' ? '(likeCount + replyCount) DESC, t.id DESC' : 't.id DESC';
-  const items = db.all(`${topicSelect} ORDER BY ${order} LIMIT ? OFFSET ?`, req.user.id, isSuperAdmin(req.user), pageSize, (page - 1) * pageSize);
+  const filter = before == null ? '' : 'WHERE t.id < ?';
+  const rows = db.all(`${topicSelect} ${filter} ORDER BY ${order} LIMIT ? OFFSET ?`, req.user.id, isSuperAdmin(req.user),
+    ...(before == null ? [] : [before]), pageSize + 1, (page - 1) * pageSize);
+  const items = rows.slice(0, pageSize);
+  const nextCursor = sort === 'recent' && rows.length > pageSize ? items.at(-1).id : null;
   const total = db.pluck('SELECT COUNT(*) FROM discussion_topics');
-  res.json({ data: { items, total, pageSize } });
+  res.json({ data: { items, total, pageSize, nextCursor } });
 });
 
 router.post('/', (req, res) => {
@@ -127,8 +138,11 @@ router.get('/:id/images', (req, res) => {
 
 router.get('/:id/replies', (req, res) => {
   const page = getPage(req.query);
-  const items = db.all(`SELECT r.id, r.content, r.created_at AS createdAt, u.name AS authorName, (r.author_id IS ? OR ?) AS canDelete
-    FROM discussion_replies r LEFT JOIN users u ON u.id = r.author_id WHERE r.topic_id = ?
+  const items = db.all(`SELECT r.id, r.content, r.created_at AS createdAt, u.name AS authorName, (r.author_id IS ? OR ?) AS canDelete,
+      parent.id AS replyToId, parent_user.name AS replyToName, substr(parent.content, 1, 120) AS replyToExcerpt
+    FROM discussion_replies r LEFT JOIN users u ON u.id = r.author_id
+    LEFT JOIN discussion_replies parent ON parent.id = r.parent_reply_id AND parent.topic_id = r.topic_id
+    LEFT JOIN users parent_user ON parent_user.id = parent.author_id WHERE r.topic_id = ?
     ORDER BY r.id ASC LIMIT ? OFFSET ?`, req.user.id, isSuperAdmin(req.user), req.topicId, PAGE_SIZE, (page - 1) * PAGE_SIZE);
   const total = db.pluck('SELECT COUNT(*) FROM discussion_replies WHERE topic_id = ?', req.topicId);
   res.json({ data: { items, total, pageSize: PAGE_SIZE } });
@@ -136,10 +150,14 @@ router.get('/:id/replies', (req, res) => {
 
 router.post('/:id/replies', (req, res) => {
   const content = requireString(req.body?.content, '回复内容', { max: 2000 });
+  const replyToId = optionalInt(req.body?.replyToId, '要回复的评论', { min: 1 });
   const reply = db.tx(() => {
-    const { lastInsertRowid } = db.run('INSERT INTO discussion_replies (topic_id, author_id, content, created_at) VALUES (?, ?, ?, ?)',
-      req.topicId, req.user.id, content, nowIso());
-    notifyParticipants(req.topicId, req.user.id, '你参与的话题有新回复。');
+    const parent = replyToId == null ? null
+      : db.get('SELECT author_id FROM discussion_replies WHERE id = ? AND topic_id = ?', replyToId, req.topicId);
+    if (replyToId != null && !parent) throw notFound('要回复的评论不存在，请重新选择');
+    const { lastInsertRowid } = db.run(`INSERT INTO discussion_replies (topic_id, author_id, parent_reply_id, content, created_at)
+      VALUES (?, ?, ?, ?, ?)`, req.topicId, req.user.id, replyToId ?? null, content, nowIso());
+    notifyParticipants(req.topicId, req.user.id, '你参与的话题有新回复。', parent?.author_id ?? null);
     const total = db.pluck('SELECT COUNT(*) FROM discussion_replies WHERE topic_id = ?', req.topicId);
     return { id: lastInsertRowid, page: Math.ceil(total / PAGE_SIZE) };
   });

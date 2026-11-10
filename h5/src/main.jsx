@@ -145,7 +145,8 @@ function Workspace({ user, endSession }) {
         {tab === 'schedule' && <Schedule user={user} periods={periods} period={period} filters={scheduleFilters} updateFilters={updateScheduleFilters} />}
         {tab === 'enrollment' && <Load query={periodsQuery}>{() => <Enrollment periods={periods} period={period} />}</Load>}
         {tab === 'swaps' && <Swaps user={user} initialDetail={notificationTarget.swap} />}
-        {tab === 'discussions' && <Discussions topicId={discussionTopicId} back={() => { setDiscussionTopicId(null); window.scrollTo(0, 0); }} />}
+        {tab === 'discussions' && <Discussions topicId={discussionTopicId} open={openDiscussions}
+          back={() => setDiscussionTopicId(null)} />}
         {tab === 'workflow' && isAdmin(user) && <Load query={periodsQuery}>{() => (
           <Workflow user={user} periods={periods} page={workflowPage} setPage={setWorkflowPage}
             refreshPeriods={periodsQuery.refresh} openSettings={openSettings} dirty={dirty} />
