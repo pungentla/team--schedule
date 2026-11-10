@@ -83,6 +83,7 @@ button, input { font: inherit; }
 .topic-card-heading .ant-badge { flex: none; }
 .topic-poll { margin-block: 12px; padding: 12px; border: 1px solid #e1e7f0; border-radius: 8px; }
 .topic-poll .ant-radio-wrapper, .topic-poll .ant-checkbox-wrapper, .poll-option-label { overflow-wrap: anywhere; min-width: 0; }
+.poll-voter-names { margin-top: 2px; padding-inline-start: 24px; overflow-wrap: anywhere; }
 .poll-preview-options { margin: 4px 0 0; padding: 0; list-style: none; }
 .poll-preview-options > li { min-height: 24px; }
 .poll-option-label { flex: 1; }
@@ -114,6 +115,8 @@ button, input { font: inherit; }
 .topic-reply-actions { margin-inline-start: auto; }
 .topic-reply-reference { border-inline-start: 2px solid #d9e2f0; padding: 4px 8px; margin-bottom: 6px; overflow-wrap: anywhere; }
 .topic-reply + .topic-reply, .topic-reply-form { border-top: 1px solid #eef1f6; padding-top: 8px; }
+.topic-reply-highlight { animation: topic-reply-highlight 3s ease-out; border-radius: 6px; }
+@keyframes topic-reply-highlight { 0%, 40% { background: #e6f4ff; } 100% { background: transparent; } }
 .schedule-weekdays.ant-checkbox-group { display: flex; column-gap: 12px; }
 .schedule-range-row { display: flex; align-items: center; gap: 8px; }
 .schedule-range-row > .ant-picker { flex: 1; min-width: 0; height: 42px; }

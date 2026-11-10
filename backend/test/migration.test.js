@@ -74,6 +74,7 @@ test('v16 升级保留话题、评论、图片和原公告，旧内容不会被�
   db.open(path.join(tmp, 'discussions-v16.db'));
   db.exec(db.readSchemaSql()
     .replace("'share', 'poll'", "'share'")
+    .replace(/,\n  poll_closes_at[^\n]+/, '')
     .replace(/,\n  poll_mode[^\n]+/, '')
     .replace(/,\n  is_anonymous[^\n]+/, '')
     .replace('CREATE TABLE IF NOT EXISTS announcements (\n  id            INTEGER PRIMARY KEY AUTOINCREMENT',
@@ -102,6 +103,7 @@ test('v17 升级保留既有单选投票和选票，并支持同一账号勾选�
   db.close();
   db.open(path.join(tmp, 'poll-v17.db'));
   db.exec(db.readSchemaSql()
+    .replace(/,\n  poll_closes_at[^\n]+/, '')
     .replace(/,\n  poll_mode[^\n]+/, '')
     .replace('PRIMARY KEY (topic_id, user_id, position)', 'PRIMARY KEY (topic_id, user_id)'));
   db.exec(`INSERT INTO roles (code, name) VALUES ('employee', '员工');
@@ -112,6 +114,7 @@ test('v17 升级保留既有单选投票和选票，并支持同一账号勾选�
     PRAGMA user_version = 17;`);
   assert.deepEqual(migrate(), { fromVersion: 17, toVersion: CURRENT_VERSION });
   assert.equal(db.pluck('SELECT poll_mode FROM discussion_topics WHERE id = 1'), 'single');
+  assert.equal(db.pluck('SELECT poll_closes_at FROM discussion_topics WHERE id = 1'), null);
   assert.equal(db.pluck('SELECT position FROM discussion_poll_votes WHERE topic_id = 1 AND user_id = 1'), 2);
   db.exec(`INSERT INTO discussion_topics (id, category, title, content, created_at, poll_mode) VALUES (2, 'poll', '新投票', '', 'now', 'multiple');
     INSERT INTO discussion_poll_options (topic_id, position, label) VALUES (2, 1, '甲'), (2, 2, '乙');

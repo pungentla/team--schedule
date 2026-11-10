@@ -7,7 +7,7 @@
 
 const db = require('./db');
 
-const CURRENT_VERSION = 18;
+const CURRENT_VERSION = 19;
 
 function migrate() {
   db.open();
@@ -39,6 +39,9 @@ function migrate() {
         }
         if (!db.all('PRAGMA table_info(discussion_topics)').some(column => column.name === 'poll_mode')) {
           db.exec("ALTER TABLE discussion_topics ADD COLUMN poll_mode TEXT NOT NULL DEFAULT 'single' CHECK (poll_mode IN ('single', 'multiple'))");
+        }
+        if (!db.all('PRAGMA table_info(discussion_topics)').some(column => column.name === 'poll_closes_at')) {
+          db.exec('ALTER TABLE discussion_topics ADD COLUMN poll_closes_at TEXT');
         }
 
         if (fromVersion < 9) migrateLegacySchema();

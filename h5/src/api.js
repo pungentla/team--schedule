@@ -119,8 +119,8 @@ export const API = (() => {
     topicImages: id => request(`/discussions/${id}/images`),
     createTopic: body => request('/discussions', { method: 'POST', body }),
     voteTopic: (id, positions) => request(`/discussions/${id}/vote`, { method: 'PUT', body: { positions } }),
-    topicReplies: (id, page) => request(`/discussions/${id}/replies${page == null ? '' : `?page=${page}`}`),
-    markTopicRepliesRead: (id, through) => request(`/discussions/${id}/replies/read`, { method: 'PUT', body: { through } }),
+    topicReplies: (id, page, replyId) => request(`/discussions/${id}/replies${page != null ? `?page=${page}` : replyId != null ? `?replyId=${replyId}` : ''}`),
+    markTopicRepliesRead: (id, replyIds) => request(`/discussions/${id}/replies/read`, { method: 'PUT', body: { replyIds } }),
     replyToTopic: (id, content, replyToId) => request(`/discussions/${id}/replies`, { method: 'POST', body: { content, replyToId } }),
     deleteTopicReply: (topicId, replyId) => request(`/discussions/${topicId}/replies/${replyId}`, { method: 'DELETE' }),
 

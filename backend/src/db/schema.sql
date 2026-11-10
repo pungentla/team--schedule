@@ -86,7 +86,8 @@ CREATE TABLE IF NOT EXISTS discussion_topics (
   article_url TEXT,
   created_at  TEXT NOT NULL,
   is_anonymous INTEGER NOT NULL DEFAULT 0 CHECK (is_anonymous IN (0, 1)),
-  poll_mode   TEXT NOT NULL DEFAULT 'single' CHECK (poll_mode IN ('single', 'multiple'))
+  poll_mode   TEXT NOT NULL DEFAULT 'single' CHECK (poll_mode IN ('single', 'multiple')),
+  poll_closes_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_discussion_topics_category ON discussion_topics(category, id);
 

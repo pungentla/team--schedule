@@ -42,21 +42,21 @@ export function SwapForm({ assignments, admin, saved }) {
   </Form>;
 }
 
-export function Swaps({ user, initialDetail }) {
-  const [detail, setDetail] = useState(initialDetail);
+export function Swaps({ user, detail, setDetail, inbox }) {
   const assignments = useLoad('assignments', API.myAssignments);
-  const requests = useLoad('requests', () => Promise.all([API.swapInbox(), API.mySwaps()]));
-  const refresh = () => { assignments.refresh(); requests.refresh(); };
+  const requests = useLoad('requests', API.mySwaps);
+  const refresh = () => { assignments.refresh(); requests.refresh(); inbox.refresh(); };
   return <>
     <Card><Heading help="swaps">发起换班</Heading><Load query={assignments}>{list => <SwapForm assignments={list.filter(a => a.periodStatus === 'published')} saved={result => { refresh(); setDetail(result.swap.id); }} />}</Load></Card>
-    <Load query={requests}>{lists => lists.map((list, i) => <Card key={i} title={i ? '我发起的申请' : '待我确认'}>
+    {[[inbox, '待我确认', '没有待你确认的申请'], [requests, '我发起的申请', '还没有发起过换班']].map(([query, title, empty]) =>
+      <Load key={title} query={query}>{list => <Card title={title}>
       {list.length ? list.map(s => <div className="choice" key={s.id}>
         <div className="row-between"><strong>{s.requesterName} {s.type === 'exchange' ? '⇄' : '→'} {s.toUserName}</strong><Tag>{swapLabels[s.status]}</Tag></div>
         <div>{assignmentLabel(s.fromAssign)}</div>
         {s.toAssign && <div>互换：{assignmentLabel(s.toAssign)}</div>}
         <Button onClick={() => setDetail(s.id)}>{s.canAct ? '查看 / 处理' : '查看详情'}</Button>
-      </div>) : <Blank>{i ? '还没有发起过换班' : '没有待你确认的申请'}</Blank>}
-    </Card>)}</Load>
+      </div>) : <Blank>{empty}</Blank>}
+    </Card>}</Load>)}
     {detail && <SwapDetail id={detail} user={user} close={() => setDetail(undefined)} saved={refresh} />}
   </>;
 }

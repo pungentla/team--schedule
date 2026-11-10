@@ -33,7 +33,7 @@ router.post('/', requireAuth, (req, res) => {
 router.get('/', requireAuth, (req, res) => {
   const scope = req.query.scope === 'inbox' ? 'inbox' : 'mine';
   const status = req.query.status || null;
-  res.json({ data: swapService.listSwaps(req.user.id, { scope, status }) });
+  res.set('Cache-Control', 'no-store').json({ data: swapService.listSwaps(req.user.id, { scope, status }) });
 });
 
 /** 待我确认数量 */

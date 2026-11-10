@@ -692,8 +692,8 @@ function listSwaps(userId, { scope = 'mine', status = null } = {}) {
       : swapRepo.listSwapsByRequester(userId, status);
 
   return swaps.map((s) => {
-    const participants = swapRepo.listParticipants(s.id);
-    const mine = participants.find((p) => p.user_id === userId);
+    const myDecision = scope === 'inbox' ? SWAP_PARTICIPANT_STATUS.PENDING
+      : swapRepo.listParticipants(s.id).find((p) => p.user_id === userId)?.status ?? null;
     return {
       id: s.id,
       type: s.type,
@@ -726,8 +726,8 @@ function listSwaps(userId, { scope = 'mine', status = null } = {}) {
       createdAt: s.created_at,
       decidedAt: s.decided_at,
       appliedAt: s.applied_at,
-      myDecision: mine ? mine.status : null,
-      canAct: s.status === SWAP_STATUS.PENDING && mine && mine.status === SWAP_PARTICIPANT_STATUS.PENDING,
+      myDecision,
+      canAct: s.status === SWAP_STATUS.PENDING && myDecision === SWAP_PARTICIPANT_STATUS.PENDING,
     };
   });
 }
