@@ -63,6 +63,13 @@ export function Workflow({ user, periods, page, setPage, refreshPeriods, openSet
       </div>
       {user.role === 'super_admin' && <Button onClick={() => setTrash(true)}>周期回收站</Button>}
     </Card>
+    <Card>
+      <div className="row-between">
+        <Heading>基础设置</Heading>
+        <Button onClick={() => openSettings()}>进入设置</Button>
+      </div>
+      <p className="muted">管理工作类型、班次和人员账号</p>
+    </Card>
     <Card title="排班周期">
       {periods.length ? <div className="stack">{periods.map(period => (
         <button type="button" className="choice period-list-item" key={period.id}

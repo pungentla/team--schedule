@@ -18,9 +18,11 @@ const days = [1, 2, 3, 4, 5, 6, 0];
 const newCode = prefix => prefix + '_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
 const inputPassword = [{ required: true, min: 6, max: 128, message: '密码需为 6–128 位' }];
 
-export function Settings({ user, tab, setTab, onSessionChanged }) {
+export function Settings({ user, tab, setTab, back, onSessionChanged }) {
   const query = useLoad('settings', () => Promise.all([API.workTypes(), API.shifts(), API.adminUsers()]));
-  return <Card><div className="row-between"><Heading>基础设置</Heading><Button onClick={query.refresh}>刷新</Button></div>
+  return <Card>
+    <Button type="link" className="period-back" onClick={back}>← 返回安排排班</Button>
+    <div className="row-between"><Heading>基础设置</Heading><Button onClick={query.refresh}>刷新</Button></div>
     <Load query={query}>{([works, shifts, users]) => <Tabs activeKey={tab} onChange={setTab} items={[
       { key: 'worktypes', label: '工作类型', children: <><div className="inline muted">设置工作日和默认人数 <Help name="worktypes" /></div><Collapse accordion destroyOnHidden items={[
         { key: 'new', label: '＋ 新增工作类型', children: <WorkForm users={users} shifts={shifts} saved={query.refresh} /> },

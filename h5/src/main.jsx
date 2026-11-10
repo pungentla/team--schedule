@@ -79,19 +79,20 @@ function Workspace({ user, endSession }) {
   const period = periods.find(p => p.id === scheduleFilters.periodId) || current || periods.find(p => p.status !== 'archived') || periods[0];
   const tabs = [
     ['schedule', '工作台'], ['discussions', '互动区'], ['enrollment', '我的报名'], ['swaps', '我的换班'],
-    ...(isAdmin(user) ? [['workflow', '安排排班'], ['settings', '基础设置']] : []),
+    ...(isAdmin(user) ? [['workflow', '安排排班']] : []),
   ];
+  const activeNav = tab === 'settings' ? 'workflow' : tab;
   async function navigate(next) {
     if (next === tab) return true;
     if (dirty.current && !await confirm('放弃未保存的需求？')) return false;
     dirty.current = false;
-    if (next === 'workflow') setWorkflowPage(null);
+    if (next === 'workflow' && tab !== 'settings') setWorkflowPage(null);
     setTab(next);
     window.scrollTo(0, 0);
     if (['workflow','enrollment'].includes(next)) periodsQuery.refresh();
     return true;
   }
-  async function openSettings(section) {
+  async function openSettings(section = settingsTab) {
     if (await navigate('settings')) setSettingsTab(section);
   }
   async function openDiscussions(topicId = null) {
@@ -124,11 +125,12 @@ function Workspace({ user, endSession }) {
           <Workflow user={user} periods={periods} page={workflowPage} setPage={setWorkflowPage}
             refreshPeriods={periodsQuery.refresh} openSettings={openSettings} dirty={dirty} />
         )}</Load>}
-        {tab === 'settings' && isAdmin(user) && <Settings user={user} tab={settingsTab} setTab={setSettingsTab} onSessionChanged={sessionChanged} />}
+        {tab === 'settings' && isAdmin(user) && <Settings user={user} tab={settingsTab} setTab={setSettingsTab}
+          back={() => navigate('workflow')} onSessionChanged={sessionChanged} />}
       </Suspense>
     </main>
     <nav className="bottom-nav" aria-label="主导航"><div className="bottom-nav-inner">
-      {tabs.map(([id, label]) => <Button key={id} type="text" aria-current={tab === id ? 'page' : undefined}
+      {tabs.map(([id, label]) => <Button key={id} type="text" aria-current={activeNav === id ? 'page' : undefined}
         onClick={() => id === 'discussions' ? openDiscussions() : navigate(id)}>{label}</Button>)}
     </div></nav>
     {password && <Password close={() => setPassword(false)} saved={endSession} />}
