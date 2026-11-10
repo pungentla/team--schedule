@@ -232,7 +232,7 @@ function TopicCard({ topic, open, updated, deleted, loading, expanded, toggleDis
       {!!topic.canDelete && <Button type="text" className="topic-delete" disabled={busy || loading} onClick={deleteTopic}>删除话题</Button>}
     </div>
     <div id={`topic-replies-${topic.id}`} hidden={!expanded} onClick={event => event.stopPropagation()}>
-      {expanded && <TopicReplies topicId={topic.id} replyCount={topic.replyCount} updated={updated} />}
+      {expanded && <TopicReplies topicId={topic.id} replyCount={topic.replyCount} updated={updated} close={toggleDiscussion} />}
     </div>
   </Card>;
 }
@@ -273,7 +273,7 @@ function TopicImages({ topicId, count, compact }) {
   </div>;
 }
 
-function TopicReplies({ topicId, replyCount, updated }) {
+function TopicReplies({ topicId, replyCount, updated, close }) {
   const [page, setPage] = useState(1);
   const [replyTo, setReplyTo] = useState(null);
   const replyInput = useRef(null);
@@ -338,7 +338,8 @@ function TopicReplies({ topicId, replyCount, updated }) {
       </Form.Item>
       <div className="inline">
         <Button type="primary" htmlType="submit" loading={busy}>{replyTo ? '发布回复' : '发表评论'}</Button>
-        {replyTo && <Button type="link" onClick={() => setReplyTo(null)}>取消回复</Button>}
+        {replyTo ? <Button type="link" onClick={() => setReplyTo(null)}>取消回复</Button>
+          : <Button type="link" onClick={close}>取消</Button>}
       </div>
     </Form>
   </section>;
