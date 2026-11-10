@@ -59,6 +59,7 @@ button, input { font: inherit; }
 .topic-preview-empty { margin-top: 8px; }
 .article-link { display: inline-block; margin-top: 8px; }
 .topic-actions .ant-btn-link { padding-inline: 0; }
+.topic-actions .topic-delete.ant-btn:not(:disabled) { color: #59687e; }
 .topic-image-link.ant-btn { padding-inline: 0; }
 .topic-images { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; max-width: 480px; margin-top: 8px; }
 .topic-images .ant-image { min-width: 0; aspect-ratio: 1; border-radius: 8px; overflow: hidden; }

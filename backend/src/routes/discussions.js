@@ -2,20 +2,23 @@
 
 const express = require('express');
 const db = require('../db/db');
+const { ROLES } = require('../config');
 const { requireAuth } = require('../middleware/auth');
 const { nowIso } = require('../utils/date');
-const { badRequest, notFound } = require('../utils/errors');
+const { badRequest, forbidden, notFound } = require('../utils/errors');
 const { intParam, optionalInt, requireArray, requireBoolean, requireEnum, requireString } = require('../utils/validate');
 
 const router = express.Router();
 const PAGE_SIZE = 15;
 const MAX_IMAGE_BYTES = 480 * 1024;
+const isSuperAdmin = user => user.role === ROLES.SUPER_ADMIN;
 const topicSelect = `SELECT t.id, t.category, t.title, t.content, t.article_url AS articleUrl,
     t.created_at AS createdAt, u.name AS authorName,
     (SELECT COUNT(*) FROM discussion_replies r WHERE r.topic_id = t.id) AS replyCount,
     (SELECT COUNT(*) FROM discussion_images i WHERE i.topic_id = t.id) AS imageCount,
     (SELECT COUNT(*) FROM discussion_likes l WHERE l.topic_id = t.id) AS likeCount,
-    EXISTS(SELECT 1 FROM discussion_likes l WHERE l.topic_id = t.id AND l.user_id = ?) AS liked
+    EXISTS(SELECT 1 FROM discussion_likes l WHERE l.topic_id = t.id AND l.user_id = ?1) AS liked,
+    (t.author_id IS ?1 OR ?2) AS canDelete
   FROM discussion_topics t LEFT JOIN users u ON u.id = t.author_id`;
 router.use(requireAuth);
 
@@ -48,7 +51,7 @@ router.get('/', (req, res) => {
   const pageSize = optionalInt(req.query.pageSize, '每页条数', { min: 1, max: PAGE_SIZE }) ?? PAGE_SIZE;
   const sort = requireEnum(req.query.sort ?? 'recent', '话题排序', ['recent', 'hot']);
   const order = sort === 'hot' ? '(likeCount + replyCount) DESC, t.id DESC' : 't.id DESC';
-  const items = db.all(`${topicSelect} ORDER BY ${order} LIMIT ? OFFSET ?`, req.user.id, pageSize, (page - 1) * pageSize);
+  const items = db.all(`${topicSelect} ORDER BY ${order} LIMIT ? OFFSET ?`, req.user.id, isSuperAdmin(req.user), pageSize, (page - 1) * pageSize);
   const total = db.pluck('SELECT COUNT(*) FROM discussion_topics');
   res.json({ data: { items, total, pageSize } });
 });
@@ -78,7 +81,16 @@ router.param('id', (req, _res, next, value) => {
 });
 
 router.get('/:id', (req, res) => {
-  res.json({ data: db.get(`${topicSelect} WHERE t.id = ?`, req.user.id, req.topicId) });
+  res.json({ data: db.get(`${topicSelect} WHERE t.id = ?`, req.user.id, isSuperAdmin(req.user), req.topicId) });
+});
+
+router.delete('/:id', (req, res) => {
+  const total = db.tx(() => {
+    const { changes } = db.run('DELETE FROM discussion_topics WHERE id = ? AND (author_id = ? OR ?)', req.topicId, req.user.id, isSuperAdmin(req.user));
+    if (!changes) throw forbidden('只能删除自己发布的话题');
+    return db.pluck('SELECT COUNT(*) FROM discussion_topics');
+  });
+  res.json({ data: { total } });
 });
 
 router.put('/:id/like', (req, res) => {
@@ -105,9 +117,9 @@ router.get('/:id/images', (req, res) => {
 
 router.get('/:id/replies', (req, res) => {
   const page = getPage(req.query);
-  const items = db.all(`SELECT r.id, r.content, r.created_at AS createdAt, u.name AS authorName
+  const items = db.all(`SELECT r.id, r.content, r.created_at AS createdAt, u.name AS authorName, (r.author_id IS ? OR ?) AS canDelete
     FROM discussion_replies r LEFT JOIN users u ON u.id = r.author_id WHERE r.topic_id = ?
-    ORDER BY r.id ASC LIMIT ? OFFSET ?`, req.topicId, PAGE_SIZE, (page - 1) * PAGE_SIZE);
+    ORDER BY r.id ASC LIMIT ? OFFSET ?`, req.user.id, isSuperAdmin(req.user), req.topicId, PAGE_SIZE, (page - 1) * PAGE_SIZE);
   const total = db.pluck('SELECT COUNT(*) FROM discussion_replies WHERE topic_id = ?', req.topicId);
   res.json({ data: { items, total, pageSize: PAGE_SIZE } });
 });
@@ -121,6 +133,20 @@ router.post('/:id/replies', (req, res) => {
     return { id: lastInsertRowid, page: Math.ceil(total / PAGE_SIZE) };
   });
   res.status(201).json({ data: reply });
+});
+
+router.delete('/:id/replies/:replyId', (req, res) => {
+  const replyId = intParam(req.params.replyId, '回复');
+  const total = db.tx(() => {
+    const { changes } = db.run('DELETE FROM discussion_replies WHERE topic_id = ? AND id = ? AND (author_id = ? OR ?)',
+      req.topicId, replyId, req.user.id, isSuperAdmin(req.user));
+    if (!changes) {
+      if (!db.pluck('SELECT id FROM discussion_replies WHERE topic_id = ? AND id = ?', req.topicId, replyId)) throw notFound('回复不存在');
+      throw forbidden('只能删除自己发布的回复');
+    }
+    return db.pluck('SELECT COUNT(*) FROM discussion_replies WHERE topic_id = ?', req.topicId);
+  });
+  res.json({ data: { total } });
 });
 
 module.exports = router;

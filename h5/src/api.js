@@ -107,11 +107,13 @@ export const API = (() => {
     publishAnnouncement: (body) => request('/announcements/current', { method: 'PUT', body }),
     discussionTopics: (page, options) => request(`/discussions?${new URLSearchParams({ page, ...options })}`),
     discussionTopic: id => request(`/discussions/${id}`),
+    deleteTopic: id => request(`/discussions/${id}`, { method: 'DELETE' }),
     setTopicLike: (id, liked) => request(`/discussions/${id}/like`, { method: 'PUT', body: { liked } }),
     topicImages: id => request(`/discussions/${id}/images`),
     createTopic: body => request('/discussions', { method: 'POST', body }),
     topicReplies: (id, page) => request(`/discussions/${id}/replies?page=${page}`),
     replyToTopic: (id, content) => request(`/discussions/${id}/replies`, { method: 'POST', body: { content } }),
+    deleteTopicReply: (topicId, replyId) => request(`/discussions/${topicId}/replies/${replyId}`, { method: 'DELETE' }),
 
     currentPeriod: () => request('/periods/current'),
     listPeriods: () => request('/periods'),

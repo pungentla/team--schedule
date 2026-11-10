@@ -57,7 +57,7 @@ function TopicDetail({ topicId, back }) {
   const query = useLoad(topicId, () => API.discussionTopic(topicId), true);
   return <>
     <Card size="small"><Button type="link" onClick={back}>← 返回话题列表</Button></Card>
-    <Load query={query}>{topic => <TopicCard topic={topic} updated={query.refresh} loading={query.loading} initiallyExpanded />}</Load>
+    <Load query={query}>{topic => <TopicCard topic={topic} updated={query.refresh} deleted={back} loading={query.loading} initiallyExpanded />}</Load>
   </>;
 }
 
@@ -65,13 +65,17 @@ function TopicList() {
   const [creating, setCreating] = useState(false);
   const [page, setPage] = useState(1);
   const query = useLoad(page, () => API.discussionTopics(page), true);
+  function afterDelete({ total }) {
+    setPage(current => Math.min(current, Math.max(1, Math.ceil(total / query.data.pageSize))));
+    query.refresh();
+  }
   return <>
     <Card><div className="row-between">
       <Heading>互动区</Heading>
       <Button type="primary" onClick={() => setCreating(true)}>发起话题</Button>
     </div></Card>
     <Load query={query}>{data => <>
-      {data.items.length ? data.items.map(topic => <TopicCard key={topic.id} topic={topic} updated={query.refresh} loading={query.loading} />)
+      {data.items.length ? data.items.map(topic => <TopicCard key={topic.id} topic={topic} updated={query.refresh} deleted={afterDelete} loading={query.loading} />)
         : <Card><Blank>还没有话题</Blank></Card>}
       <TopicPagination data={data} page={page} changePage={next => { setPage(next); window.scrollTo(0, 0); }} />
     </>}</Load>
@@ -113,10 +117,15 @@ function NewTopic({ close, saved }) {
   </Modal>;
 }
 
-function TopicCard({ topic, updated, loading, initiallyExpanded = false }) {
+function TopicCard({ topic, updated, deleted, loading, initiallyExpanded = false }) {
   const [expanded, setExpanded] = useState(initiallyExpanded);
-  const { run, busy } = useAction();
+  const { run, busy, confirm } = useAction();
   const liked = !!topic.liked;
+  async function deleteTopic() {
+    if (await confirm('删除这个话题？', '话题下的回复、图片和点赞会一并删除。', true)) {
+      await run(() => API.deleteTopic(topic.id), '话题已删除', deleted);
+    }
+  }
   return <Card className="topic-card">
     <div className="inline topic-card-heading">
       <h3>{topic.title}</h3>
@@ -135,6 +144,7 @@ function TopicCard({ topic, updated, loading, initiallyExpanded = false }) {
       <Button type="link" aria-expanded={expanded} aria-controls={`topic-replies-${topic.id}`} onClick={() => setExpanded(value => !value)}>
         {expanded ? '收起讨论' : `查看讨论（${topic.replyCount}）`}
       </Button>
+      {!!topic.canDelete && <Button type="text" className="topic-delete" disabled={busy || loading} onClick={deleteTopic}>删除话题</Button>}
     </div>
     <div id={`topic-replies-${topic.id}`} hidden={!expanded}>
       {expanded && <TopicReplies topicId={topic.id} updated={updated} />}
@@ -154,15 +164,31 @@ function TopicReplies({ topicId, updated }) {
   const [form] = Form.useForm();
   const query = useLoad(page, () => API.topicReplies(topicId, page), true);
   const { run, busy } = useAction();
+  const { run: remove, busy: removing, confirm } = useAction();
+  async function deleteReply(id) {
+    if (await confirm('删除这条回复？', null, true)) {
+      await remove(() => API.deleteTopicReply(topicId, id), '回复已删除', ({ total }) => {
+        setPage(current => Math.min(current, Math.max(1, Math.ceil(total / query.data.pageSize))));
+        query.refresh();
+        updated();
+      });
+    }
+  }
   return <section className="topic-replies stack" aria-label="话题讨论">
     <Load query={query}>{data => <>
       {data.items.length ? data.items.map(reply => <article className="topic-reply" key={reply.id}>
-        <div className="row-between"><strong>{reply.authorName || '成员'}</strong><time className="muted" dateTime={reply.createdAt}>{timeText(reply.createdAt)}</time></div>
+        <div className="row-between">
+          <strong>{reply.authorName || '成员'}</strong>
+          <div className="inline">
+            <time className="muted" dateTime={reply.createdAt}>{timeText(reply.createdAt)}</time>
+            {!!reply.canDelete && <Button type="text" danger size="small" disabled={busy || removing || query.loading} onClick={() => deleteReply(reply.id)}>删除回复</Button>}
+          </div>
+        </div>
         <p className="discussion-text">{reply.content}</p>
       </article>) : <span className="muted">暂无回复</span>}
       <TopicPagination data={data} page={page} changePage={setPage} />
     </>}</Load>
-    <Form form={form} className="topic-reply-form" layout="vertical" disabled={busy} onFinish={({ content }) => run(
+    <Form form={form} className="topic-reply-form" layout="vertical" disabled={busy || removing} onFinish={({ content }) => run(
       () => API.replyToTopic(topicId, content), '回复已发布', reply => {
         form.resetFields();
         setPage(reply.page);
