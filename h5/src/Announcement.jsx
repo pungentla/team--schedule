@@ -7,9 +7,9 @@ import Modal from 'antd/es/modal';
 import Tag from 'antd/es/tag';
 import { API, isAdmin, timeText, useAction, useLoad } from './shared';
 
-export function Announcement({ user }) {
+export function Announcement({ user, initiallyReading = false }) {
   const query = useLoad('announcement', API.announcement, true);
-  const [reading, setReading] = useState(false);
+  const [reading, setReading] = useState(initiallyReading);
   const [publishing, setPublishing] = useState(false);
   const canPublish = isAdmin(user);
   const announcement = query.data;

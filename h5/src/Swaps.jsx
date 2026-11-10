@@ -42,8 +42,8 @@ export function SwapForm({ assignments, admin, saved }) {
   </Form>;
 }
 
-export function Swaps({ user }) {
-  const [detail, setDetail] = useState();
+export function Swaps({ user, initialDetail }) {
+  const [detail, setDetail] = useState(initialDetail);
   const assignments = useLoad('assignments', API.myAssignments);
   const requests = useLoad('requests', () => Promise.all([API.swapInbox(), API.mySwaps()]));
   const refresh = () => { assignments.refresh(); requests.refresh(); };

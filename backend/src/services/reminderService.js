@@ -65,7 +65,35 @@ async function sendDevice(device, payload, ttl) {
 }
 
 function sendTest(device) {
-  return sendDevice(device, { title: '时禾 · 测试通知', body: '这台设备已能接收排班提醒。', tag: 'shihe-test' }, 120);
+  return sendDevice(device, { title: '时禾 · 测试通知', body: '这台设备已能接收时禾提醒。', tag: 'shihe-test' }, 120);
+}
+
+function queuePushEvent(actorId, userIds, payload) {
+  const now = Date.now();
+  const recipients = userIds && JSON.stringify(userIds);
+  db.run(`INSERT INTO push_events (endpoint,user_id,payload,expires_at,next_attempt_at)
+    SELECT s.endpoint,s.user_id,?,?,? FROM push_subscriptions s JOIN users u ON u.id=s.user_id
+    WHERE u.status='active' AND u.id<>? AND (? IS NULL OR u.id IN (SELECT value FROM json_each(?)))`,
+  JSON.stringify(payload), now + 6 * 3600_000, now, actorId, recipients, recipients);
+}
+
+async function sendQueuedPushEvents() {
+  const now = Date.now();
+  db.run('DELETE FROM push_events WHERE expires_at<=?', now);
+  const events = db.all(`SELECT e.*,s.p256dh,s.auth FROM push_events e
+    JOIN push_subscriptions s ON s.endpoint=e.endpoint AND s.user_id=e.user_id
+    JOIN users u ON u.id=e.user_id AND u.status='active'
+    WHERE e.next_attempt_at<=? ORDER BY e.next_attempt_at,e.id LIMIT 20`, now);
+  await Promise.all(events.map(async event => {
+    try {
+      await sendDevice(event, JSON.parse(event.payload), Math.floor((event.expires_at - now) / 1000));
+      db.run('DELETE FROM push_events WHERE id=?', event.id);
+    } catch (error) {
+      const delay = Math.min(900, 15 * 2 ** event.attempts) * 1000;
+      db.run('UPDATE push_events SET attempts=attempts+1,next_attempt_at=? WHERE id=?', Date.now() + delay, event.id);
+      console.warn('[reminders] event push failed:', error.statusCode || error.code || 'network error');
+    }
+  }));
 }
 
 async function sendScheduleReminders(workDate, stopped = () => false) {
@@ -103,8 +131,18 @@ function startScheduleReminders() {
     finally { busy = false; }
   }
   const timer = setInterval(tick, 60_000).unref();
+  let sendingEvents = false;
+  async function tickEvents() {
+    if (sendingEvents) return;
+    sendingEvents = true;
+    try { await sendQueuedPushEvents(); }
+    catch (error) { console.error('[reminders] event dispatch failed:', error.message); }
+    finally { sendingEvents = false; }
+  }
+  const eventTimer = setInterval(tickEvents, 5_000).unref();
   void tick();
-  return () => { stopped = true; clearInterval(timer); };
+  void tickEvents();
+  return () => { stopped = true; clearInterval(timer); clearInterval(eventTimer); };
 }
 
-module.exports = { publicKey, validateEndpoint, findSubscription, saveSubscription, removeSubscription, sendTest, sendScheduleReminders, startScheduleReminders };
+module.exports = { publicKey, validateEndpoint, findSubscription, saveSubscription, removeSubscription, sendTest, queuePushEvent, sendQueuedPushEvents, sendScheduleReminders, startScheduleReminders };

@@ -63,15 +63,31 @@ function Login({ loggedIn }) {
   </Card></main>;
 }
 
+function readNotificationTarget() {
+  const params = new URLSearchParams(window.location.search);
+  const topic = Number(params.get('topic'));
+  const swap = Number(params.get('swap'));
+  if (Number.isSafeInteger(topic) && topic > 0) return { tab: 'discussions', topic };
+  if (Number.isSafeInteger(swap) && swap > 0) return { tab: 'swaps', swap };
+  return { tab: 'schedule', notice: params.get('notice') === '1' };
+}
+
 function Workspace({ user, endSession }) {
-  const [tab, setTab] = useState('schedule');
+  const [notificationTarget, setNotificationTarget] = useState(readNotificationTarget);
+  const [tab, setTab] = useState(notificationTarget.tab);
   const [settingsTab, setSettingsTab] = useState('worktypes');
   const [workflowPage, setWorkflowPage] = useState(null);
-  const [discussionTopicId, setDiscussionTopicId] = useState(null);
+  const [discussionTopicId, setDiscussionTopicId] = useState(notificationTarget.topic ?? null);
   const [password, setPassword] = useState(false);
   const [reminders, setReminders] = useState(false);
   const [scheduleFilters, setScheduleFilters] = useState(() => readScheduleFilters(user.id));
   useEffect(() => saveScheduleFilters(user.id, scheduleFilters), [user.id, scheduleFilters]);
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (!['topic', 'swap', 'notice'].some(key => url.searchParams.has(key))) return;
+    for (const key of ['topic', 'swap', 'notice']) url.searchParams.delete(key);
+    window.history.replaceState(null, '', url);
+  }, []);
   const updateScheduleFilters = changes => setScheduleFilters(previous => ({ ...previous, ...changes }));
   const dirty = useRef(false);
   const { confirm, busy, run } = useAction();
@@ -88,6 +104,7 @@ function Workspace({ user, endSession }) {
     if (next === tab) return true;
     if (dirty.current && !await confirm('放弃未保存的需求？')) return false;
     dirty.current = false;
+    setNotificationTarget({});
     if (next === 'workflow' && tab !== 'settings') setWorkflowPage(null);
     setTab(next);
     window.scrollTo(0, 0);
@@ -115,19 +132,19 @@ function Workspace({ user, endSession }) {
     <header className="topbar"><div className="topbar-inner">
       <span className="brand">时禾</span>
       <Space size={6} className="account-actions"><Dropdown trigger={['click']} menu={{ items: [
-        { key: 'reminders', label: '排班提醒' }, { key: 'password', label: '修改密码' },
+        { key: 'reminders', label: '消息提醒' }, { key: 'password', label: '修改密码' },
       ], onClick: ({ key }) => key === 'reminders' ? setReminders(true) : setPassword(true) }}>
         <Button type="text" className="account-menu" title={`${user.name}（${user.employeeNo}）`}>{user.name}{isAdmin(user) && user.name !== accountRoles[user.role] && ` · ${accountRoles[user.role]}`} ▾</Button>
       </Dropdown><Button ghost loading={busy} onClick={logout}>退出</Button></Space>
     </div></header>
     <main className="content stack">
-      {(tab === 'schedule' || tab === 'discussions') && <Announcement key={tab} user={user} />}
+      {(tab === 'schedule' || tab === 'discussions') && <Announcement key={tab} user={user} initiallyReading={notificationTarget.notice} />}
       {tab === 'schedule' && <DiscussionPreview openDiscussions={openDiscussions} />}
       {isAdmin(user) && (tab === 'workflow' || tab === 'settings') && <Alert type="info" showIcon message="仅管理员可见" />}
       <Suspense fallback={<div className="loading"><Spin /></div>}>
         {tab === 'schedule' && <Schedule user={user} periods={periods} period={period} filters={scheduleFilters} updateFilters={updateScheduleFilters} />}
         {tab === 'enrollment' && <Load query={periodsQuery}>{() => <Enrollment periods={periods} period={period} />}</Load>}
-        {tab === 'swaps' && <Swaps user={user} />}
+        {tab === 'swaps' && <Swaps user={user} initialDetail={notificationTarget.swap} />}
         {tab === 'discussions' && <Discussions topicId={discussionTopicId} back={() => { setDiscussionTopicId(null); window.scrollTo(0, 0); }} />}
         {tab === 'workflow' && isAdmin(user) && <Load query={periodsQuery}>{() => (
           <Workflow user={user} periods={periods} page={workflowPage} setPage={setWorkflowPage}

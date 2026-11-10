@@ -28,6 +28,7 @@ const enrollmentService = require('./enrollmentService');
 const auditRepo = require('../repositories/auditRepo');
 const userRepo = require('../repositories/userRepo');
 const db = require('../db/db');
+const { queuePushEvent } = require('./reminderService');
 const { EmployeeState, checkSlot, REASON_LABELS } = require('../scheduler/constraints');
 const {
   PERIOD_STATUS,
@@ -40,6 +41,14 @@ const {
 const { badRequest, notFound, conflict, forbidden } = require('../utils/errors');
 const { computeMetrics } = require('../scheduler/metrics');
 const { isoWeekKey } = require('../utils/date');
+
+function notifySwap(actorId, userIds, body, swapId) {
+  queuePushEvent(actorId, userIds, {
+    title: '时禾 · 换班提醒', body,
+    tag: swapId ? `shihe-swap-${swapId}` : 'shihe-schedule-change',
+    path: swapId ? `/?swap=${swapId}` : '/',
+  });
+}
 
 /**
  * 构建某员工在某周期内的实时状态（含已发布排班），用于换班合法性复检。
@@ -213,6 +222,7 @@ function createSwap(payload, ctx) {
     // 发起人直接 approved，接收人 pending
     swapRepo.insertParticipant(swapId, requesterId, SWAP_PARTICIPANT_ROLE.REQUESTER, 0, SWAP_PARTICIPANT_STATUS.APPROVED);
     swapRepo.insertParticipant(swapId, toUserId, SWAP_PARTICIPANT_ROLE.RECEIVER, 1, SWAP_PARTICIPANT_STATUS.PENDING);
+    notifySwap(requesterId, [toUserId], '你收到一条换班申请。', swapId);
   });
 
   auditRepo.log({
@@ -562,6 +572,9 @@ function applySwap(swap, period, ctx, { adminDirect = false } = {}) {
       now
     );
 
+    notifySwap(ctx.user.id, [swap.requester_id, swap.to_user_id],
+      adminDirect ? '管理员调整了你的排班。' : '你的换班申请已生效。', swap.id);
+
     return { appliedItems, appliedAt: now };
   });
 
@@ -626,6 +639,7 @@ function reject(swapId, reason, ctx) {
   db.tx(() => {
     swapRepo.decideParticipant(mine.id, SWAP_PARTICIPANT_STATUS.REJECTED);
     swapRepo.updateSwapStatus(swapId, SWAP_STATUS.REJECTED, { decidedAt: new Date().toISOString() });
+    notifySwap(ctx.user.id, [swap.requester_id], '你的换班申请已被拒绝。', swapId);
   });
 
   auditRepo.log({
@@ -652,7 +666,10 @@ function cancel(swapId, ctx) {
     throw conflict('ALREADY_DECIDED', `该申请已结束（当前状态：${swap.status}）`);
   }
 
-  swapRepo.updateSwapStatus(swapId, SWAP_STATUS.CANCELLED, { decidedAt: new Date().toISOString() });
+  db.tx(() => {
+    swapRepo.updateSwapStatus(swapId, SWAP_STATUS.CANCELLED, { decidedAt: new Date().toISOString() });
+    notifySwap(ctx.user.id, [swap.requester_id, swap.to_user_id], '与你相关的换班申请已撤回。', swapId);
+  });
 
   auditRepo.log({
     action: auditRepo.ACTIONS.SWAP_CANCEL,

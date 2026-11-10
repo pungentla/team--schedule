@@ -19,7 +19,7 @@ async function disableDeviceReminder(subscription) {
 export function ReminderSettings({ close }) {
   const { run, busy } = useAction();
   const query = useLoad('device-reminders', async () => {
-    if (!window.isSecureContext) return { unavailable: '请通过 HTTPS 打开时禾，再开启排班提醒。' };
+    if (!window.isSecureContext) return { unavailable: '请通过 HTTPS 打开时禾，再开启消息提醒。' };
     if (!('PushManager' in window) || !('Notification' in window) || !navigator.serviceWorker) {
       return { unavailable: 'iPhone 或 iPad 请从 Safari 将时禾添加到主屏幕，再从图标打开。其他设备请使用支持网页通知的浏览器。' };
     }
@@ -38,7 +38,7 @@ export function ReminderSettings({ close }) {
         throw error;
       }
       return API.enableReminder(subscription.toJSON());
-    }, '已开启本机排班提醒', query.refresh);
+    }, '已开启本机提醒', query.refresh);
   }
 
   function test(subscription) {
@@ -54,9 +54,9 @@ export function ReminderSettings({ close }) {
     }, '测试通知已发送');
   }
 
-  return <Modal open title="排班提醒" onCancel={() => !busy && close()} footer={null}>
+  return <Modal open title="消息提醒" onCancel={() => !busy && close()} footer={null}>
     <div className="stack">
-      <p>次日有已发布的排班时，前一天 18:00（北京时间）提醒你。关闭页面后也能收到。</p>
+      <p>接收话题互动、换班和新公告提醒。次日有排班时，前一天 18:00（北京时间）也会提醒你。</p>
       <Load query={query}>{data => {
         if (data.unavailable || !data.publicKey) return <p className="muted">{data.unavailable || '服务器尚未开启推送。'}</p>;
         return <>
@@ -65,7 +65,7 @@ export function ReminderSettings({ close }) {
           <div className="inline">
             {data.enabled ? <>
               <Button type="primary" disabled={busy || Notification.permission === 'denied'} onClick={() => test(data.subscription)}>发送测试通知</Button>
-              <Button disabled={busy} onClick={() => run(() => disableDeviceReminder(data.subscription), '已关闭本机排班提醒', query.refresh)}>关闭本机提醒</Button>
+              <Button disabled={busy} onClick={() => run(() => disableDeviceReminder(data.subscription), '已关闭本机提醒', query.refresh)}>关闭本机提醒</Button>
             </> : <Button type="primary" disabled={busy || Notification.permission === 'denied'} onClick={() => enable(data)}>开启本机提醒</Button>}
           </div>
         </>;

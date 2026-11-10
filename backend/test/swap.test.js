@@ -106,7 +106,7 @@ function cleanDb() {
   db.exec('PRAGMA foreign_keys = OFF');
   for (const t of ['swap_participants', 'swap_requests', 'assignments', 'schedule_runs', 'slot_requirements',
     'period_slots', 'periods', 'availability_slots', 'unavailability_dates', 'enrollment_work_types',
-    'enrollments', 'audit_logs', 'sessions', 'users', 'work_types', 'shifts', 'invites']) {
+    'enrollments', 'audit_logs', 'sessions', 'push_events', 'push_subscriptions', 'users', 'work_types', 'shifts', 'invites']) {
     db.run(`DELETE FROM ${t}`);
   }
   db.exec('PRAGMA foreign_keys = ON');
@@ -127,6 +127,9 @@ test.after(() => {
 
 test('transfer: 发起 → 接收人同意 → 自动生效', () => {
   const { u1, u2, w1 } = ids;
+  for (const userId of [u1, u2]) {
+    db.run('INSERT INTO push_subscriptions (endpoint,user_id,p256dh,auth) VALUES (?,?,?,?)', `https://web.push.apple.com/${userId}`, userId, 'fixture', 'fixture');
+  }
   const assignment = db.get(
     `SELECT id FROM assignments WHERE user_id=? AND work_type_id=? AND status='active'`, u1, w1
   );
@@ -142,10 +145,12 @@ test('transfer: 发起 → 接收人同意 → 自动生效', () => {
   const rec = created.participants.find((p) => p.role === 'receiver');
   assert.equal(req.status, 'approved');
   assert.equal(rec.status, 'pending');
+  assert.deepEqual(db.all('SELECT user_id FROM push_events ORDER BY id').map(row => row.user_id), [u2]);
 
   const result = swapService.confirm(created.swap.id, ctxFor(u2));
   assert.equal(result.applied, true);
   assert.equal(result.status, 'approved');
+  assert.deepEqual(db.all('SELECT user_id FROM push_events ORDER BY id').map(row => row.user_id), [u2, u1]);
 
   // 原分配已释放，新分配属于 u2
   const old = db.get('SELECT * FROM assignments WHERE id = ?', assignment.id);

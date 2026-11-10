@@ -4,6 +4,7 @@ const express = require('express');
 const db = require('../db/db');
 const { ROLES } = require('../config');
 const { requireAuth } = require('../middleware/auth');
+const { queuePushEvent } = require('../services/reminderService');
 const { nowIso } = require('../utils/date');
 const { badRequest, forbidden, notFound } = require('../utils/errors');
 const { intParam, optionalInt, requireArray, requireBoolean, requireEnum, requireString } = require('../utils/validate');
@@ -21,6 +22,14 @@ const topicSelect = `SELECT t.id, t.category, t.title, t.content, t.article_url 
     (t.author_id IS ?1 OR ?2) AS canDelete
   FROM discussion_topics t LEFT JOIN users u ON u.id = t.author_id`;
 router.use(requireAuth);
+
+function notifyParticipants(topicId, actorId, body) {
+  const participants = db.all(`SELECT author_id FROM discussion_topics WHERE id=?
+    UNION SELECT author_id FROM discussion_replies WHERE topic_id=?`, topicId, topicId);
+  queuePushEvent(actorId, participants.map(row => row.author_id), {
+    title: '时禾 · 话题互动', body, tag: `shihe-topic-${topicId}`, path: `/?topic=${topicId}`,
+  });
+}
 
 function getPage(query) {
   return optionalInt(query.page, '页码', { min: 1, max: 1000000 }) ?? 1;
@@ -98,7 +107,8 @@ router.put('/:id/like', (req, res) => {
   const { topicId, user } = req;
   const likeCount = db.tx(() => {
     if (liked) {
-      db.run('INSERT INTO discussion_likes (topic_id, user_id) VALUES (?, ?) ON CONFLICT(topic_id, user_id) DO NOTHING', topicId, user.id);
+      const { changes } = db.run('INSERT INTO discussion_likes (topic_id, user_id) VALUES (?, ?) ON CONFLICT(topic_id, user_id) DO NOTHING', topicId, user.id);
+      if (changes) notifyParticipants(topicId, user.id, '你参与的话题收到了点赞。');
     } else {
       db.run('DELETE FROM discussion_likes WHERE topic_id = ? AND user_id = ?', topicId, user.id);
     }
@@ -129,6 +139,7 @@ router.post('/:id/replies', (req, res) => {
   const reply = db.tx(() => {
     const { lastInsertRowid } = db.run('INSERT INTO discussion_replies (topic_id, author_id, content, created_at) VALUES (?, ?, ?, ?)',
       req.topicId, req.user.id, content, nowIso());
+    notifyParticipants(req.topicId, req.user.id, '你参与的话题有新回复。');
     const total = db.pluck('SELECT COUNT(*) FROM discussion_replies WHERE topic_id = ?', req.topicId);
     return { id: lastInsertRowid, page: Math.ceil(total / PAGE_SIZE) };
   });

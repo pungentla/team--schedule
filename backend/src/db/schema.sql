@@ -57,6 +57,18 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
   reminded_date  TEXT
 );
 
+CREATE TABLE IF NOT EXISTS push_events (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  endpoint         TEXT NOT NULL REFERENCES push_subscriptions(endpoint) ON DELETE CASCADE,
+  user_id          INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  payload          TEXT NOT NULL,
+  expires_at       INTEGER NOT NULL,
+  next_attempt_at  INTEGER NOT NULL,
+  attempts         INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_push_events_ready ON push_events(next_attempt_at, id);
+CREATE INDEX IF NOT EXISTS idx_push_events_endpoint ON push_events(endpoint);
+
 CREATE TABLE IF NOT EXISTS announcements (
   id            INTEGER PRIMARY KEY CHECK (id = 1),
   title         TEXT NOT NULL,

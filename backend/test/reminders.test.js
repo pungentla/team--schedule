@@ -59,6 +59,33 @@ test('退出账号只关闭该用户当前设备的提醒', () => {
   assert.equal(db.pluck('SELECT COUNT(*) FROM sessions WHERE user_id=?', first), 0);
 });
 
+test('业务提醒随事务提交，跳过操作者，发送失败后重试且成功后出队', async t => {
+  reminders.saveSubscription(first, subscription('actor'));
+  const device = subscription('recipient');
+  reminders.saveSubscription(second, device);
+  const payload = { title: '时禾 · 新公告', body: '有一条新公告', tag: 'notice', path: '/?notice=1' };
+  assert.throws(() => db.tx(() => {
+    reminders.queuePushEvent(first, null, payload);
+    throw new Error('rollback');
+  }), /rollback/);
+  assert.equal(db.pluck('SELECT COUNT(*) FROM push_events'), 0);
+
+  reminders.queuePushEvent(first, null, payload);
+  assert.deepEqual(db.all('SELECT user_id,endpoint FROM push_events').map(row => [row.user_id, row.endpoint]), [[second, device.endpoint]]);
+  const send = t.mock.method(webPush, 'sendNotification', async () => {
+    if (send.mock.callCount() === 0) throw Object.assign(new Error('temporary'), { code: 'ETIMEDOUT' });
+  });
+  await reminders.sendQueuedPushEvents();
+  assert.equal(db.pluck('SELECT attempts FROM push_events'), 1);
+  await reminders.sendQueuedPushEvents();
+  assert.equal(send.mock.callCount(), 1);
+  db.run('UPDATE push_events SET next_attempt_at=0');
+  await reminders.sendQueuedPushEvents();
+  assert.equal(send.mock.callCount(), 2);
+  assert.deepEqual(JSON.parse(send.mock.calls[1].arguments[1]), payload);
+  assert.equal(db.pluck('SELECT COUNT(*) FROM push_events'), 0);
+});
+
 test('次日提醒只发送生效安排，同一设备每日一次，失效订阅会移除', async t => {
   const work = configs.insertWorkType({ code: 'WORK', name: '接待' });
   const shift = configs.insertShift({ code: 'AM', name: '早班', startTime: '08:00', endTime: '12:00', seq: 1 });

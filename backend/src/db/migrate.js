@@ -7,7 +7,7 @@
 
 const db = require('./db');
 
-const CURRENT_VERSION = 14;
+const CURRENT_VERSION = 15;
 
 function migrate() {
   db.open();
@@ -92,6 +92,7 @@ function truncateAll() {
     'discussion_images',
     'discussion_likes',
     'discussion_topics',
+    'push_events',
     'push_subscriptions',
     'users',
   ];
