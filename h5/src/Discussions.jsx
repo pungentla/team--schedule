@@ -15,7 +15,9 @@ import Select from 'antd/es/select';
 import Tabs from 'antd/es/tabs';
 import Tag from 'antd/es/tag';
 import Upload from 'antd/es/upload';
+import ShareAltOutlined from '@ant-design/icons/es/icons/ShareAltOutlined';
 import { TopicHeat } from './DiscussionPreview';
+import { TopicShare } from './TopicShare';
 import { API, Blank, Heading, Load, option, timeText, useAction, useLoad } from './shared';
 
 const categories = { chat: '闲聊', feedback: '吐槽', share: '文章分享', poll: '投票' };
@@ -59,7 +61,7 @@ async function encodeTopicImage(file) {
   });
 }
 
-export default function Discussions({ topicId, replyId, openVersion, back, open, unreadCounts, refreshUnread, hotTopicRanks, refreshHotTopics }) {
+export default function Discussions({ topicId, replyId, openVersion, back, open, unreadCounts, refreshUnread, refreshLikeNotices, hotTopicRanks, refreshHotTopics }) {
   const [category, setCategory] = useState('all');
   const [sort, setSort] = useState('recent');
   const [anonymousOnly, setAnonymousOnly] = useState(false);
@@ -95,6 +97,7 @@ export default function Discussions({ topicId, replyId, openVersion, back, open,
     setFeed(current => ({ ...current, items: current.items.filter(topic => topic.id !== id) }));
     setExpandedTopics(current => new Set([...current].filter(topicId => topicId !== id)));
     refreshUnread();
+    refreshLikeNotices();
     refreshHotTopics();
   }
   function toggleDiscussion(id) {
@@ -123,7 +126,7 @@ export default function Discussions({ topicId, replyId, openVersion, back, open,
   }, [nextKey, query.loading, query.error]);
 
   return topicId ? <TopicDetail key={`${topicId}:${openVersion}`} topicId={topicId} replyId={replyId} now={now} back={back} updateTopic={updateTopic}
-    refreshUnread={refreshUnread} heatRank={hotTopicRanks.get(topicId)} refreshHotTopics={refreshHotTopics}
+    refreshUnread={refreshUnread} refreshLikeNotices={refreshLikeNotices} heatRank={hotTopicRanks.get(topicId)} refreshHotTopics={refreshHotTopics}
     deleted={() => { removeTopic(topicId); back(); }} />
     : <TopicList items={feed.items} hasMore={!!nextKey} query={query} loadMore={loadMore} reload={reload}
       updateTopic={updateTopic} removeTopic={removeTopic} position={position} open={open}
@@ -132,13 +135,18 @@ export default function Discussions({ topicId, replyId, openVersion, back, open,
       expandedTopics={expandedTopics} toggleDiscussion={toggleDiscussion} />;
 }
 
-function TopicDetail({ topicId, replyId, now, back, updateTopic, deleted, refreshUnread, heatRank, refreshHotTopics }) {
+function TopicDetail({ topicId, replyId, now, back, updateTopic, deleted, refreshUnread, refreshLikeNotices, heatRank, refreshHotTopics }) {
   const [expanded, setExpanded] = useState(true);
   const query = useLoad(topicId, () => API.discussionTopic(topicId), true);
+  const refreshLikes = useEffectEvent(refreshLikeNotices);
+  const unreadLikeThrough = query.data?.unreadLikeThrough;
+  useEffect(() => {
+    if (unreadLikeThrough) API.markTopicLikesRead(topicId, unreadLikeThrough).then(() => refreshLikes()).catch(() => {});
+  }, [topicId, unreadLikeThrough]);
   useLayoutEffect(() => { window.scrollTo(0, 0); }, []);
   useEffect(() => {
     if (query.data && !query.loading) {
-      const { poll, ...summary } = query.data;
+      const { poll, unreadLikeThrough: _unreadLikeThrough, ...summary } = query.data;
       updateTopic(topicId, poll ? { ...summary, pollOptions: poll.options.map(({ voters, ...option }) => option) } : summary);
     }
   }, [topicId, query.data, query.loading, updateTopic]);
@@ -286,6 +294,7 @@ function NewTopic({ close, saved }) {
 
 function TopicCard({ topic, replyId, now, open, updated, deleted, loading, expanded, toggleDiscussion, unreadCount, refreshUnread, heatRank, refreshHotTopics }) {
   const { run, busy, confirm } = useAction();
+  const [sharing, setSharing] = useState(false);
   const liked = !!topic.liked;
   const pollClosed = !!topic.pollClosesAt && Date.parse(topic.pollClosesAt) <= now;
   function updateEngagement(changes) {
@@ -300,7 +309,7 @@ function TopicCard({ topic, replyId, now, open, updated, deleted, loading, expan
   function openCard(event) {
     if (!event.target.closest('button, a')) open();
   }
-  return <Card className={open ? 'topic-card topic-card-clickable' : 'topic-card'} onClick={open ? openCard : undefined}>
+  return <><Card className={open ? 'topic-card topic-card-clickable' : 'topic-card'} onClick={open ? openCard : undefined}>
     <div className="inline topic-card-heading">
       <h3>{open ? <button type="button" className="topic-title-button" onClick={open}>{topic.title}</button> : topic.title}</h3>
       <Tag color={colors[topic.category]}>{categories[topic.category]}</Tag>
@@ -329,16 +338,19 @@ function TopicCard({ topic, replyId, now, open, updated, deleted, loading, expan
         title={liked ? '取消点赞' : '点赞'} onClick={() => run(() => API.setTopicLike(topic.id, !liked), null, updateEngagement)}>
         {liked ? '♥ 已点赞' : '♡ 点赞'} {topic.likeCount ?? 0}
       </Button>
-      <Button type="link" aria-expanded={expanded} aria-controls={`topic-replies-${topic.id}`} onClick={toggleDiscussion}>
+      <Button type="link" icon={<ShareAltOutlined aria-hidden="true" />} onClick={() => setSharing(true)}>分享</Button>
+      {!!topic.canDelete && <Button type="text" className="topic-delete" disabled={busy || loading} onClick={deleteTopic}>删除话题</Button>}
+      <Button type="link" className="topic-discussion" aria-expanded={expanded} aria-controls={`topic-replies-${topic.id}`} onClick={toggleDiscussion}>
         {expanded ? '收起讨论' : `查看讨论（${topic.replyCount}）`}
       </Button>
-      {!!topic.canDelete && <Button type="text" className="topic-delete" disabled={busy || loading} onClick={deleteTopic}>删除话题</Button>}
     </div>
     <div id={`topic-replies-${topic.id}`} hidden={!expanded} onClick={event => event.stopPropagation()}>
       {expanded && <TopicReplies topicId={topic.id} replyId={replyId} replyCount={topic.replyCount} anonymous={topic.anonymous}
         updated={updateEngagement} close={toggleDiscussion} refreshUnread={refreshUnread} />}
     </div>
-  </Card>;
+  </Card>
+    {sharing && <TopicShare topic={topic} category={categories[topic.category]} close={() => setSharing(false)} />}
+  </>;
 }
 
 function PollHeading({ mode, closesAt, closed, hasVoted }) {

@@ -123,6 +123,14 @@ CREATE TABLE IF NOT EXISTS discussion_likes (
   PRIMARY KEY (topic_id, user_id)
 );
 
+CREATE TABLE IF NOT EXISTS discussion_unread_likes (
+  id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  topic_id INTEGER NOT NULL,
+  user_id  INTEGER NOT NULL,
+  UNIQUE (topic_id, user_id),
+  FOREIGN KEY (topic_id, user_id) REFERENCES discussion_likes(topic_id, user_id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS discussion_poll_options (
   topic_id INTEGER NOT NULL REFERENCES discussion_topics(id) ON DELETE CASCADE,
   position INTEGER NOT NULL CHECK (position BETWEEN 1 AND 6),

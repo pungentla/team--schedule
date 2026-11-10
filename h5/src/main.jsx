@@ -98,24 +98,25 @@ function Workspace({ user, endSession }) {
   useEffect(() => { restoreDeviceReminder(user.id).catch(() => {}); }, [user.id]);
   useEffect(() => {
     const url = new URL(window.location.href);
-    const keys = ['topic', 'reply', 'swap', 'notice'];
-    if (!keys.some(key => url.searchParams.has(key))) return;
-    for (const key of keys) url.searchParams.delete(key);
-    window.history.replaceState(null, '', url);
-  }, []);
+    for (const key of ['reply', 'swap', 'notice']) url.searchParams.delete(key);
+    if (tab === 'discussions' && discussionTopicId) url.searchParams.set('topic', discussionTopicId);
+    else url.searchParams.delete('topic');
+    if (url.href !== window.location.href) window.history.replaceState(null, '', url);
+  }, [tab, discussionTopicId]);
   const updateScheduleFilters = changes => setScheduleFilters(previous => ({ ...previous, ...changes }));
   const dirty = useRef(false);
   const { confirm, busy, run } = useAction();
   const { message } = App.useApp();
   const periodsQuery = useLoad('periods', () => Promise.all([API.listPeriods(), API.currentPeriod()]), true);
   const unreadQuery = useLoad(user.id, API.unreadTopicReplies, true);
+  const likeNotices = useLoad(user.id, API.unreadTopicLikes, true);
   const swapInbox = useLoad(user.id, API.swapInbox, true);
   const hotTopicsQuery = useLoad(tab === 'schedule' || tab === 'discussions' ? 'hot-topics' : null,
     () => API.discussionTopics(1, { sort: 'hot', pageSize: 3 }), true);
   const hotTopicRanks = new Map(hotTopicsQuery.data?.items
     .filter(topic => topic.likeCount + topic.replyCount > 0)
     .map((topic, index) => [topic.id, index + 1]));
-  const refreshNotifications = useEffectEvent(() => { unreadQuery.refresh(); swapInbox.refresh(); });
+  const refreshNotifications = useEffectEvent(() => { unreadQuery.refresh(); likeNotices.refresh(); swapInbox.refresh(); });
   useEffect(() => {
     const refreshVisible = () => { if (!document.hidden) refreshNotifications(); };
     window.addEventListener('focus', refreshVisible);
@@ -175,7 +176,7 @@ function Workspace({ user, endSession }) {
       <header className="topbar"><div className="topbar-inner">
         <div className="brand-lockup"><span className="brand">时禾</span><span className="brand-caption">传3:2 栽种有时</span></div>
         <div className="account-actions">
-          <BellNotifications query={unreadQuery} swapInbox={swapInbox} open={openDiscussions} openSwap={openSwap} />
+          <BellNotifications query={unreadQuery} likeNotices={likeNotices} swapInbox={swapInbox} open={openDiscussions} openSwap={openSwap} />
           <Dropdown trigger={['click']} menu={{ items: [
             { key: 'reminders', label: '消息提醒' }, { key: 'password', label: '修改密码' },
           ], onClick: ({ key }) => key === 'reminders' ? setReminders(true) : setPassword(true) }}>
@@ -196,7 +197,7 @@ function Workspace({ user, endSession }) {
         {tab === 'enrollment' && <Load query={periodsQuery}>{() => <Enrollment periods={periods} period={period} />}</Load>}
         {tab === 'swaps' && <Swaps user={user} detail={swapDetail} setDetail={setSwapDetail} inbox={swapInbox} />}
         {tab === 'discussions' && <Discussions topicId={discussionTopicId} replyId={discussionReplyId} openVersion={discussionOpenVersion} open={openDiscussions}
-          unreadCounts={unreadCounts} refreshUnread={unreadQuery.refresh}
+          unreadCounts={unreadCounts} refreshUnread={unreadQuery.refresh} refreshLikeNotices={likeNotices.refresh}
           hotTopicRanks={hotTopicRanks} refreshHotTopics={hotTopicsQuery.refresh}
           back={() => setDiscussionTopicId(null)} />}
         {tab === 'workflow' && isAdmin(user) && <Load query={periodsQuery}>{() => (
@@ -216,7 +217,7 @@ function Workspace({ user, endSession }) {
   </div>;
 }
 
-function BellNotifications({ query, swapInbox, open, openSwap }) {
+function BellNotifications({ query, likeNotices, swapInbox, open, openSwap }) {
   const { notification } = App.useApp();
   const seenThrough = useRef(null);
   const openTopic = useRef(open);
@@ -236,8 +237,9 @@ function BellNotifications({ query, swapInbox, open, openSwap }) {
     });
   }, [query.data, notification]);
   const topics = query.data ?? [];
+  const likes = likeNotices.data ?? [];
   const swaps = swapInbox.data ?? [];
-  const total = topics.reduce((sum, topic) => sum + topic.unreadCount, swaps.length);
+  const total = [...topics, ...likes].reduce((sum, topic) => sum + topic.unreadCount, swaps.length);
   const label = `消息提醒，${total} 条`;
   const button = <Button ghost className="reply-notification-button" aria-label={label} title={label}
     icon={<Badge count={total} size="small" overflowCount={999}><BellOutlined /></Badge>} />;
@@ -249,20 +251,27 @@ function BellNotifications({ query, swapInbox, open, openSwap }) {
       <p className="muted">{topic.excerpt}</p>
     </div>,
   })) });
+  if (likes.length) items.push({ type: 'group', key: 'likes', label: '话题点赞', children: likes.map(topic => ({
+    key: `like:${topic.id}`, label: <div className="reply-notification-copy">
+      <div className="reply-notification-item"><span>{topic.title}</span><small className="muted">{topic.unreadCount} 个新赞</small></div>
+      <p className="muted">你的话题收到了点赞</p>
+    </div>,
+  })) });
   if (swaps.length) items.push({ type: 'group', key: 'swaps', label: '换班申请', children: swaps.map(swap => ({
     key: `swap:${swap.id}`, label: <div className="reply-notification-copy">
       <div className="reply-notification-item"><span>{swap.requesterName}发起的换班</span><small className="muted">待确认</small></div>
       {swap.fromAssign && <p className="muted">{assignmentLabel(swap.fromAssign)}</p>}
     </div>,
   })) });
-  if (query.error || swapInbox.error) items.push({ key: 'retry', label: '部分提醒加载失败，点击重试' });
-  if (!items.length) items.push({ key: 'empty', label: query.loading || swapInbox.loading ? '正在加载' : '暂无消息提醒', disabled: true });
+  if (query.error || likeNotices.error || swapInbox.error) items.push({ key: 'retry', label: '部分提醒加载失败，点击重试' });
+  if (!items.length) items.push({ key: 'empty', label: query.loading || likeNotices.loading || swapInbox.loading ? '正在加载' : '暂无消息提醒', disabled: true });
   return <Dropdown trigger={['click']} onOpenChange={visible => { if (visible) notification.destroy(replyNotificationKey); }}
     menu={{ items, className: 'reply-notification-menu',
     onClick: ({ key }) => {
-      if (key === 'retry') { query.refresh(); swapInbox.refresh(); return; }
+      if (key === 'retry') { query.refresh(); likeNotices.refresh(); swapInbox.refresh(); return; }
       const [type, id] = key.split(':');
       if (type === 'swap') return openSwap(Number(id));
+      if (type === 'like') return open(Number(id));
       const topic = topics.find(item => item.id === Number(id));
       if (topic) open(topic.id, topic.latestReplyId);
     } }}>{button}</Dropdown>;

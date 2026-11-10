@@ -140,6 +140,13 @@ router.get('/unread-replies', (req, res) => {
   res.set('Cache-Control', 'no-store').json({ data: items });
 });
 
+router.get('/unread-likes', (req, res) => {
+  const items = db.all(`SELECT t.id, t.title, COUNT(l.id) AS unreadCount
+    FROM discussion_topics t JOIN discussion_unread_likes l ON l.topic_id = t.id
+    WHERE t.author_id = ? GROUP BY t.id ORDER BY MAX(l.id) DESC`, req.user.id);
+  res.set('Cache-Control', 'no-store').json({ data: items });
+});
+
 router.post('/', (req, res) => {
   const body = req.body || {};
   const category = requireEnum(body.category, '话题分类', CATEGORIES);
@@ -181,6 +188,8 @@ router.param('id', (req, _res, next, value) => {
 
 router.get('/:id', (req, res) => {
   const topic = db.get(`${topicSelect} WHERE t.id = ?`, req.user.id, isSuperAdmin(req.user), req.topicId);
+  topic.unreadLikeThrough = db.pluck(`SELECT MAX(l.id) FROM discussion_unread_likes l
+    JOIN discussion_topics t ON t.id = l.topic_id WHERE l.topic_id = ? AND t.author_id = ?`, req.topicId, req.user.id);
   if (topic.category === 'poll') topic.poll = pollResults(req.topicId, req.user.id, topic);
   res.set('Cache-Control', 'no-store').json({ data: topic });
 });
@@ -231,13 +240,25 @@ router.put('/:id/like', (req, res) => {
   const likeCount = db.tx(() => {
     if (liked) {
       const { changes } = db.run('INSERT INTO discussion_likes (topic_id, user_id) VALUES (?, ?) ON CONFLICT(topic_id, user_id) DO NOTHING', topicId, user.id);
-      if (changes) notifyParticipants(topicId, user.id, '你参与的话题收到了点赞。');
+      if (changes) {
+        db.run(`INSERT INTO discussion_unread_likes (topic_id, user_id)
+          SELECT id, ? FROM discussion_topics WHERE id = ? AND author_id <> ?`, user.id, topicId, user.id);
+        notifyParticipants(topicId, user.id, '你参与的话题收到了点赞。');
+      }
     } else {
       db.run('DELETE FROM discussion_likes WHERE topic_id = ? AND user_id = ?', topicId, user.id);
     }
     return db.pluck('SELECT COUNT(*) FROM discussion_likes WHERE topic_id = ?', topicId);
   });
   res.json({ data: { liked, likeCount } });
+});
+
+router.put('/:id/likes/read', (req, res) => {
+  const through = requireInt(req.body?.through, '已读点赞', { min: 1, max: Number.MAX_SAFE_INTEGER });
+  db.run(`DELETE FROM discussion_unread_likes WHERE topic_id = ? AND id <= ? AND EXISTS (
+    SELECT 1 FROM discussion_topics WHERE id = discussion_unread_likes.topic_id AND author_id = ?
+  )`, req.topicId, through, req.user.id);
+  res.status(204).end();
 });
 
 router.get('/:id/images', (req, res) => {

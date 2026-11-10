@@ -113,6 +113,8 @@ export const API = (() => {
     withdrawAnnouncement: id => request(`/announcements/${id}`, { method: 'DELETE' }),
     discussionTopics: (page, options) => request(`/discussions?${new URLSearchParams({ page, ...options })}`),
     unreadTopicReplies: () => request('/discussions/unread-replies'),
+    unreadTopicLikes: () => request('/discussions/unread-likes'),
+    markTopicLikesRead: (id, through) => request(`/discussions/${id}/likes/read`, { method: 'PUT', body: { through } }),
     discussionTopic: id => request(`/discussions/${id}`),
     deleteTopic: id => request(`/discussions/${id}`, { method: 'DELETE' }),
     setTopicLike: (id, liked) => request(`/discussions/${id}/like`, { method: 'PUT', body: { liked } }),
