@@ -154,6 +154,17 @@ button, input { font: inherit; }
 .ant-modal .ant-modal-body { max-height: 72dvh; overflow: auto; }
 .ant-checkbox-group { row-gap: 8px; }
 .ant-select-item-option-content { white-space: normal !important; }
+@media (max-width: 620px), (pointer: coarse) {
+  /* 小字号输入框在 iOS 聚焦时会触发页面缩放。 */
+  input.ant-input,
+  textarea.ant-input,
+  html .ant-input-affix-wrapper > input.ant-input,
+  html .ant-input-textarea-affix-wrapper.ant-input-affix-wrapper > textarea.ant-input,
+  .ant-input-number .ant-input-number-input,
+  .ant-picker .ant-picker-input > input,
+  .ant-select .ant-select-selector .ant-select-selection-search > input.ant-select-selection-search-input,
+  .ant-pagination .ant-pagination-simple-pager input { font-size: 16px; }
+}
 @media (max-width: 560px) {
   .content { padding-inline: 8px; }
   .form-grid { grid-template-columns: minmax(0, 1fr); }
@@ -163,9 +174,7 @@ button, input { font: inherit; }
   .calendar-heading .ant-btn { padding-inline: 8px; }
   .ant-modal { top: 20px; }
   .ant-modal .ant-modal-content { padding: 14px; }
-  .ant-form-item .ant-input, .ant-form-item .ant-picker input, .ant-form-item .ant-input-number-input { font-size: 16px; }
   .schedule-range-row > .ant-picker { padding-inline: 6px; }
-  .schedule-range-row > .ant-picker input { font-size: 13px; }
   .schedule-range-row .ant-picker-range .ant-picker-range-separator { padding-inline: 3px; }
   .schedule-range-row > .ant-btn { padding-inline: 10px; }
 }
@@ -175,8 +184,11 @@ button, input { font: inherit; }
   .schedule-range-popup .ant-picker-header-next-btn,
   .schedule-range-popup .ant-picker-header-super-next-btn { visibility: visible !important; }
 }
-@media (max-width: 360px) {
-  .schedule-range-row > .ant-picker input { font-size: 12px; }
+@media (max-width: 389px) {
   .schedule-range-row .ant-picker-suffix,
   .schedule-range-row .ant-picker-clear { display: none; }
+}
+@media (max-width: 359px) {
+  .schedule-range-row { flex-wrap: wrap; justify-content: flex-end; }
+  .schedule-range-row > .ant-picker { flex-basis: 100%; }
 }
