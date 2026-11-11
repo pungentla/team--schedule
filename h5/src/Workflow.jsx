@@ -9,7 +9,6 @@ import Form from 'antd/es/form';
 import Input from 'antd/es/input';
 import InputNumber from 'antd/es/input-number';
 import Modal from 'antd/es/modal';
-import Segmented from 'antd/es/segmented';
 import Select from 'antd/es/select';
 import Space from 'antd/es/space';
 import Statistic from 'antd/es/statistic';
@@ -17,7 +16,7 @@ import Steps from 'antd/es/steps';
 import Tag from 'antd/es/tag';
 import { API, Blank, Field, Heading, Load, assignmentLabel, dateText, dayjs, iso, monthOf, option, periodLabels, required, shiftText, swapLabels, timeText, today, useAction, useLoad, usePageLoad } from './shared';
 import { usePullRefresh } from './PullToRefresh';
-import { Matrix } from './Schedule';
+import { ScheduleDetails } from './Schedule';
 import { Adjustments } from './Adjustments';
 import { ProxyEnrollment } from './Enrollment';
 import { MonthCalendar } from './MonthCalendar';
@@ -395,7 +394,7 @@ function RequirementCalendar({ data, readOnly, dirty, saved, refresh }) {
             const type = workTypes.get(requirement.workTypeId);
             const count = needCount(date, shift.shiftId, requirement);
             return <div className="row-between requirement-row" key={requirement.workTypeId}>
-              <span>{type.name}{type.requiresRoles && '（主 + 副）'}</span>
+              <span>{type.name}{type.requiresRoles && '（主 + 副）'}{type.fillAllEnrolled && ' · 最低人数'}</span>
               {locked ? <strong>{count} 人</strong> : <InputNumber
                 aria-label={`${date} ${shift.shiftName} ${type.name}需求人数`} className="demand-number"
                 disabled={busy} value={count} min={0} max={99} precision={0}
@@ -515,8 +514,9 @@ function DraftSchedule({ period, prep, user, readOnly, refresh, go, openSettings
 function DraftDetails({ draft, user, view, setView }) {
   const conflicts = draft.gaps?.fixedConflicts || [];
   const { totalFilled, totalNeeded } = draft.run;
+  const totalGap = draft.gaps?.totalGap ?? Math.max(0, totalNeeded - totalFilled);
   return <div className="stack">
-    <Alert message={`草稿 #${draft.run.id} · 已排 ${totalFilled}/${totalNeeded} 人次 · 缺口 ${totalNeeded - totalFilled} 人次`} />
+    <Alert message={`草稿 #${draft.run.id} · 已排 ${totalFilled} 人次 · 需求 ${totalNeeded} 人次 · 缺口 ${totalGap} 人次`} />
     {draftHasRoleGaps(draft) && <Alert showIcon type="error" message="主副负责人未配齐，暂不可发布" />}
     {conflicts.map((c, i) => <Alert key={i} type="error" message={`${c.workDate} ${c.name || ''}：${c.message}`} />)}
     <ScheduleDetailViews data={draft} user={user} view={view} setView={setView} />
@@ -524,41 +524,9 @@ function DraftDetails({ draft, user, view, setView }) {
 }
 
 function ScheduleDetailViews({ data, user, view, setView, published = false, onAdjustWork }) {
-  const { startDate, endDate } = data.period;
-  const [month, setMonth] = useState(monthOf(startDate));
-  const [date, setDate] = useState(null);
-  const days = new Map(data.matrix.map(day => [day.workDate, day]));
-  const selectedDay = days.get(date);
-  function dayInfo(day) {
-    const works = days.get(day)?.shifts.flatMap(shift => shift.workTypes) || [];
-    const filled = works.reduce((count, work) => count + work.filled, 0);
-    const needed = works.reduce((count, work) => count + work.needCount, 0);
-    return {
-      label: `已排 ${filled} / ${needed} 人次`,
-      badge: (needed > 0 || filled > 0) && <small className={`calendar-count${filled < needed ? ' draft-calendar-gap' : ''}`}>{filled}/{needed}</small>,
-    };
-  }
   return <Collapse className="compact-calendar" defaultActiveKey={published ? ['details'] : undefined} items={[{
     key: 'details', label: published ? '查看生效明细' : '查看草稿明细',
-    children: <div className="stack">
-      <Segmented block aria-label={published ? '生效明细视图' : '草稿明细视图'} value={view} onChange={setView}
-        options={[option('calendar', '日历'), option('list', '列表')]} />
-      {published && (view === 'calendar' || onAdjustWork) && <div className="muted">
-        {view === 'calendar' && '点击日期查看当天安排。'}
-        {onAdjustWork && '点击工作旁的「调班」可调整安排。'}
-      </div>}
-      {view === 'list' ? <Matrix data={data} user={user} onAdjustWork={onAdjustWork} /> : <>
-        <MonthCalendar month={month} startDate={startDate} endDate={endDate} move={setMonth} selected={date} pick={setDate}
-          blocked={day => iso(day) < startDate || iso(day) > endDate} dayInfo={dayInfo} />
-        <Modal open={!!date} title={date && `${dateText(date)} · ${published ? '生效安排' : '草稿安排'}`} onCancel={() => setDate(null)}
-          footer={<Space>
-            {onAdjustWork && <Button onClick={() => onAdjustWork({ workDate: date })}>新增工作</Button>}
-            <Button onClick={() => setDate(null)}>关闭</Button>
-          </Space>}>
-          <Matrix data={{ matrix: selectedDay ? [selectedDay] : [] }} user={user} showDate={false} onAdjustWork={onAdjustWork} />
-        </Modal>
-      </>}
-    </div>,
+    children: <ScheduleDetails data={data} user={user} view={view} setView={setView} published={published} onAdjustWork={onAdjustWork} />,
   }]} />;
 }
 
@@ -566,6 +534,7 @@ function PublishReview({ data, period, user, view, setView, back, saved }) {
   const { draft, published } = data;
   const { run, busy } = useAction();
   const [confirmed, setConfirmed] = useState(false);
+  const totalGap = draft.gaps?.totalGap ?? Math.max(0, draft.run.totalNeeded - draft.run.totalFilled);
   const key = a => [a.workDate, a.shiftId, a.workTypeId, a.dutyRole || 'member', a.userId].join('|');
   const old = published.assignments || [];
   const oldKeys = new Set(old.map(key)), newKeys = new Set(draft.assignments.map(key));
@@ -578,7 +547,7 @@ function PublishReview({ data, period, user, view, setView, back, saved }) {
   return <Form layout="vertical" className="stack" onFinish={publish}>
     <Alert message={`${period.name} · 草稿 #${draft.run.id} · ${draft.assignments.length} 人次`}
       description={published.run ? `发布后将替换生效版本 #${published.run.id}` : '首次发布后，团队成员即可查看安排。'} />
-    {draft.run.totalNeeded > draft.run.totalFilled && <Alert type="warning" showIcon message={`仍有 ${draft.run.totalNeeded - draft.run.totalFilled} 人次缺口`} />}
+    {totalGap > 0 && <Alert type="warning" showIcon message={`仍有 ${totalGap} 人次缺口`} />}
     <ScheduleDetailViews data={draft} user={user} view={view} setView={setView} />
     <div className="muted">新增或调整 {added.length} 项 · 移出 {removed.length} 项 · 保留 {draft.assignments.length - added.length} 项</div>
     <Collapse items={[['新增或调整', added], ['移出', removed]].map(([title, rows]) => ({

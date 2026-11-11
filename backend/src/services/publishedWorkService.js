@@ -33,7 +33,7 @@ function buildNewWork(period, target, people) {
     throw badRequest(requiresRoles ? '请选择一名主负责人和一名副负责人' : '请选择至少一名人员');
   }
   return { ...target, shiftSeq: shift.seq, workTypeName: work.name, workTypeColor: work.color,
-    shiftName: shift.name, requiresRoles, needCount: people.length, dutyPairs: JSON.parse(work.duty_pairs_json) };
+    shiftName: shift.name, requiresRoles, needCount: people.length, fillAllEnrolled: work.fill_all_enrolled === 1, dutyPairs: JSON.parse(work.duty_pairs_json) };
 }
 
 function validatePeople(period, slot, people, existing = []) {
@@ -52,11 +52,11 @@ function validatePeople(period, slot, people, existing = []) {
 
 function validateFill(period, cell, people) {
   if (!cell) throw conflict('PUBLISHED_WORK_MISSING', '该工作已移除，请刷新后重试');
-  if (people.length > cell.gap) throw conflict('PUBLISHED_WORK_FULL', '该工作没有足够的空位');
+  if (!cell.fillAllEnrolled && people.length > cell.gap) throw conflict('PUBLISHED_WORK_FULL', '该工作没有足够的空位');
   const roles = cell.requiresRoles ? ['primary', 'deputy'] : ['member'];
   if (people.some(person => !roles.includes(person.dutyRole))) throw badRequest('请选择该工作允许的岗位角色');
   const missingRoles = cell.roleGaps.filter(role => !people.some(person => person.dutyRole === role));
-  if (missingRoles.length > cell.gap - people.length) throw badRequest('请优先补齐缺少的负责人角色');
+  if (!cell.fillAllEnrolled && missingRoles.length > cell.gap - people.length) throw badRequest('请优先补齐缺少的负责人角色');
   const work = configRepo.findWorkType(cell.workTypeId);
   validatePeople(period, { ...cell, dutyPairs: JSON.parse(work.duty_pairs_json) }, people, cell.assigned);
 }

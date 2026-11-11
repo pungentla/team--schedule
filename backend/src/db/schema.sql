@@ -173,6 +173,7 @@ CREATE TABLE IF NOT EXISTS work_types (
   requires_roles INTEGER NOT NULL DEFAULT 0 CHECK (requires_roles IN (0, 1)),
   weekdays_json TEXT NOT NULL DEFAULT '[0,1,2,3,4,5,6]',
   allow_weekday_selection INTEGER NOT NULL DEFAULT 0 CHECK (allow_weekday_selection IN (0, 1)),
+  fill_all_enrolled INTEGER NOT NULL DEFAULT 0 CHECK (fill_all_enrolled IN (0, 1)),
   default_need INTEGER NOT NULL DEFAULT 1 CHECK (default_need BETWEEN 0 AND 99),
   weekly_assignments_json TEXT NOT NULL DEFAULT '[]',
   duty_pairs_json TEXT NOT NULL DEFAULT '[]',

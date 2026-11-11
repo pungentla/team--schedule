@@ -47,6 +47,7 @@ function generateSchedule(input, opts = {}) {
 
   // ---- 展开为"座位"级别的槽位（need=3 拆成 3 个座位）----
   const seats = buildSeats(slots);
+  const extraSeats = buildExtraSeats(slots);
 
   // ---- 初始化员工状态 ----
   const employees = input.employees.map((e) => new EmployeeState(e, period));
@@ -146,7 +147,9 @@ function generateSchedule(input, opts = {}) {
   const pairedWorks = new Set(slots.filter((s) => s.dutyPairs?.length).map((s) => s.workTypeId));
   for (const rule of input.fixedAssignments || []) {
     const matches = seats.filter((s) => s.workDate === rule.workDate && s.shiftId === rule.shiftId && s.workTypeId === rule.workTypeId && !fixedSeats.has(s.seatKey));
-    const seat = matches.find((s) => s.dutyRole === rule.dutyRole) || matches.find((s) => s.dutyRole === 'either');
+    const extra = extraSeats.get(cellKey(rule));
+    const seat = matches.find((s) => s.dutyRole === rule.dutyRole) || matches.find((s) => s.dutyRole === 'either')
+      || (extra && { ...extra, seatKey: `${extra.key}|extra|${rule.userId}` });
     const emp = empById.get(rule.userId);
     if (seat) fixedSeats.add(seat.seatKey);
     const problem = !seat ? '固定人数超过需求或主副名额不足' : !emp ? '固定员工不存在或已停用' : checkSlot(emp, { ...seat, dutyRole: rule.dutyRole, allowConcurrent: true }, period)?.message;
@@ -161,12 +164,12 @@ function generateSchedule(input, opts = {}) {
   function fillPairedSeats(allowConcurrent) {
     for (const slot of slots.filter((s) => s.dutyPairs?.length)) {
       const cellSeats = seats.filter((s) => s.workDate === slot.workDate && s.shiftId === slot.shiftId && s.workTypeId === slot.workTypeId);
-      let existing = cellSeats.flatMap((s) => assigned.has(s.seatKey) ? [assigned.get(s.seatKey)] : []);
+      let existing = cellAssignments(slot);
       if (pairProblem(slot.dutyPairs, existing)) continue;
       const primary = cellSeats.find((s) => s.dutyRole === 'primary');
       const deputy = cellSeats.find((s) => s.dutyRole === 'deputy');
       if (!primary || !deputy) continue;
-      if (!assigned.has(primary.seatKey) && !assigned.has(deputy.seatKey) && !fixedSeats.has(primary.seatKey) && !fixedSeats.has(deputy.seatKey)) {
+      if (!existing.length && !fixedSeats.has(primary.seatKey) && !fixedSeats.has(deputy.seatKey)) {
         const available = new Map();
         for (const pair of slot.dutyPairs) {
           const lead = empById.get(pair.primaryUserId);
@@ -191,7 +194,7 @@ function generateSchedule(input, opts = {}) {
       }
       for (const seat of cellSeats) {
         if (assigned.has(seat.seatKey) || fixedSeats.has(seat.seatKey)) continue;
-        existing = cellSeats.flatMap((s) => assigned.has(s.seatKey) ? [assigned.get(s.seatKey)] : []);
+        existing = cellAssignments(slot);
         if (!existing.length) continue;
         const candidates = employees.flatMap((emp) => (seat.dutyRole === 'either' ? ['primary', 'deputy'] : [seat.dutyRole]).map((dutyRole) => ({ emp, seat: { ...seat, dutyRole, allowConcurrent } })))
           .filter((c) => canAssignWith(c.emp, c.seat, period) && !pairProblem(slot.dutyPairs, [...existing, { userId: c.emp.id, dutyRole: c.seat.dutyRole }]));
@@ -325,6 +328,49 @@ function generateSchedule(input, opts = {}) {
     if (candidates.length) recordAssignment(seat, candidates[0]);
   }
 
+  function cellAssignments(slot) {
+    const base = cellKey(slot);
+    return (slot.requiresRoles ? ['|primary', '|deputy', '|either'] : [''])
+      .flatMap(suffix => bySlotKey.get(base + suffix) || []);
+  }
+
+  // 两种工作都先排最低需求，剩余报名再补入不限人数的工作。
+  const filledBeforeExtras = assigned.size;
+  const requiredByKey = new Map(seats.filter(s => ['primary', 'deputy'].includes(s.dutyRole)).map(s => [s.key, s]));
+  for (const extra of extraSeats.values()) {
+    const existing = cellAssignments(extra);
+    const pairs = extra.dutyPairs || [];
+    const allowed = (emp, dutyRole) => emp && canAssignWith(emp, { ...extra, dutyRole, allowConcurrent: true }, period);
+    function add(emp, dutyRole) {
+      const required = requiredByKey.get(`${cellKey(extra)}|${dutyRole}`);
+      const seat = required && !assigned.has(required.seatKey) && !fixedSeats.has(required.seatKey)
+        ? required : { ...extra, seatKey: `${extra.key}|extra|${emp.id}` };
+      existing.push(recordAssignment({ ...seat, dutyRole }, emp));
+    }
+    for (const { primaryUserId, deputyUserId } of pairs) {
+      const primary = empById.get(primaryUserId);
+      const deputy = empById.get(deputyUserId);
+      if (primary === deputy || !allowed(primary, 'primary') || !allowed(deputy, 'deputy')) continue;
+      if (pairProblem(pairs, [...existing, { userId: primary.id, dutyRole: 'primary' }, { userId: deputy.id, dutyRole: 'deputy' }])) continue;
+      add(primary, 'primary');
+      add(deputy, 'deputy');
+    }
+    let changed;
+    do {
+      changed = false;
+      for (const emp of employees) {
+        const roles = extra.requiresRoles ? ['deputy', 'primary'] : ['member'];
+        const role = roles.find(dutyRole => {
+          if (!allowed(emp, dutyRole)) return false;
+          if (!pairs.length) return true;
+          const people = [...existing, { userId: emp.id, dutyRole }];
+          return people.some(a => a.dutyRole !== dutyRole) && !pairProblem(pairs, people);
+        });
+        if (role) { add(emp, role); changed = true; }
+      }
+    } while (pairs.length && changed);
+  }
+
   // ---- 输出 ----
   const assignments = [...assigned.values()].map((a) => ({
     userId: a.userId,
@@ -353,7 +399,7 @@ function generateSchedule(input, opts = {}) {
   );
 
   const gaps = buildGapReport({
-    slots: dedupeSlots(seats),
+    slots: dedupeSlots([...seats, ...extraSeats.values()]),
     assignmentsBySlot: bySlotKey,
     employees,
     period,
@@ -377,7 +423,7 @@ function generateSchedule(input, opts = {}) {
       seats: seats.length,
       filled: assignments.length,
       greedyFilled,
-      improvedByOptimizer: assignments.length - greedyFilled,
+      improvedByOptimizer: filledBeforeExtras - greedyFilled,
       rounds,
       durationMs: Date.now() - started,
     },
@@ -389,6 +435,15 @@ function generateSchedule(input, opts = {}) {
       maxShifts: e.maxShifts,
     })),
   };
+}
+
+const cellKey = (slot) => `${slot.workDate}|${slot.shiftId}|${slot.workTypeId}`;
+
+function buildExtraSeats(slots) {
+  return new Map(slots.filter(s => s.fillAllEnrolled && s.needCount > 0).map(s => {
+    const key = cellKey(s);
+    return [key, { ...s, needCount: 0, key: s.requiresRoles ? `${key}|either` : key, dutyRole: s.requiresRoles ? 'either' : 'member' }];
+  }));
 }
 
 function buildSeats(slots) {
@@ -477,7 +532,7 @@ function computeInputHash(input) {
     },
     seed,
     slots: [...slots]
-      .map((s) => `${s.workDate}|${s.shiftId}|${s.shiftSeq}|${s.workTypeId}|${s.needCount}|${!!s.requiresRoles}|${(s.dutyPairs || []).map((p) => `${p.primaryUserId}:${p.deputyUserId}`).sort().join('/')}`)
+      .map((s) => `${s.workDate}|${s.shiftId}|${s.shiftSeq}|${s.workTypeId}|${s.needCount}|${!!s.requiresRoles}|${(s.dutyPairs || []).map((p) => `${p.primaryUserId}:${p.deputyUserId}`).sort().join('/')}${s.fillAllEnrolled ? '|fill-all' : ''}`)
       .sort()
       .join(';'),
     employees: [...employees]
@@ -512,9 +567,10 @@ function evaluateAssignments(input, assignments) {
   const pairProblems = validatePairs(input.slots, assignments);
   if (pairProblems.length) return { problems: pairProblems };
   const seats = buildSeats(input.slots);
+  const extraSeats = buildExtraSeats(input.slots);
   const groups = new Map();
   for (const seat of seats) {
-    const key = `${seat.workDate}|${seat.shiftId}|${seat.workTypeId}`;
+    const key = cellKey(seat);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(seat);
   }
@@ -523,8 +579,11 @@ function evaluateAssignments(input, assignments) {
   const used = new Set();
   const bySlot = new Map();
   for (const a of assignments) {
-    const group = (groups.get(`${a.workDate}|${a.shiftId}|${a.workTypeId}`) || []).filter((s) => !used.has(s.seatKey));
-    const seat = group.find((s) => s.dutyRole === a.dutyRole) || (a.dutyRole !== 'member' ? group.find((s) => s.dutyRole === 'either') : null);
+    const group = (groups.get(cellKey(a)) || []).filter((s) => !used.has(s.seatKey));
+    const extra = extraSeats.get(cellKey(a));
+    const roleMatch = a.dutyRole === 'primary' || a.dutyRole === 'deputy';
+    const seat = group.find((s) => s.dutyRole === a.dutyRole) || (roleMatch ? group.find((s) => s.dutyRole === 'either') : null)
+      || (extra && (extra.requiresRoles ? roleMatch : a.dutyRole === 'member') ? extra : null);
     const emp = byEmployee.get(a.userId);
     const error = !seat ? { code: 'NO_CAPACITY', message: '该日期、班次和工作没有剩余的相应岗位名额' }
       : !emp ? { code: 'NOT_ENROLLED', message: '该员工尚未提交本周期报名，也不在长期报名中' }
@@ -535,7 +594,7 @@ function evaluateAssignments(input, assignments) {
     if (!bySlot.has(seat.key)) bySlot.set(seat.key, []);
     bySlot.get(seat.key).push(a);
   }
-  const gaps = buildGapReport({ slots: dedupeSlots(seats), assignmentsBySlot: bySlot, employees, period: input.period, checkSlot });
+  const gaps = buildGapReport({ slots: dedupeSlots([...seats, ...extraSeats.values()]), assignmentsBySlot: bySlot, employees, period: input.period, checkSlot });
   gaps.requirements = input.slots.map((s) => ({ ...s }));
   return { problems: [], gaps, metrics: computeMetrics({ employees, workTypes: dedupeWorkTypes(input.slots), assignments }) };
 }

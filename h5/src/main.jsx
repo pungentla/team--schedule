@@ -13,6 +13,7 @@ import Modal from 'antd/es/modal';
 import Spin from 'antd/es/spin';
 import zhCN from 'antd/es/locale/zh_CN';
 import BellOutlined from '@ant-design/icons/es/icons/BellOutlined';
+import MessageOutlined from '@ant-design/icons/es/icons/MessageOutlined';
 import 'dayjs/locale/zh-cn';
 import 'antd/dist/reset.css';
 import { API, Heading, Load, ProfileDisplayContext, accountRoles, assignmentLabel, dayjs, isAdmin, required, timeText, useAction, useLoad } from './shared';
@@ -117,8 +118,10 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
   const [password, setPassword] = useState(false);
   const [nicknameOpen, setNicknameOpen] = useState(false);
   const [reminders, setReminders] = useState(false);
-  const [scheduleFilters, setScheduleFilters] = useState(() => readScheduleFilters(user.id));
-  useEffect(() => saveScheduleFilters(user.id, scheduleFilters), [user.id, scheduleFilters]);
+  const [schedulePreferences, setSchedulePreferences] = useState(() => readScheduleFilters(user.id));
+  const { scope: scheduleScope, byScope } = schedulePreferences;
+  const scheduleFilters = byScope[scheduleScope];
+  useEffect(() => saveScheduleFilters(user.id, schedulePreferences), [user.id, schedulePreferences]);
   useEffect(() => { restoreDeviceReminder(user.id).catch(() => {}); }, [user.id]);
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -127,7 +130,10 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
     else url.searchParams.delete('topic');
     if (url.href !== window.location.href) window.history.replaceState(null, '', url);
   }, [tab, discussionTopicId]);
-  const updateScheduleFilters = changes => setScheduleFilters(previous => ({ ...previous, ...changes }));
+  const changeScheduleScope = scope => setSchedulePreferences(previous => ({ ...previous, scope }));
+  const updateScheduleFilters = changes => setSchedulePreferences(({ scope, byScope }) => ({
+    scope, byScope: { ...byScope, [scope]: { ...byScope[scope], ...changes } },
+  }));
   const { confirm, busy, run } = useAction();
   const { message } = App.useApp();
   const periodsQuery = useLoad('periods', () => Promise.all([API.listPeriods(), API.currentPeriod()]), true);
@@ -196,14 +202,17 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
       unreadQuery.refresh();
     }
   }
+  function backToTopics() {
+    setDiscussionTopicId(null);
+    setDiscussionReplyId(null);
+  }
   async function openSwap(id) {
     if (await navigate('swaps')) setSwapDetail(id);
   }
   async function openSystemNotice(notice) {
     if (notice.kind === 'new_topics') {
       if (!await navigate('discussions')) return;
-      setDiscussionTopicId(null);
-      setDiscussionReplyId(null);
+      backToTopics();
       setDiscussionFeedVersion(version => version + 1);
       window.scrollTo(0, 0);
     } else {
@@ -221,6 +230,7 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
   function sessionChanged() {
     endSession(); message.success('请使用更新后的账号重新登录');
   }
+  const inTopic = tab === 'discussions' && discussionTopicId != null;
   return <div className="workspace">
     <div className="workspace-top">
       <header className="topbar"><div className="topbar-inner">
@@ -230,17 +240,20 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
             open={openDiscussions} openSwap={openSwap} openSystemNotice={openSystemNotice} />
           <Dropdown trigger={['click']} menu={{ items: [
             { key: 'nickname', label: '设置花名' }, { key: 'reminders', label: '消息提醒' }, { key: 'password', label: '修改密码' },
+            { type: 'divider' }, { key: 'logout', label: '退出登录', danger: true, disabled: busy },
           ], onClick: ({ key }) => {
             if (key === 'nickname') setNicknameOpen(true);
             if (key === 'reminders') setReminders(true);
             if (key === 'password') setPassword(true);
+            if (key === 'logout') void logout();
           } }}>
             <Button type="text" className="account-menu" title={`${user.name}（${user.employeeNo}）`}>{user.name}{isAdmin(user) && user.name !== accountRoles[user.role] && ` · ${accountRoles[user.role]}`} ▾</Button>
           </Dropdown>
-          <Button ghost loading={busy} onClick={logout}>退出</Button>
         </div>
       </div></header>
-      {(tab === 'schedule' || tab === 'discussions') && <div className="announcement-area">
+      {inTopic ? <div className="topic-back-bar">
+        <Button type="link" onClick={backToTopics}>← 返回话题列表</Button>
+      </div> : (tab === 'schedule' || tab === 'discussions') && <div className="announcement-area">
         <Announcement key={tab} user={user} initialId={notificationTarget.notice} />
       </div>}
     </div>
@@ -248,14 +261,15 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
       {tab === 'schedule' && <DiscussionPreview openDiscussions={openDiscussions} hotTopicsQuery={hotTopicsQuery} hotTopicRanks={hotTopicRanks} />}
       {isAdmin(user) && (tab === 'workflow' || tab === 'settings') && <Alert type="info" showIcon message="仅管理员可见" />}
       <Suspense fallback={<div className="loading"><Spin /></div>}>
-        {tab === 'schedule' && <Schedule user={user} periods={periods} period={period} filters={scheduleFilters} updateFilters={updateScheduleFilters} />}
-        {tab === 'enrollment' && <Load query={periodsQuery}>{() => <Enrollment periods={periods} period={period}
+        {tab === 'schedule' && <Schedule key={scheduleScope} user={user} periods={periods} period={period}
+          scope={scheduleScope} changeScope={changeScheduleScope} filters={scheduleFilters} updateFilters={updateScheduleFilters} />}
+        {tab === 'enrollment' && <Load query={periodsQuery}>{() => <Enrollment user={user} periods={periods} period={period}
           selected={enrollmentPeriodId} setSelected={setEnrollmentPeriodId} />}</Load>}
         {tab === 'swaps' && <Swaps user={user} detail={swapDetail} setDetail={setSwapDetail} inbox={swapInbox} />}
         {tab === 'discussions' && <Discussions key={discussionFeedVersion} topicId={discussionTopicId} replyId={discussionReplyId} openVersion={discussionOpenVersion} open={openDiscussions}
           unreadCounts={unreadCounts} refreshUnread={unreadQuery.refresh} refreshLikeNotices={likeNotices.refresh}
           hotTopicRanks={hotTopicRanks} refreshHotTopics={hotTopicsQuery.refresh}
-          back={() => setDiscussionTopicId(null)} />}
+          back={backToTopics} />}
         {tab === 'workflow' && isAdmin(user) && <Load query={periodsQuery}>{() => (
           <Workflow user={user} periods={periods} page={workflowPage} setPage={setWorkflowPage}
             refreshPeriods={periodsQuery.refresh} openSettings={openSettings} dirty={dirty} />
@@ -266,6 +280,8 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
     </main>
     <nav className="bottom-nav" aria-label="主导航"><div className="bottom-nav-inner">
       {tabs.map(([id, label]) => <Button key={id} type="text" aria-current={activeNav === id ? 'page' : undefined}
+        className={id === 'discussions' ? 'discussion-nav-tab' : undefined}
+        icon={id === 'discussions' ? <MessageOutlined aria-hidden="true" /> : undefined}
         onClick={() => id === 'discussions' ? openDiscussions() : navigate(id)}>{label}</Button>)}
     </div></nav>
     {nicknameOpen && <Nickname user={user} close={() => setNicknameOpen(false)} saved={profile => {

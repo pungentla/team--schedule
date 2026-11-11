@@ -132,7 +132,7 @@ export default function Discussions({ topicId, replyId, openVersion, back, open,
     if (nextKey && !query.loading && !query.error) setPageKey(nextKey);
   }, [nextKey, query.loading, query.error]);
 
-  return topicId ? <TopicDetail key={`${topicId}:${openVersion}`} topicId={topicId} replyId={replyId} now={now} back={back} updateTopic={updateTopic}
+  return topicId ? <TopicDetail key={`${topicId}:${openVersion}`} topicId={topicId} replyId={replyId} now={now} updateTopic={updateTopic}
     refreshUnread={refreshUnread} refreshLikeNotices={refreshLikeNotices} heatRank={hotTopicRanks.get(topicId)} refreshHotTopics={refreshHotTopics}
     deleted={() => { removeTopic(topicId); back(); }} />
     : <TopicList items={feed.items} hasMore={!!nextKey} query={query} loadMore={loadMore} reload={reload}
@@ -142,7 +142,7 @@ export default function Discussions({ topicId, replyId, openVersion, back, open,
       expandedTopics={expandedTopics} toggleDiscussion={toggleDiscussion} />;
 }
 
-function TopicDetail({ topicId, replyId, now, back, updateTopic, deleted, refreshUnread, refreshLikeNotices, heatRank, refreshHotTopics }) {
+function TopicDetail({ topicId, replyId, now, updateTopic, deleted, refreshUnread, refreshLikeNotices, heatRank, refreshHotTopics }) {
   const [expanded, setExpanded] = useState(true);
   const query = usePageLoad(topicId, () => API.discussionTopic(topicId), true);
   const refreshLikes = useEffectEvent(refreshLikeNotices);
@@ -157,12 +157,9 @@ function TopicDetail({ topicId, replyId, now, back, updateTopic, deleted, refres
       updateTopic(topicId, poll ? { ...summary, pollOptions: poll.options.map(({ voters, ...option }) => option) } : summary);
     }
   }, [topicId, query.data, query.loading, updateTopic]);
-  return <>
-    <Card size="small"><Button type="link" onClick={back}>← 返回话题列表</Button></Card>
-    <Load query={query}>{topic => <TopicCard topic={topic} replyId={replyId} now={now} updated={query.refresh} deleted={deleted} loading={query.loading} refreshUnread={refreshUnread}
-      heatRank={heatRank} refreshHotTopics={refreshHotTopics}
-      expanded={expanded} toggleDiscussion={() => setExpanded(value => !value)} />}</Load>
-  </>;
+  return <Load query={query}>{topic => <TopicCard topic={topic} replyId={replyId} now={now} updated={query.refresh} deleted={deleted} loading={query.loading} refreshUnread={refreshUnread}
+    heatRank={heatRank} refreshHotTopics={refreshHotTopics}
+    expanded={expanded} toggleDiscussion={() => setExpanded(value => !value)} />}</Load>;
 }
 
 function TopicList({ items, hasMore, query, loadMore, reload, updateTopic, removeTopic, position, open, category, sort, anonymousOnly,

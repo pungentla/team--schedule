@@ -8,7 +8,7 @@
 const db = require('./db');
 const { ensureAlias } = require('../repositories/discussionAliasRepo');
 
-const CURRENT_VERSION = 29;
+const CURRENT_VERSION = 30;
 
 function migrate() {
   db.open();
@@ -58,6 +58,9 @@ function migrate() {
         if (fromVersion < 9) migrateLegacySchema();
         if (!db.all('PRAGMA table_info(work_types)').some(column => column.name === 'allow_weekday_selection')) {
           db.exec('ALTER TABLE work_types ADD COLUMN allow_weekday_selection INTEGER NOT NULL DEFAULT 0 CHECK (allow_weekday_selection IN (0, 1))');
+        }
+        if (!db.all('PRAGMA table_info(work_types)').some(column => column.name === 'fill_all_enrolled')) {
+          db.exec('ALTER TABLE work_types ADD COLUMN fill_all_enrolled INTEGER NOT NULL DEFAULT 0 CHECK (fill_all_enrolled IN (0, 1))');
         }
         if (!db.all('PRAGMA table_info(enrollment_work_types)').some(column => column.name === 'weekdays_json')) {
           db.exec('ALTER TABLE enrollment_work_types ADD COLUMN weekdays_json TEXT');

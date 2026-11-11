@@ -76,6 +76,7 @@ function buildScheduleInput(periodId, { seed, referenceHistory } = {}) {
       shiftSeq: shift ? shift.seq : 999,
       workTypeId: r.work_type_id,
       needCount: r.need_count,
+      fillAllEnrolled: workTypeMap.get(r.work_type_id).fill_all_enrolled === 1,
       requiresRoles,
       dutyPairs: JSON.parse(workTypeMap.get(r.work_type_id).duty_pairs_json),
       workTypeName: r.work_type_name,
@@ -444,6 +445,7 @@ function getSchedule(periodId, viewer, { runId, version } = {}) {
       shiftName: req.shiftName,
       shiftSeq: req.shiftSeq,
       needCount: req.needCount,
+      fillAllEnrolled: !!req.fillAllEnrolled,
       requiresRoles: req.requiresRoles,
       assigned: [],
     });
@@ -482,10 +484,11 @@ function getSchedule(periodId, viewer, { runId, version } = {}) {
       });
     }
     const shift = day.shifts.get(cell.shiftId);
+    const roleGaps = cell.requiresRoles ? ['primary', 'deputy'].filter((role) => !cell.assigned.some((a) => a.dutyRole === role)) : [];
     shift.workTypes.push({
       ...cell,
-      roleGaps: cell.requiresRoles ? ['primary', 'deputy'].filter((role) => !cell.assigned.some((a) => a.dutyRole === role)) : [],
-      gap: Math.max(0, cell.needCount - cell.assigned.length),
+      roleGaps,
+      gap: Math.max(cell.fillAllEnrolled ? roleGaps.length : 0, cell.needCount - cell.assigned.length),
       filled: cell.assigned.length,
     });
   }

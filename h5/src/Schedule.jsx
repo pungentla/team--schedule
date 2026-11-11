@@ -25,7 +25,6 @@ const scopeOptions = [
   option('work', '工作类型'),
 ];
 const weekdayOrder = [1, 2, 3, 4, 5, 6, 0];
-const weekdayOptions = weekdayOrder.map(day => option(day, weekdays[day]));
 
 function readWeekdaySelection(saved) {
   if (Array.isArray(saved?.weekdays)) return weekdayOrder.filter(day => saved.weekdays.includes(day));
@@ -61,12 +60,17 @@ export function readScheduleFilters(userId) {
   } catch {
     // 浏览器存储不可用时使用默认筛选。
   }
+  const scope = scopeOptions.some(o => o.value === saved?.scope) ? saved.scope : 'mine';
+  const byScope = Object.fromEntries(scopeOptions.map(({ value }) => [value, readScopeFilters(saved?.byScope ? saved.byScope[value] : saved)]));
+  return { scope, byScope };
+}
+
+function readScopeFilters(saved) {
   const dates = saved?.dates;
   const validDates = Array.isArray(dates) && dates.length === 2
     && dates.every(date => typeof date === 'string' && iso(dayjs(date)) === date)
     && validCustomDates(dayjs(dates[0]), dayjs(dates[1]));
   return {
-    scope: scopeOptions.some(o => o.value === saved?.scope) ? saved.scope : 'mine',
     view: ['recent', 'calendar', 'matrix', 'daily'].includes(saved?.view) ? saved.view : 'recent',
     weekdays: readWeekdaySelection(saved),
     range: recentRangeOptions.some(o => o.value === saved?.range) ? saved.range : '7',
@@ -98,8 +102,9 @@ function recentParams(range, dates) {
   return { days: range === 'custom' ? 7 : range };
 }
 
-export function Schedule({ user, periods, period, filters, updateFilters }) {
-  const { scope, work, range, dates, weekdays: selectedWeekdays } = filters;
+export function Schedule({ user, periods, period, scope, changeScope, filters, updateFilters }) {
+  const { work, range, dates, weekdays: selectedWeekdays } = filters;
+  const allWeekdaysSelected = selectedWeekdays.length === weekdayOrder.length;
   const [custom, setCustom] = useState(() => dates?.map(date => dayjs(date)) ?? [dayjs(today()), dayjs(today()).add(6, 'day')]);
   const viewOptions = [option('recent', '近期安排')];
   if (scope !== 'work') viewOptions.push(option('calendar', '月历'));
@@ -123,7 +128,7 @@ export function Schedule({ user, periods, period, filters, updateFilters }) {
   const person = people.some(p => p.id === filters.person) ? filters.person : 'all';
   return <>
     <Card><Heading help="recent">工作台</Heading>
-      <Segmented block value={scope} onChange={value => updateFilters({ scope: value })} options={scopeOptions} />
+      <Segmented block value={scope} onChange={changeScope} options={scopeOptions} />
       <Form layout="vertical" className="filters">
         {scope !== 'work' && <Field label="查看"><Select aria-label="查看" value={view} onChange={value => updateFilters({ view: value })} options={viewOptions} /></Field>}
         {scope === 'work' && <Field label="工作类型"><Select aria-label="工作类型" loading={works.loading} value={workId} onChange={value => updateFilters({ work: value })} options={choices.map(w => option(w.id, w.name))} /></Field>}
@@ -147,7 +152,11 @@ export function Schedule({ user, periods, period, filters, updateFilters }) {
           </Form.Item>}
         </> : <Field label="排班周期"><Select aria-label="排班周期" value={period?.id} options={periodOptions(periods)} onChange={value => updateFilters({ periodId: value })} placeholder="暂无排班周期" /></Field>}
         <Field label="仅查看"><Checkbox.Group className="schedule-weekdays" role="group" aria-label="仅查看星期"
-          value={selectedWeekdays} onChange={value => updateFilters({ weekdays: value })} options={weekdayOptions} /></Field>
+          value={selectedWeekdays} onChange={value => updateFilters({ weekdays: value })}>
+          <Checkbox skipGroup checked={allWeekdaysSelected} indeterminate={selectedWeekdays.length > 0 && !allWeekdaysSelected}
+            onChange={event => updateFilters({ weekdays: event.target.checked ? weekdayOrder : [] })}>全选</Checkbox>
+          {weekdayOrder.map(day => <Checkbox key={day} value={day}>{weekdays[day]}</Checkbox>)}
+        </Checkbox.Group></Field>
         {canFilterPerson && <Field label="人员"><Select aria-label="人员" showSearch optionFilterProp="label" value={person} onChange={value => updateFilters({ person: value })} options={[option('all', '所有人员'), ...people.map(p => option(p.id, personLabel(p)))]} /></Field>}
       </Form>
       {view === 'recent' && recent.data && !waitingForWorks && <div className="muted">{recent.data.startDate} 至 {recent.data.endDate} · {list.length} 项</div>}
@@ -239,12 +248,48 @@ function Calendar({ period, month, move, assignments, selected, pick, blocked })
     }} /></Card>;
 }
 
+export function ScheduleDetails({ data, user, view, setView, published = false, onAdjustWork }) {
+  const { startDate, endDate } = data.period;
+  const [month, setMonth] = useState(monthOf(startDate));
+  const [date, setDate] = useState(null);
+  const days = new Map(data.matrix.map(day => [day.workDate, day]));
+  const selectedDay = days.get(date);
+  function dayInfo(day) {
+    const works = days.get(day)?.shifts.flatMap(shift => shift.workTypes) || [];
+    const filled = works.reduce((count, work) => count + work.filled, 0);
+    const needed = works.reduce((count, work) => count + work.needCount, 0);
+    return {
+      label: `已排 ${filled} / ${needed} 人次`,
+      badge: (needed > 0 || filled > 0) && <small className={`calendar-count${works.some(work => work.gap > 0) ? ' draft-calendar-gap' : ''}`}>{filled}/{needed}</small>,
+    };
+  }
+  return <div className="stack">
+    <Segmented block aria-label={published ? '生效明细视图' : '草稿明细视图'} value={view} onChange={setView}
+      options={[option('calendar', '日历'), option('list', '列表')]} />
+    {published && (view === 'calendar' || onAdjustWork) && <div className="muted">
+      {view === 'calendar' && '点击日期查看当天安排。'}
+      {onAdjustWork && '点击工作旁的「调班」可调整安排。'}
+    </div>}
+    {view === 'list' ? <Matrix data={data} user={user} onAdjustWork={onAdjustWork} /> : <>
+      <MonthCalendar month={month} startDate={startDate} endDate={endDate} move={setMonth} selected={date} pick={setDate}
+        blocked={day => iso(day) < startDate || iso(day) > endDate} dayInfo={dayInfo} />
+      <Modal open={!!date} title={date && `${dateText(date)} · ${published ? '生效安排' : '草稿安排'}`} onCancel={() => setDate(null)}
+        footer={<Space>
+          {onAdjustWork && <Button onClick={() => onAdjustWork({ workDate: date })}>新增工作</Button>}
+          <Button onClick={() => setDate(null)}>关闭</Button>
+        </Space>}>
+        <Matrix data={{ matrix: selectedDay ? [selectedDay] : [] }} user={user} showDate={false} onAdjustWork={onAdjustWork} />
+      </Modal>
+    </>}
+  </div>;
+}
+
 export function Matrix({ data, user, showDate = true, onAdjustWork }) {
   return data?.matrix?.length ? data.matrix.map(d => <Card size="small" key={d.workDate} title={showDate ? dateText(d.workDate) : undefined}>
     {d.shifts.map(s => <div key={s.shiftId}><h3>{s.shiftName}</h3>
       {s.workTypes.map(w => <div className={onAdjustWork ? 'matrix-row matrix-row-adjustable' : 'matrix-row'} key={w.workTypeId}><strong><i className="dot" style={{ background: w.workTypeColor }} />{w.workTypeName}</strong>
         <Space wrap size={[4, 4]}>{w.assigned.map(p => <Tag key={p.userId} color={p.source === 'swap' ? 'purple' : p.userId === user?.id ? 'blue' : 'default'}>{p.name}{p.isFixed ? '（固定）' : p.source === 'swap' ? '（换班）' : p.source === 'manual' ? '（调配）' : ''}{p.dutyRole !== 'member' && ` · ${roleLabels[p.dutyRole]}`}</Tag>)}
-          {!w.assigned.length && <Tag>无人</Tag>}<Tag color={w.gap ? 'red' : 'green'}>{w.gap ? `缺 ${w.gap}` : `${w.filled}/${w.needCount}`}</Tag>
+          {!w.assigned.length && <Tag>无人</Tag>}<Tag color={w.gap ? 'red' : 'green'}>{w.gap ? `缺 ${w.gap}` : w.fillAllEnrolled ? `已排 ${w.filled} · 最少 ${w.needCount}` : `${w.filled}/${w.needCount}`}</Tag>
           {w.roleGaps?.map(r => <Tag color="red" key={r}>缺{roleLabels[r]}</Tag>)}
         </Space>
         {onAdjustWork && <Button type="link" size="small" aria-label={`${dateText(d.workDate)} ${s.shiftName} ${w.workTypeName} 调班`}

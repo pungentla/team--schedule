@@ -20,7 +20,8 @@
       <view class="f-field"><text>每班至少 1 主 + 1 副</text><switch checked="{{form.requiresRoles}}" data-field="requiresRoles" bindchange="onForm" color="#2E5AAC" /></view>
       <view class="f-field"><text>开放工作日</text><checkbox-group bindchange="onWeekdays"><label wx:for="{{weekdays}}" wx:key="value"><checkbox value="{{item.value}}" checked="{{item.checked}}" />{{item.label}}</label></checkbox-group></view>
       <view class="f-field"><text>允许自选报名星期</text><switch checked="{{form.allowWeekdaySelection}}" data-field="allowWeekdaySelection" bindchange="onForm" color="#2E5AAC" /></view>
-      <view class="f-field"><text>每班默认人数</text><input type="number" value="{{form.defaultNeed}}" data-field="defaultNeed" bindinput="onForm" /></view>
+      <view class="f-field"><text>按报名安排</text><switch checked="{{form.fillAllEnrolled}}" data-field="fillAllEnrolled" bindchange="onForm" color="#2E5AAC" /></view>
+      <view class="f-field"><text>{{form.fillAllEnrolled ? '每班默认最低人数' : '每班默认人数'}}</text><input type="number" value="{{form.defaultNeed}}" data-field="defaultNeed" bindinput="onForm" /></view>
       <view wx:if="{{form.requiresRoles}}">
         <view class="f-title">固定搭档轮值</view><view class="code">每组一位主负责人，可添加多位副负责人。排班按每班人数从已报名且可用的搭档中挑选。</view>
         <view class="rule" wx:for="{{pairs}}" wx:key="index" wx:for-index="pairIndex">

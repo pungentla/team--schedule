@@ -8,7 +8,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { generateSchedule } = require('../src/scheduler');
+const { generateSchedule, evaluateAssignments } = require('../src/scheduler');
 const { isoWeekKey } = require('../src/utils/date');
 
 // ---------------------------------------------------------------------------
@@ -76,6 +76,46 @@ function allDates(start, end) {
 }
 
 test.beforeEach(() => resetShifts());
+
+test('按报名安排可超过最低人数，并遵守星期、请假及班次上限，超额不抵扣其他工作的缺口', () => {
+  const date = '2025-01-12';
+  const slots = [
+    ...makeSlots({ dates: [date], shiftId: 10, workTypeId: WT.FRONT, needCount: 1 }).map(s => ({ ...s, fillAllEnrolled: true })),
+    ...makeSlots({ dates: [date], shiftId: 11, workTypeId: WT.KITCHEN, needCount: 1 }),
+    ...makeSlots({ dates: [date], shiftId: 10, workTypeId: WT.CLEAN, needCount: 1 }),
+  ];
+  const signup = (weekdays) => [{ workTypeId: WT.FRONT, priority: 1, weekdays }];
+  const employees = [
+    makeEmployee(1, [WT.FRONT], { workTypes: signup([0]) }),
+    makeEmployee(2, [WT.FRONT]),
+    makeEmployee(3, [WT.FRONT], { workTypes: signup([1]) }),
+    makeEmployee(4, [WT.FRONT], { unavailableDates: [date] }),
+    makeEmployee(5, [WT.FRONT, WT.KITCHEN]),
+  ];
+  const input = { period: makePeriod(), slots, employees, seed: 42 };
+  const result = generateSchedule(input);
+  assert.deepEqual(result.assignments.map(a => [a.userId, a.workTypeId]), [[1, WT.FRONT], [2, WT.FRONT], [5, WT.KITCHEN]]);
+  assert.equal(result.gaps.totalGap, 1);
+  assert.equal(result.gaps.fillRate, 0.6667);
+  assert.deepEqual(result.gaps.byDateShift[0].items.map(s => s.workTypeId), [WT.CLEAN]);
+  const adjusted = evaluateAssignments(input, result.assignments);
+  assert.deepEqual(adjusted.problems, []);
+  assert.equal(adjusted.gaps.totalFilled, 3);
+});
+
+test('不限人数的主副工作可补入同组额外副手和另一组合格搭档', () => {
+  const roles = ['primary', 'deputy', 'deputy', 'primary', 'deputy', 'deputy'];
+  const employees = roles.map((dutyRole, i) => makeEmployee(i + 1, [WT.FRONT], { workTypes: [{ workTypeId: WT.FRONT, priority: 1, dutyRole }] }));
+  const dutyPairs = [[1, 2], [1, 3], [4, 5]].map(([primaryUserId, deputyUserId]) => ({ primaryUserId, deputyUserId }));
+  const slots = makeSlots({ dates: ['2025-01-06'], shiftId: 10, workTypeId: WT.FRONT, needCount: 2 })
+    .map(s => ({ ...s, requiresRoles: true, fillAllEnrolled: true, dutyPairs }));
+  const input = { period: makePeriod(), slots, employees, seed: 42 };
+  const result = generateSchedule(input);
+  assert.deepEqual(result.assignments.map(a => a.userId), [1, 2, 3, 4, 5]);
+  assert.equal(result.gaps.totalFilled, 5);
+  assert.equal(result.gaps.fillRate, 1);
+  assert.deepEqual(evaluateAssignments(input, result.assignments).problems, []);
+});
 
 test('主副岗位保留可配置总人数，优化后仍遵守每人的报名角色', () => {
   const choices = ['primary', 'deputy', 'primary', 'both'];

@@ -180,7 +180,7 @@ function generateSlots(periodId, { dates = null, shiftIds = null, defaultNeed = 
           if (!exists) {
             const allowed = JSON.parse(wt.weekdays_json).includes(weekday(slot.work_date));
             const fixedCount = JSON.parse(wt.weekly_assignments_json).filter((r) => r.weekday === weekday(slot.work_date) && r.shiftId === slot.shift_id).length;
-            const need = Math.max(defaultNeed, fixedCount, wt.requires_roles ? 2 : 0);
+            const need = Math.max(defaultNeed, wt.fill_all_enrolled ? 0 : fixedCount, wt.requires_roles ? 2 : 0);
             periodRepo.upsertRequirement(periodId, slot.work_date, slot.shift_id, wt.id, allowed ? need : 0);
           }
         }
@@ -254,6 +254,7 @@ function setRequirements(periodId, items, ctx) {
 }
 
 function defaultNeedForSlot(work, day, shiftId) {
+  if (work.fillAllEnrolled) return work.defaultNeed;
   const fixedCount = work.weeklyAssignments.filter((r) => r.weekday === day && r.shiftId === shiftId).length;
   return Math.max(work.defaultNeed, fixedCount, work.requiresRoles && fixedCount > 0 ? 2 : 0);
 }

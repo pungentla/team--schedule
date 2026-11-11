@@ -82,12 +82,14 @@ function buildGapReport({ slots, assignmentsBySlot, employees, period, checkSlot
   const byWorkType = new Map();
   let totalNeeded = 0;
   let totalFilled = 0;
+  let totalGap = 0;
 
   for (const slot of slots) {
     totalNeeded += slot.needCount;
     const filled = assignmentsBySlot.get(slot.key)?.length || 0;
     totalFilled += filled;
-    const gap = slot.needCount - filled;
+    const gap = Math.max(0, slot.needCount - filled);
+    totalGap += gap;
 
     if (!byWorkType.has(slot.workTypeId)) {
       byWorkType.set(slot.workTypeId, {
@@ -154,8 +156,8 @@ function buildGapReport({ slots, assignmentsBySlot, employees, period, checkSlot
   return {
     totalNeeded,
     totalFilled,
-    totalGap: totalNeeded - totalFilled,
-    fillRate: totalNeeded === 0 ? 1 : Number((totalFilled / totalNeeded).toFixed(4)),
+    totalGap,
+    fillRate: totalNeeded === 0 ? 1 : Number((1 - totalGap / totalNeeded).toFixed(4)),
     byDateShift: [...byDateShift.values()].sort(
       (a, b) => a.workDate.localeCompare(b.workDate) || a.shiftSeq - b.shiftSeq
     ),

@@ -30,7 +30,7 @@ function PublishedEditor({ data, target, saved }) {
   const settings = useLoad(action === 'add' ? data.period.id : null, () => Promise.all([API.requirements(data.period.id), API.shifts()]));
   if (target?.workTypeId && !cell) return <Blank>该工作已移除</Blank>;
   const options = cell ? [
-    ...(cell.gap > 0 ? [option('fill', '补人')] : []),
+    ...(cell.gap > 0 || cell.fillAllEnrolled ? [option('fill', '补人')] : []),
     ...(assignments.length ? [option('swap', '换班')] : []),
     option('remove', '删除工作'),
   ] : [
@@ -53,7 +53,7 @@ function PublishedEditor({ data, target, saved }) {
 
 function FillPublishedWork({ data, target, cell, saved }) {
   const { run, busy } = useAction();
-  const roles = cell.roleGaps.length >= cell.gap ? cell.roleGaps : ['primary', 'deputy'];
+  const roles = !cell.fillAllEnrolled && cell.roleGaps.length >= cell.gap ? cell.roleGaps : ['primary', 'deputy'];
   const options = data.employees.filter(user => !cell.assigned.some(person => person.userId === user.id))
     .map(user => option(user.id, personLabel(user)));
   function submit({ userId, dutyRole }) {
@@ -160,7 +160,7 @@ function DraftEditor({ data, saved }) {
         <Space wrap><Button onClick={() => change({ assignmentId: a.id })}>替换人员</Button>
           <Button danger onClick={async () => { if (await confirm('移除此班安排？', a.name, true)) await save({ action: 'remove', assignmentId: a.id, revision: data.run.revision }); }}>移除</Button></Space>
       </div>)}
-      {cell.gap > 0 && <>
+      {(cell.gap > 0 || cell.fillAllEnrolled) && <>
         {cell.requiresRoles && <Field label="补充岗位角色"><Select aria-label="补充岗位角色" value={role} onChange={setRole} options={roleOptions('primary', 'deputy')} /></Field>}
         <Button onClick={() => change({ workDate: date, shiftId: cell.shiftId, workTypeId: cell.workTypeId, dutyRole: cell.requiresRoles ? role : 'member' })}>＋ 补充人员</Button>
       </>}

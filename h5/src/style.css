@@ -33,6 +33,11 @@ button, input { font: inherit; }
 .bottom-nav { position: fixed; z-index: 10; bottom: 0; width: 100%; background: #fff; border-top: 1px solid #e1e7f0; padding: 5px 8px calc(5px + env(safe-area-inset-bottom)); }
 .bottom-nav-inner { display: flex; gap: 3px; max-width: 960px; margin: auto; }
 .bottom-nav .ant-btn { flex: 1 1 0; min-width: 0; height: 46px; padding-inline: 1px; font-size: clamp(12px, 3.6vw, 14px); }
+.bottom-nav .discussion-nav-tab { gap: 4px; }
+@media (max-width: 360px) {
+  .bottom-nav .discussion-nav-tab { gap: 2px; }
+  .discussion-nav-tab .anticon-message { font-size: 11px; }
+}
 .bottom-nav [aria-current=page] { background: #eaf0fc; color: #214c9c; font-weight: 700; }
 .login { display: grid; place-items: center; min-height: 100dvh; padding: 18px; }
 .login-card { width: min(100%, 420px); }
@@ -53,6 +58,8 @@ button, input { font: inherit; }
 .nickname-field .ant-form-item-row { flex-wrap: nowrap; gap: 8px; }
 .filters { margin-top: 12px; }
 .announcement-area { width: min(100%, 960px); margin: auto; padding: 8px 12px 0; }
+.topic-back-bar { width: min(100%, 960px); margin: auto; padding: 0 12px; }
+.topic-back-bar .ant-btn { padding-inline: 0; }
 .announcement-area:empty { display: none; }
 .announcement-card.ant-card { background: #fff8e1; border-color: #f1dfa3; }
 .announcement-card .ant-card-body { padding-block: 8px; }

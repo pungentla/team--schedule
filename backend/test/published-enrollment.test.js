@@ -63,6 +63,30 @@ test('新报名只填今天起7天的真实空位，不动已有人员、过去�
   const repeated = submit(newcomer, [c]); assert.equal(repeated.scheduleChanges.addedCount, 0); assert.equal(live().run.revision, 1);
 });
 
+test('发布后的按报名安排工作超过最低人数也可加入，且只安排选定星期的剩余班次', () => {
+  const work = require('../src/services/configService').updateWorkType(b, { allowWeekdaySelection: true, fillAllEnrolled: true }, ctx(admin));
+  assert.equal(work.fillAllEnrolled, true);
+  const next = periods.createPeriod({ name: '按报名安排', startDate: '2026-11-02', endDate: '2026-11-12', workTypeIds: [b, c], shiftIds: [am], maxShiftsPerDay: 1, maxShiftsPerWeek: 7, initializeRequirements: true }, ctx(admin)).id;
+  enroll.saveAdminEnrollment(next, owner, { workTypes: choices([b]) }, ctx(admin));
+  const draft = schedule.generate(next, {}, ctx(admin));
+  schedule.publish(next, draft.runId, ctx(admin));
+  const report = () => schedule.getSchedule(next, ctx(admin).user, { version: 'published' });
+  const original = report().assignments;
+  const apply = (workTypes) => enroll.saveEnrollment(next, newcomer, { workTypes, submit: true, unavailability: ['2026-11-08'] }, ctx(newcomer));
+  const result = apply([{ ...choices([b])[0], weekdays: [0, 4] }]);
+  assert.equal(result.scheduleChanges.addedCount, 2);
+  assert.equal(result.scheduleChanges.endDate, '2026-11-12');
+  const current = report();
+  assert.deepEqual(current.assignments.filter(a => a.userId !== newcomer), original);
+  assert.deepEqual(current.assignments.filter(a => a.userId === newcomer).map(a => a.workDate), ['2026-11-05', '2026-11-12']);
+  assert.equal(current.gaps.totalGap, draft.gaps.totalGap);
+  assert.equal(current.gaps.fillRate, draft.gaps.fillRate);
+  const workOnThursday = current.matrix.find(d => d.workDate === '2026-11-12').shifts[0].workTypes.find(w => w.workTypeId === b);
+  assert.deepEqual([workOnThursday.fillAllEnrolled, workOnThursday.needCount, workOnThursday.filled, workOnThursday.gap], [true, 1, 2, 0]);
+  assert.equal(apply([{ ...choices([b])[0], weekdays: [4] }]).scheduleChanges.addedCount, 0);
+  assert.equal(apply([]).scheduleChanges.removedCount, 2);
+});
+
 test('按星期报名只补所选星期的空位，取消星期只释放本周期未来对应班次', () => {
   const original = active();
   const work = choices([c])[0];

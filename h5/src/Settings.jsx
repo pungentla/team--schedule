@@ -26,7 +26,7 @@ export function Settings({ user, tab, setTab, back, onSessionChanged }) {
     <Load query={query}>{([works, shifts, users]) => <Tabs activeKey={tab} onChange={setTab} items={[
       { key: 'worktypes', label: '工作类型', children: <><div className="inline muted">设置工作日和默认人数 <Help name="worktypes" /></div><Collapse accordion destroyOnHidden items={[
         { key: 'new', label: '＋ 新增工作类型', children: <WorkForm users={users} shifts={shifts} saved={query.refresh} /> },
-        ...works.map(w => ({ key: w.id, label: <>{w.name} · {w.active ? '启用' : '停用'} {w.requiresRoles && <Tag color="blue">主 + 副</Tag>}{w.dutyPairs?.length > 0 && <Tag>{w.dutyPairs.length} 种搭配</Tag>}</>, children: <WorkForm work={w} users={users} shifts={shifts} saved={query.refresh} /> })),
+        ...works.map(w => ({ key: w.id, label: <>{w.name} · {w.active ? '启用' : '停用'} {w.fillAllEnrolled && <Tag>按报名安排</Tag>}{w.requiresRoles && <Tag color="blue">主 + 副</Tag>}{w.dutyPairs?.length > 0 && <Tag>{w.dutyPairs.length} 种搭配</Tag>}</>, children: <WorkForm work={w} users={users} shifts={shifts} saved={query.refresh} /> })),
       ]} /></> },
       { key: 'shifts', label: '班次', children: <><div className="inline muted">设置班次时间 <Help name="shifts" /></div><Collapse accordion destroyOnHidden items={[
         { key: 'new', label: '＋ 新增班次', children: <ShiftForm seq={Math.max(0, ...shifts.map(s => s.seq)) + 1} saved={query.refresh} /> },
@@ -45,6 +45,7 @@ export function Settings({ user, tab, setTab, back, onSessionChanged }) {
 function WorkForm({ work, users, shifts, saved }) {
   const [form] = Form.useForm();
   const roles = Form.useWatch('requiresRoles', form) ?? !!work?.requiresRoles;
+  const fillAll = Form.useWatch('fillAllEnrolled', form) ?? !!work?.fillAllEnrolled;
   const { run, busy } = useAction();
   const people = users.map(u => ({ ...option(u.id, personLabel({ ...u, name: u.displayName ?? u.name }) + (u.status === 'active' ? '' : ' · 停用')), disabled: u.status !== 'active' }));
   const shiftOptions = shifts.map(s => ({ ...option(s.id, shiftText(s) + (s.active ? '' : ' · 停用')), disabled: !s.active }));
@@ -54,12 +55,12 @@ function WorkForm({ work, users, shifts, saved }) {
     deputiesByPrimary.get(primaryUserId).push(deputyUserId);
   }
   const dutyGroups = [...deputiesByPrimary].map(([primaryUserId, deputyUserIds]) => ({ primaryUserId, deputyUserIds }));
-  const initialValues = { name: '', description: '', color: '#4A90D9', sortOrder: 0, weekdays: [0], allowWeekdaySelection: false, defaultNeed: 1, requiresRoles: false, weeklyAssignments: [], active: true, ...work, dutyGroups };
+  const initialValues = { name: '', description: '', color: '#4A90D9', sortOrder: 0, weekdays: [0], allowWeekdaySelection: false, fillAllEnrolled: false, defaultNeed: 1, requiresRoles: false, weeklyAssignments: [], active: true, ...work, dutyGroups };
   function save(values) {
     const body = {
       name: values.name.trim(), description: values.description?.trim() || '', color: typeof values.color === 'string' ? values.color : values.color.toHexString(),
       sortOrder: values.sortOrder, weekdays: values.weekdays || [], defaultNeed: values.defaultNeed, requiresRoles: values.requiresRoles,
-      allowWeekdaySelection: values.allowWeekdaySelection,
+      allowWeekdaySelection: values.allowWeekdaySelection, fillAllEnrolled: values.fillAllEnrolled,
       weeklyAssignments: (values.weeklyAssignments || []).map(a => ({ ...a, dutyRole: values.requiresRoles ? a.dutyRole === 'deputy' ? 'deputy' : 'primary' : 'member' })),
       dutyPairs: values.requiresRoles ? (values.dutyGroups || []).flatMap(({ primaryUserId, deputyUserIds }) =>
         deputyUserIds.map(deputyUserId => ({ primaryUserId, deputyUserId }))) : [],
@@ -86,7 +87,10 @@ function WorkForm({ work, users, shifts, saved }) {
     </div>}</Form.List>}
     <Form.Item name="weekdays" label="每周需要哪些天"><Checkbox.Group options={days.map(d => option(d, weekdays[d]))} /></Form.Item>
     <Form.Item name="allowWeekdaySelection" valuePropName="checked"><Checkbox>允许自选报名星期</Checkbox></Form.Item>
-    <Form.Item name="defaultNeed" label="默认每班人数" rules={[...required, { validator: (_, v) => roles && v === 1 ? Promise.reject(new Error('主副工作至少需要 2 人')) : Promise.resolve() }]}><InputNumber min={0} max={99} precision={0} /></Form.Item>
+    <Form.Item name="fillAllEnrolled" valuePropName="checked"><Checkbox>按报名安排</Checkbox></Form.Item>
+    <Form.Item name="defaultNeed" label={fillAll ? '默认每班最低人数' : '默认每班人数'}
+      extra={fillAll ? '报名且符合排班条件的人员都可安排。0 表示不安排。' : undefined}
+      rules={[...required, { validator: (_, v) => roles && v === 1 ? Promise.reject(new Error('主副工作至少需要 2 人')) : Promise.resolve() }]}><InputNumber min={0} max={99} precision={0} /></Form.Item>
     <Form.List name="weeklyAssignments">{(fields, { add, remove }) => <div className="stack form-section">
       <Heading help="fixed">长期固定人员</Heading>
       {fields.map(({ key, name }) => <div className="choice" key={key}><div className="form-grid">

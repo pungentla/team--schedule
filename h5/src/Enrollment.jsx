@@ -12,6 +12,7 @@ import Select from 'antd/es/select';
 import Space from 'antd/es/space';
 import Tag from 'antd/es/tag';
 import { MonthCalendar } from './MonthCalendar';
+import { ScheduleDetails } from './Schedule';
 import { API, Blank, Field, Heading, Help, Load, checkRemoval, dateText, iso, monthOf, option, periodOptions, personLabel, roleLabels, roleOptions, savedEnrollment, shiftText, timeText, useAction, useLoad, usePageLoad, weekdays } from './shared';
 
 const canEnroll = period => ['enrolling', 'scheduling', 'published'].includes(period?.status);
@@ -27,7 +28,7 @@ function EnrollmentStatus({ enrollment }) {
   return <Tag color={submitted ? 'green' : 'default'}>{submitted ? '已提交' : '尚未报名'}</Tag>;
 }
 
-export function Enrollment({ periods, period, selected, setSelected }) {
+export function Enrollment({ user, periods, period, selected, setSelected }) {
   const options = [...periods].sort((a, b) => Number(canEnroll(b)) - Number(canEnroll(a)));
   const [openPeriod, setOpenPeriod] = useState(null);
   const selection = selected == null
@@ -48,7 +49,12 @@ export function Enrollment({ periods, period, selected, setSelected }) {
           </Field>
         </Form>
       </>}
-      {selection ? <div className="muted">{selection.startDate} 至 {selection.endDate}</div>
+      {selection ? <div className="stack">
+        <div className="muted">{selection.startDate} 至 {selection.endDate}</div>
+        {selection.status === 'published' && <Collapse key={selection.id} className="compact-calendar" items={[{
+          key: 'published', label: '查看生效明细', children: <PublishedEnrollmentDetails periodId={selection.id} user={user} />,
+        }]} />}
+      </div>
         : <Blank>{selected == null ? '暂无报名周期' : '该排班周期已不可查看'}</Blank>}
     </Card>
     {selection && <Card title="报名信息">
@@ -59,6 +65,14 @@ export function Enrollment({ periods, period, selected, setSelected }) {
     {openPeriod && <EnrollmentDialog period={openPeriod} details={details}
       close={() => setOpenPeriod(current => current === openPeriod ? null : current)} />}
   </>;
+}
+
+function PublishedEnrollmentDetails({ periodId, user }) {
+  const [view, setView] = useState('calendar');
+  const query = usePageLoad(periodId, () => API.schedule(periodId, 'published'));
+  return <Load query={query}>{data => data.run
+    ? <ScheduleDetails data={data} user={user} view={view} setView={setView} published />
+    : <Blank>本周期暂无已发布排班</Blank>}</Load>;
 }
 
 function enrollmentAvailability(context, enrollment) {
@@ -246,7 +260,7 @@ function EnrollmentForm({ context, enrollment, onSaved, proxyUser }) {
   }
   return <div className="stack">
     <Space wrap><EnrollmentStatus enrollment={enrollment} /><span className="muted">{context.period.startDate} 至 {context.period.endDate}</span></Space>
-    {!editable ? <Alert message="当前仅供查看" /> : published && <Alert message="报名后可补近 7 天的空位，取消工作或星期会移除明天起的对应安排。" />}
+    {!editable ? <Alert message="当前仅供查看" /> : published && <Alert message="报名可补近 7 天空位；按报名安排的工作可加入本周期剩余班次。取消后会移除明天起的对应安排。" />}
     {!proxyUser && context.fixedAssignments?.length > 0 && <Collapse size="small" items={[{ key: 'fixed', label: '长期固定安排', children: context.fixedAssignments.map((a, i) => <div key={i}>{a.workTypeName} · {weekdays[a.weekday]} · {a.shiftName} · {roleLabels[a.dutyRole]}</div>) }]} />}
     <Form layout="vertical" disabled={!editable || busy} onFinish={save}>
       <h3>报名工作</h3><WorkChoices works={context.workTypes} value={work} onChange={setWork} proxy={proxyUser} />
