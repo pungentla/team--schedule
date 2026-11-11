@@ -8,7 +8,7 @@
 const db = require('./db');
 const { ensureAlias } = require('../repositories/discussionAliasRepo');
 
-const CURRENT_VERSION = 21;
+const CURRENT_VERSION = 23;
 
 function migrate() {
   db.open();
@@ -28,6 +28,15 @@ function migrate() {
         const rebuildVotes = db.all('PRAGMA table_info(discussion_poll_votes)').some(column => column.name === 'position' && !column.pk);
         if (rebuildVotes) db.exec('ALTER TABLE discussion_poll_votes RENAME TO discussion_poll_votes_legacy');
         db.exec(db.readSchemaSql());
+        const userColumns = new Set(db.all('PRAGMA table_xinfo(users)').map(column => column.name));
+        for (const [column, definition] of [
+          ['nickname', 'TEXT'],
+          ['nickname_changed_at', 'TEXT'],
+          ['nickname_enabled', 'INTEGER NOT NULL DEFAULT 1 CHECK (nickname_enabled IN (0, 1))'],
+          ['display_name', 'TEXT GENERATED ALWAYS AS (COALESCE(CASE WHEN nickname_enabled = 1 THEN nickname END, name)) VIRTUAL'],
+        ]) {
+          if (!userColumns.has(column)) db.exec(`ALTER TABLE users ADD COLUMN ${column} ${definition}`);
+        }
         if (rebuildAnnouncements) {
           db.exec(`INSERT INTO announcements (id, title, content, published_by, published_at)
             SELECT id, title, content, published_by, published_at FROM announcements_legacy;

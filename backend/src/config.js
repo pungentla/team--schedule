@@ -19,6 +19,7 @@ const config = {
   host: process.env.HOST || '0.0.0.0',
   dbFile: path.resolve(__dirname, '..', process.env.DB_FILE || './data/app.db'),
   sessionTtlDays: intEnv('SESSION_TTL_DAYS', 30),
+  nicknameCooldownDays: 30,
   defaultSeed: intEnv('SCHEDULE_SEED', 42),
   historyPeriods: intEnv('HISTORY_PERIODS', 6),
   algoVersion: '1.3.0',

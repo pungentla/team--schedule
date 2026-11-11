@@ -22,7 +22,7 @@ function requireAuth(req, res, next) {
 
   const tokenHash = hashToken(token);
   const row = db.get(
-    `SELECT s.user_id, s.expires_at, u.employee_no, u.name, u.role, u.status
+    `SELECT s.user_id, s.expires_at, u.employee_no, u.display_name AS name, u.role, u.status
        FROM sessions s
        JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = ?`,
@@ -52,7 +52,7 @@ function optionalAuth(req, res, next) {
   if (!token) return next();
 
   const row = db.get(
-    `SELECT s.user_id, s.expires_at, u.employee_no, u.name, u.role, u.status
+    `SELECT s.user_id, s.expires_at, u.employee_no, u.display_name AS name, u.role, u.status
        FROM sessions s
        JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = ?`,

@@ -15,7 +15,7 @@ import zhCN from 'antd/es/locale/zh_CN';
 import BellOutlined from '@ant-design/icons/es/icons/BellOutlined';
 import 'dayjs/locale/zh-cn';
 import 'antd/dist/reset.css';
-import { API, Heading, Load, accountRoles, assignmentLabel, dayjs, isAdmin, required, useAction, useLoad } from './shared';
+import { API, Heading, Load, ProfileDisplayContext, accountRoles, assignmentLabel, dayjs, isAdmin, required, timeText, useAction, useLoad } from './shared';
 import { Schedule, readScheduleFilters, saveScheduleFilters } from './Schedule';
 import { Announcement } from './Announcement';
 import { DiscussionPreview } from './DiscussionPreview';
@@ -55,7 +55,15 @@ function Root() {
     }).catch(e => { if (active && e.status !== 401) message.error(e.message); });
     return () => { active = false; window.removeEventListener('teamshift:session-expired', expired); };
   }, []);
-  return user ? <Workspace key={user.id} user={user} endSession={clearSession} /> : <Login loggedIn={({ token, user }) => { API.setSession(token, user); setUser(user); }} />;
+  function updateProfile(profile) {
+    const token = API.getToken();
+    if (!token || API.getUser()?.id !== profile.id) return;
+    API.setSession(token, profile);
+    setUser(profile);
+  }
+  return user ? <ProfileDisplayContext.Provider value={JSON.stringify([user.name, user.nickname, user.nicknameEnabled])}>
+    <Workspace key={user.id} user={user} updateProfile={updateProfile} endSession={clearSession} />
+  </ProfileDisplayContext.Provider> : <Login loggedIn={({ token, user }) => { API.setSession(token, user); setUser(user); }} />;
 }
 
 function Login({ loggedIn }) {
@@ -82,7 +90,7 @@ function readNotificationTarget() {
   return { tab: 'schedule', notice: Number.isSafeInteger(notice) && notice > 0 ? notice : null };
 }
 
-function Workspace({ user, endSession }) {
+function Workspace({ user, updateProfile, endSession }) {
   const [notificationTarget, setNotificationTarget] = useState(readNotificationTarget);
   const [tab, setTab] = useState(notificationTarget.tab);
   const [settingsTab, setSettingsTab] = useState('worktypes');
@@ -92,6 +100,7 @@ function Workspace({ user, endSession }) {
   const [discussionOpenVersion, setDiscussionOpenVersion] = useState(0);
   const [swapDetail, setSwapDetail] = useState(notificationTarget.swap ?? null);
   const [password, setPassword] = useState(false);
+  const [nicknameOpen, setNicknameOpen] = useState(false);
   const [reminders, setReminders] = useState(false);
   const [scheduleFilters, setScheduleFilters] = useState(() => readScheduleFilters(user.id));
   useEffect(() => saveScheduleFilters(user.id, scheduleFilters), [user.id, scheduleFilters]);
@@ -178,8 +187,12 @@ function Workspace({ user, endSession }) {
         <div className="account-actions">
           <BellNotifications query={unreadQuery} likeNotices={likeNotices} swapInbox={swapInbox} open={openDiscussions} openSwap={openSwap} />
           <Dropdown trigger={['click']} menu={{ items: [
-            { key: 'reminders', label: '消息提醒' }, { key: 'password', label: '修改密码' },
-          ], onClick: ({ key }) => key === 'reminders' ? setReminders(true) : setPassword(true) }}>
+            { key: 'nickname', label: '设置花名' }, { key: 'reminders', label: '消息提醒' }, { key: 'password', label: '修改密码' },
+          ], onClick: ({ key }) => {
+            if (key === 'nickname') setNicknameOpen(true);
+            if (key === 'reminders') setReminders(true);
+            if (key === 'password') setPassword(true);
+          } }}>
             <Button type="text" className="account-menu" title={`${user.name}（${user.employeeNo}）`}>{user.name}{isAdmin(user) && user.name !== accountRoles[user.role] && ` · ${accountRoles[user.role]}`} ▾</Button>
           </Dropdown>
           <Button ghost loading={busy} onClick={logout}>退出</Button>
@@ -212,6 +225,10 @@ function Workspace({ user, endSession }) {
       {tabs.map(([id, label]) => <Button key={id} type="text" aria-current={activeNav === id ? 'page' : undefined}
         onClick={() => id === 'discussions' ? openDiscussions() : navigate(id)}>{label}</Button>)}
     </div></nav>
+    {nicknameOpen && <Nickname user={user} close={() => setNicknameOpen(false)} saved={profile => {
+      updateProfile(profile);
+      setNicknameOpen(false);
+    }} />}
     {password && <Password close={() => setPassword(false)} saved={endSession} />}
     {reminders && <ReminderSettings close={() => setReminders(false)} />}
   </div>;
@@ -275,6 +292,36 @@ function BellNotifications({ query, likeNotices, swapInbox, open, openSwap }) {
       const topic = topics.find(item => item.id === Number(id));
       if (topic) open(topic.id, topic.latestReplyId);
     } }}>{button}</Dropdown>;
+}
+
+function Nickname({ user, close, saved }) {
+  const { run, busy, confirm } = useAction();
+  const locked = Date.parse(user.nicknameNextChangeAt) > Date.now();
+
+  async function enableNickname({ nickname }) {
+    const nextNickname = nickname.trim().normalize('NFC');
+    if (nextNickname !== user.nickname) {
+      const title = user.nickname ? '确认修改花名？' : '确认设置花名？';
+      if (!await confirm(title, `将启用花名「${nextNickname}」。确认后，30 天内无法再次改名。`)) return;
+    }
+    await run(() => API.saveNickname(nextNickname, true), '花名已启用', saved);
+  }
+
+  return <Modal open title="设置花名" onCancel={() => !busy && close()} footer={null}>
+    <Form layout="vertical" initialValues={{ nickname: user.nickname || '' }} disabled={busy} onFinish={enableNickname}>
+      <p className="muted">设置或修改花名后，需间隔 30 天才能再次改名。</p>
+      <Form.Item className="nickname-field" name="nickname" label="花名" layout="horizontal" colon={false}
+        labelCol={{ style: { flex: 'none', padding: 0 } }} wrapperCol={{ style: { flex: '1 1 0', minWidth: 0 } }}
+        extra={locked && <span className="muted">下次可设置时间 {timeText(user.nicknameNextChangeAt)}</span>}
+        rules={[{ required: true, whitespace: true, message: '请输入花名' }]}>
+        <Input showCount maxLength={32} disabled={locked || busy} />
+      </Form.Item>
+      <div className="inline">
+        <Button type="primary" htmlType="submit" disabled={busy || (locked && user.nicknameEnabled)} loading={busy}>启用花名</Button>
+        {user.nicknameEnabled && <Button htmlType="button" onClick={() => run(() => API.setNicknameEnabled(false), '花名已禁用', saved)}>禁用花名</Button>}
+      </div>
+    </Form>
+  </Modal>;
 }
 
 function Password({ close, saved }) {

@@ -59,7 +59,7 @@ function updateEnrollmentMeta(id, { maxShifts, status, note }) {
 function loadSubmittedEnrollments(periodId) {
   const rows = db.all(
     `SELECT e.id AS enrollment_id, e.user_id, e.max_shifts, e.note,
-            u.name, u.employee_no
+            u.display_name AS name, u.employee_no
        FROM enrollments e
        JOIN users u ON u.id = e.user_id
       WHERE e.period_id = ? AND e.status = 'submitted' AND u.status = 'active'
@@ -105,7 +105,7 @@ function countSubmittedEnrollments(periodId) {
 /** 报名汇总（管理员视角） */
 function listEnrollmentsWithDetails(periodId) {
   const rows = db.all(
-    `SELECT e.*, u.name, u.employee_no, u.role, u.status AS user_status
+    `SELECT e.*, u.display_name AS name, u.employee_no, u.role, u.status AS user_status
        FROM enrollments e
        JOIN users u ON u.id = e.user_id
       WHERE e.period_id = ?

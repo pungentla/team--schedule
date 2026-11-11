@@ -103,6 +103,8 @@ export const API = (() => {
     login: (employeeNo, password) => request('/auth/login', { method: 'POST', body: { employeeNo, password } }),
     logout: (pushEndpoint) => request('/auth/logout', { method: 'POST', body: pushEndpoint ? { pushEndpoint } : undefined }),
     me: () => request('/auth/me'),
+    saveNickname: (nickname, enabled) => request('/auth/me/nickname', { method: 'PUT', body: { nickname, enabled } }),
+    setNicknameEnabled: enabled => request('/auth/me/nickname/status', { method: 'PUT', body: { enabled } }),
     reminderStatus: (endpoint) => request('/reminders/status', { method: 'POST', body: { endpoint } }),
     enableReminder: (subscription) => request('/reminders/subscription', { method: 'PUT', body: subscription }),
     disableReminder: (endpoint) => request('/reminders/subscription', { method: 'DELETE', body: { endpoint } }),

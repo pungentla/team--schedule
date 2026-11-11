@@ -17,17 +17,7 @@ router.get('/users', (req, res) => {
   const includeDisabled = req.query.includeDisabled !== '0';
   const keyword = req.query.keyword || null;
   const rows = userRepo.listUsers({ keyword, includeDisabled });
-  res.json({
-    data: rows.map((u) => ({
-      id: u.id,
-      employeeNo: u.employee_no,
-      name: u.name,
-      role: u.role,
-      phone: u.phone,
-      status: u.status,
-      createdAt: u.created_at,
-    })),
-  });
+  res.json({ data: rows.map(userRepo.accountUser) });
 });
 
 const accounts = require('../services/accountService');

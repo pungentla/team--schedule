@@ -44,7 +44,7 @@ function create(body, ctx) {
     uniqueAccount(data.employeeNo);
     const id = users.insertUser({ ...data, passwordHash: hashPasswordSync(password) });
     log(id, { ...data, action: 'create_account' }, ctx);
-    return users.publicUser(users.findById(id));
+    return users.accountUser(users.findById(id));
   });
 }
 function update(id, body, ctx) {
@@ -60,7 +60,7 @@ function update(id, body, ctx) {
     users.updateUser(id, data);
     if (data.role !== undefined || data.status !== undefined || data.employeeNo !== undefined) users.deleteUserSessions(id);
     log(id, data, ctx);
-    return users.publicUser(users.findById(id));
+    return users.accountUser(users.findById(id));
   });
 }
 function resetPassword(id, newPassword, ctx) {

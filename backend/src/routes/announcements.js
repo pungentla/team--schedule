@@ -9,7 +9,7 @@ const { notFound } = require('../utils/errors');
 const { intParam, requireString } = require('../utils/validate');
 
 const router = express.Router();
-const select = `SELECT a.id, a.title, a.content, a.published_at AS publishedAt, u.name AS publisherName
+const select = `SELECT a.id, a.title, a.content, a.published_at AS publishedAt, u.display_name AS publisherName
   FROM announcements a LEFT JOIN users u ON u.id = a.published_by`;
 router.use(requireAuth);
 

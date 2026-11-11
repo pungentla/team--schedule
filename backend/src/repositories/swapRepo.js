@@ -25,8 +25,8 @@ function insertSwap({ periodId, type, fromAssignmentId, toUserId, toAssignmentId
 /** 带名字的完整视图 */
 const SWAP_SELECT = `
   SELECT sr.*,
-         ru.name AS requester_name,
-         tu.name AS to_user_name,
+         ru.display_name AS requester_name,
+         tu.display_name AS to_user_name,
          fa.work_date AS from_work_date,
          fs.name AS from_shift_name, fs.seq AS from_seq,
          fw.name AS from_work_type_name, fw.color AS from_work_type_color,
@@ -53,7 +53,7 @@ function findSwap(id) {
 
 function findAssignmentDetail(id) {
   return db.get(
-    `SELECT a.*, u.name AS user_name, u.employee_no,
+    `SELECT a.*, u.display_name AS user_name, u.employee_no,
             s.name AS shift_name, s.seq, s.start_time, s.end_time,
             wt.name AS work_type_name, wt.color AS work_type_color
        FROM assignments a
@@ -128,7 +128,7 @@ function insertParticipant(swapId, userId, role, seq, status) {
 
 function listParticipants(swapId) {
   return db.all(
-    `SELECT sp.*, u.name, u.employee_no
+    `SELECT sp.*, u.display_name AS name, u.employee_no
        FROM swap_participants sp
        JOIN users u ON u.id = sp.user_id
       WHERE sp.swap_id = ?

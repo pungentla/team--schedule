@@ -21,7 +21,7 @@ function getPeriodStats(periodId) {
 
   // 从 assignments 现算（保证换班后的数据是真实的，而不是生成时的快照）
   const rows = db.all(
-    `SELECT a.user_id, a.work_type_id, a.work_date, a.shift_id, u.name, u.employee_no
+    `SELECT a.user_id, a.work_type_id, a.work_date, a.shift_id, u.display_name AS name, u.employee_no
        FROM assignments a
        JOIN users u ON u.id = a.user_id
       WHERE a.run_id = ? AND a.status = 'active'`,
@@ -54,7 +54,7 @@ function getPeriodStats(periodId) {
 
   // 用轻量的 employee 形状喂给 computeMetrics
   const enrolled = db.all(
-    `SELECT e.user_id, u.name, u.employee_no,
+    `SELECT e.user_id, u.display_name AS name, u.employee_no,
             (SELECT COUNT(*) FROM enrollment_work_types ewt WHERE ewt.enrollment_id = e.id) AS wt_count
        FROM enrollments e JOIN users u ON u.id = e.user_id
       WHERE e.period_id = ? AND e.status = 'submitted'`,

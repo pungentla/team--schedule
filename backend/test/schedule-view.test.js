@@ -137,6 +137,24 @@ test('管理员在只有已发布版本时看到已发布版本', () => {
   assert.equal(data.run.status, 'published');
 });
 
+test('已发布的安排、缺口和公平度报表使用当前花名', () => {
+  const runId = insertRun('published', 42);
+  const savedPerson = { userId: EMPLOYEE.id, name: '员工甲' };
+  db.run('UPDATE schedule_runs SET gaps_json = ?, metrics_json = ? WHERE id = ?',
+    JSON.stringify({ byEmployee: [savedPerson] }),
+    JSON.stringify({ workload: { distribution: [savedPerson] }, perWorkType: [{ distribution: [savedPerson] }] }), runId);
+  db.run('UPDATE users SET nickname = ? WHERE id = ?', '青禾', EMPLOYEE.id);
+  try {
+    const result = scheduleService.getSchedule(periodId, ADMIN);
+    assert.equal(result.assignments[0].name, '青禾');
+    assert.equal(result.gaps.byEmployee[0].name, '青禾');
+    assert.equal(result.metrics.workload.distribution[0].name, '青禾');
+    assert.equal(result.metrics.perWorkType[0].distribution[0].name, '青禾');
+  } finally {
+    db.run('UPDATE users SET nickname = NULL WHERE id = ?', EMPLOYEE.id);
+  }
+});
+
 test('管理员生成草稿后应立刻看到草稿，而不是旧的已发布版本', () => {
   insertRun('published', 42);
   const draftId = insertRun('draft', 5754);

@@ -75,7 +75,7 @@ function list({ page = 1, pageSize = 50, periodId = null, action = null, actorId
 
   const total = db.pluck(`SELECT COUNT(*) FROM audit_logs a ${whereSql}`, ...params) || 0;
   const rows = db.all(
-    `SELECT a.*, u.name AS actor_name, u.employee_no AS actor_no
+    `SELECT a.*, u.display_name AS actor_name, u.employee_no AS actor_no
        FROM audit_logs a
        LEFT JOIN users u ON u.id = a.actor_id
        ${whereSql}
@@ -119,7 +119,7 @@ function safeParse(s) {
 function enrollmentProxyName(enrollment) {
   if (!enrollment.submitted_at) return null;
   const event = db.get(
-    `SELECT a.actor_id, a.detail_json, u.name AS actor_name
+    `SELECT a.actor_id, a.detail_json, u.display_name AS actor_name
        FROM audit_logs a
        LEFT JOIN users u ON u.id = a.actor_id
       WHERE a.action = ? AND a.entity_type = 'enrollment'

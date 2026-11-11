@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 import Alert from 'antd/es/alert';
 import App from 'antd/es/app';
 import Button from 'antd/es/button';
@@ -40,21 +40,25 @@ export const group = (items, key) => {
   return [...groups];
 };
 
+export const ProfileDisplayContext = createContext(null);
+
 export function useLoad(key, load, keepPrevious = false) {
+  const profileDisplay = useContext(ProfileDisplayContext);
   const [result, setResult] = useState({});
   const [revision, setRevision] = useState(0);
   useEffect(() => {
     if (key == null) return;
     let current = true;
     Promise.resolve().then(load).then(data => {
-      if (current) setResult({ key, revision, data });
+      if (current) setResult({ key, revision, profileDisplay, data });
     }, error => {
-      if (current) setResult({ key, revision, error });
+      if (current) setResult({ key, revision, profileDisplay, error });
     });
     return () => { current = false; };
-  }, [key, revision]);
-  const match = result.key === key && result.revision === revision;
-  return { ...(match || (keepPrevious && result.key === key) ? result : {}), loading: key != null && !match, refresh: () => setRevision(n => n + 1) };
+  }, [key, revision, profileDisplay]);
+  const sameRequest = result.key === key && result.revision === revision;
+  const match = sameRequest && result.profileDisplay === profileDisplay;
+  return { ...(sameRequest || (keepPrevious && result.key === key) ? result : {}), loading: key != null && !match, refresh: () => setRevision(n => n + 1) };
 }
 export function useAction() {
   const { message, modal } = App.useApp();

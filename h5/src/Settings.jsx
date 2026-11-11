@@ -34,7 +34,7 @@ export function Settings({ user, tab, setTab, back, onSessionChanged }) {
       ]} /></> },
       { key: 'accounts', label: '账号', children: <><div className="inline muted">管理人员账号 <Help name="accounts" /></div><Collapse accordion destroyOnHidden items={[
         { key: 'new', label: '＋ 新建账号', children: <AccountForm user={user} saved={query.refresh} /> },
-        ...users.map(u => ({ key: u.id, label: `${personLabel(u)} · ${accountRoles[u.role]} · ${u.status === 'active' ? '启用' : '停用'}`, children:
+        ...users.map(u => ({ key: u.id, label: `${personLabel(u)}${u.nickname ? ` · 花名 ${u.nickname}${u.nicknameEnabled ? '' : '（已禁用）'}` : ''} · ${accountRoles[u.role]} · ${u.status === 'active' ? '启用' : '停用'}`, children:
           u.role === 'employee' || (user.role === 'super_admin' && (u.role !== 'super_admin' || u.id === user.id))
             ? <AccountForm account={u} user={user} saved={u.id === user.id ? onSessionChanged : query.refresh} /> : <span className="muted">此账号由超级管理员管理。</span> })),
       ]} /></> },
@@ -46,7 +46,7 @@ function WorkForm({ work, users, shifts, saved }) {
   const [form] = Form.useForm();
   const roles = Form.useWatch('requiresRoles', form) ?? !!work?.requiresRoles;
   const { run, busy } = useAction();
-  const people = users.map(u => ({ ...option(u.id, personLabel(u) + (u.status === 'active' ? '' : ' · 停用')), disabled: u.status !== 'active' }));
+  const people = users.map(u => ({ ...option(u.id, personLabel({ ...u, name: u.displayName ?? u.name }) + (u.status === 'active' ? '' : ' · 停用')), disabled: u.status !== 'active' }));
   const shiftOptions = shifts.map(s => ({ ...option(s.id, shiftText(s) + (s.active ? '' : ' · 停用')), disabled: !s.active }));
   const initialValues = { name: '', description: '', color: '#4A90D9', sortOrder: 0, weekdays: [0], defaultNeed: 1, requiresRoles: false, weeklyAssignments: [], dutyPairs: [], active: true, ...work };
   function save(values) {

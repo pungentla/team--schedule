@@ -4,6 +4,10 @@
 
 const db = require('../db/db');
 const { nowIso } = require('../utils/date');
+const { config } = require('../config');
+const { badRequest, conflict } = require('../utils/errors');
+
+const nicknameCooldownMs = config.nicknameCooldownDays * 24 * 60 * 60 * 1000;
 
 // ---------------------------- users ----------------------------
 
@@ -72,15 +76,47 @@ function listUsers({ keyword = null, includeDisabled = true } = {}) {
   const params = [];
   if (!includeDisabled) where.push(`status = 'active'`);
   if (keyword) {
-    where.push('(name LIKE ? OR employee_no LIKE ?)');
-    params.push(`%${keyword}%`, `%${keyword}%`);
+    where.push('(name LIKE ? OR nickname LIKE ? OR employee_no LIKE ?)');
+    params.push(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`);
   }
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
   return db.all(
-    `SELECT id, employee_no, name, role, phone, status, created_at FROM users ${whereSql}
+    `SELECT id, employee_no, name, nickname, nickname_enabled, display_name, role, phone, status, created_at FROM users ${whereSql}
       ORDER BY role = 'admin' DESC, employee_no ASC`,
     ...params
   );
+}
+
+function nicknameNextChangeAt(user) {
+  return user.nickname_changed_at ? new Date(Date.parse(user.nickname_changed_at) + nicknameCooldownMs).toISOString() : null;
+}
+
+function updateNickname(id, nickname, enabled) {
+  return db.tx(() => {
+    const now = nowIso();
+    const cutoff = new Date(Date.parse(now) - nicknameCooldownMs).toISOString();
+    db.run(`UPDATE users SET nickname = ?, nickname_changed_at = ?, updated_at = ?
+      WHERE id = ? AND nickname IS NOT ? AND (nickname_changed_at IS NULL OR nickname_changed_at <= ?)
+      AND NOT EXISTS (SELECT 1 FROM users WHERE nickname = ? AND id <> ?)`,
+    nickname, now, now, id, nickname, cutoff, nickname, id);
+    const user = findById(id);
+    if (user.nickname !== nickname) {
+      if (db.get('SELECT 1 FROM users WHERE nickname = ? AND id <> ?', nickname, id)) {
+        throw conflict('NICKNAME_TAKEN', '该花名已被使用，请换一个');
+      }
+      throw conflict('NICKNAME_COOLDOWN', `花名每 ${config.nicknameCooldownDays} 天可更改一次`, { nextChangeAt: nicknameNextChangeAt(user) });
+    }
+    if (enabled !== undefined && Boolean(user.nickname_enabled) !== enabled) return setNicknameEnabled(id, enabled);
+    return publicUser(user);
+  });
+}
+
+function setNicknameEnabled(id, enabled) {
+  return db.tx(() => {
+    const result = db.run('UPDATE users SET nickname_enabled = ?, updated_at = ? WHERE id = ? AND nickname IS NOT NULL', enabled, nowIso(), id);
+    if (!result.changes) throw badRequest('请先设置花名');
+    return publicUser(findById(id));
+  });
 }
 
 function publicUser(u) {
@@ -88,11 +124,18 @@ function publicUser(u) {
   return {
     id: u.id,
     employeeNo: u.employee_no,
-    name: u.name,
+    name: u.display_name ?? u.name,
+    nickname: u.nickname ?? null,
+    nicknameEnabled: Boolean(u.nickname && u.nickname_enabled),
+    nicknameNextChangeAt: nicknameNextChangeAt(u),
     role: u.role,
     phone: u.phone ?? null,
     status: u.status,
   };
+}
+
+function accountUser(u) {
+  return { ...publicUser(u), name: u.name, displayName: u.display_name ?? u.name, createdAt: u.created_at };
 }
 
 // ---------------------------- sessions ----------------------------
@@ -153,7 +196,7 @@ function consumeInvite(code) {
 
 function listInvites() {
   return db.all(
-    `SELECT i.*, u.name AS created_by_name
+    `SELECT i.*, u.display_name AS created_by_name
        FROM invites i
        LEFT JOIN users u ON u.id = i.created_by
       ORDER BY i.id DESC`
@@ -166,8 +209,11 @@ module.exports = {
   findByEmployeeNoInsensitive,
   insertUser,
   updateUser,
+  updateNickname,
+  setNicknameEnabled,
   listUsers,
   publicUser,
+  accountUser,
   createSession,
   deleteSession,
   deleteExpiredSessions,

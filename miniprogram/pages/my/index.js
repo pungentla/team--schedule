@@ -1,6 +1,15 @@
 const { request } = require('../../utils/request');
 const { getBaseUrl } = require('../../config/env');
 
+function nicknameSettings(user) {
+  const next = Date.parse(user?.nicknameNextChangeAt);
+  const nicknameLocked = next > Date.now();
+  return {
+    nicknameLocked,
+    nicknameAvailableAt: nicknameLocked ? new Date(next + 8 * 3600000).toISOString().slice(0, 16).replace('T', ' ') : '',
+  };
+}
+
 Page({
   data: {
     user: null,
@@ -11,11 +20,14 @@ Page({
     passwordOpen: false,
     passwordSaving: false,
     passwordError: '',
+    nicknameOpen: false,
+    nicknameSaving: false,
+    nicknameError: '',
   },
 
   onShow() {
     const app = getApp();
-    this.setData({ user: app.globalData.user, baseUrl: getBaseUrl() });
+    this.setData({ user: app.globalData.user, baseUrl: getBaseUrl(), ...nicknameSettings(app.globalData.user) });
     this.load();
   },
 
@@ -47,6 +59,40 @@ Page({
 
   goSwapList() {
     wx.navigateTo({ url: '/pages/swap/list' });
+  },
+
+  toggleNickname() {
+    if (this.data.nicknameSaving) return;
+    this.setData({ nicknameOpen: !this.data.nicknameOpen, nicknameError: '', ...nicknameSettings(this.data.user) });
+  },
+
+  submitNickname(e) {
+    const nickname = (e.detail.value.nickname || '').trim();
+    if (!nickname) { this.setData({ nicknameError: '请输入花名' }); return; }
+    this.saveNickname('/api/auth/me/nickname', { nickname }, '花名已保存');
+  },
+
+  toggleNicknameEnabled() {
+    const enabled = !this.data.user.nicknameEnabled;
+    this.saveNickname('/api/auth/me/nickname/status', { enabled }, enabled ? '花名已启用' : '花名已禁用');
+  },
+
+  async saveNickname(path, data, success) {
+    if (this.data.nicknameSaving) return;
+    const app = getApp();
+    const token = app.globalData.token;
+    this.setData({ nicknameSaving: true, nicknameError: '' });
+    try {
+      const user = await request(path, { method: 'PUT', data, silent: true });
+      if (app.globalData.token !== token) return;
+      app.setSession(token, user);
+      this.setData({ user, nicknameOpen: false, ...nicknameSettings(user) });
+      wx.showToast({ title: success, icon: 'none' });
+    } catch (err) {
+      this.setData({ nicknameError: err.message || '保存失败，请重试' });
+    } finally {
+      this.setData({ nicknameSaving: false });
+    }
   },
 
   togglePassword() {

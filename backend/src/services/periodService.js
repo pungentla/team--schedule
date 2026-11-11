@@ -456,7 +456,7 @@ function deletePeriod(id, ctx) {
 
 function listDeletedPeriods(ctx) {
   requirePeriodManager(ctx, true);
-  return db.all(`SELECT p.*, u.name AS deleted_by_name FROM periods p LEFT JOIN users u ON u.id=p.deleted_by
+  return db.all(`SELECT p.*, u.display_name AS deleted_by_name FROM periods p LEFT JOIN users u ON u.id=p.deleted_by
     WHERE p.deleted_at IS NOT NULL ORDER BY p.deleted_at DESC,p.id DESC`).map((p) => ({ ...periodRepo.toPeriodDto(p), deletedAt: p.deleted_at, deletedBy: p.deleted_by, deletedByName: p.deleted_by_name }));
 }
 

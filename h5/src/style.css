@@ -42,6 +42,7 @@ button, input { font: inherit; }
 .row-between > .section-title { margin: 0; }
 .row-between:has(> .section-title) { margin-bottom: 12px; }
 .muted { color: #59687e; font-size: 13px; line-height: 1.55; }
+.nickname-field .ant-form-item-row { flex-wrap: nowrap; gap: 8px; }
 .filters { margin-top: 12px; }
 .announcement-area { width: min(100%, 960px); margin: auto; padding: 8px 12px 0; }
 .announcement-area:empty { display: none; }

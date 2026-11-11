@@ -26,7 +26,7 @@ function getEffectiveEnrollments(periodId) {
   const scope = periodRepo.getScope(period);
   const withdrawals = new Map(db.all('SELECT user_id,withdrawn_work_type_ids_json FROM enrollments WHERE period_id=?', periodId).map((e) => [e.user_id, new Set(JSON.parse(e.withdrawn_work_type_ids_json))]));
   const entries = new Map(enrollmentRepo.loadSubmittedEnrollments(periodId).map((e) => [e.userId, { ...e, hasSubmitted: true }]));
-  const users = new Map(db.all("SELECT id,name,employee_no FROM users WHERE status='active'").map((u) => [u.id, u]));
+  const users = new Map(db.all("SELECT id,display_name AS name,employee_no FROM users WHERE status='active'").map((u) => [u.id, u]));
   const activeShifts = new Set(configRepo.listShifts({ includeInactive: false }).filter((s) => scope.shiftIds === null || scope.shiftIds.includes(s.id)).map((s) => s.id));
   for (const work of configRepo.listWorkTypes({ includeInactive: false }).filter((w) => scope.workTypeIds === null || scope.workTypeIds.includes(w.id))) {
     for (const rule of JSON.parse(work.weekly_assignments_json)) {

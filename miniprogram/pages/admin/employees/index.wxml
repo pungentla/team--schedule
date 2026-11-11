@@ -3,6 +3,7 @@
   <view class="user" wx:for="{{users}}" wx:key="id">
     <view class="info">
       <text class="name">{{item.name}}</text>
+      <text class="meta" wx:if="{{item.nickname}}">花名 {{item.nickname}}{{item.nicknameEnabled ? '' : '（已禁用）'}}</text>
       <text class="meta">{{item.employeeNo}} · {{item.roleLabel}}</text>
     </view>
     <view class="ops" wx:if="{{item.canEdit}}">

@@ -105,7 +105,7 @@ function countAssignments(runId) {
 /** 带员工与班次信息的分配列表 */
 function listAssignmentsWithUser(runId) {
   return db.all(
-    `SELECT a.*, u.name, u.employee_no,
+    `SELECT a.*, u.display_name AS name, u.employee_no,
             s.name AS shift_name, s.seq, s.start_time, s.end_time,
             wt.name AS work_type_name, wt.color AS work_type_color
        FROM assignments a
@@ -124,7 +124,7 @@ function findAssignment(id) {
 
 function listActiveParticipants() {
   return db.all(
-    `SELECT id, name, employee_no FROM users WHERE status = 'active' ORDER BY employee_no`
+    `SELECT id, display_name AS name, employee_no FROM users WHERE status = 'active' ORDER BY employee_no`
   );
 }
 

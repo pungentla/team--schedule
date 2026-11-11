@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from 'react';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import Badge from 'antd/es/badge';
 import Button from 'antd/es/button';
@@ -18,7 +18,7 @@ import Upload from 'antd/es/upload';
 import ShareAltOutlined from '@ant-design/icons/es/icons/ShareAltOutlined';
 import { TopicHeat } from './DiscussionPreview';
 import { TopicShare } from './TopicShare';
-import { API, Blank, Heading, Load, discussionName, option, timeText, useAction, useLoad } from './shared';
+import { API, Blank, Heading, Load, ProfileDisplayContext, discussionName, option, timeText, useAction, useLoad } from './shared';
 
 const categories = { chat: '闲聊', feedback: '吐槽', share: '文章分享', poll: '投票' };
 const categoryTabs = [{ key: 'all', label: '全部' }, ...Object.entries(categories).map(([key, label]) => ({ key, label }))];
@@ -71,6 +71,8 @@ export default function Discussions({ topicId, replyId, openVersion, back, open,
     return () => window.clearInterval(timer);
   }, []);
   const [pageKey, setPageKey] = useState(null);
+  const profileDisplay = useContext(ProfileDisplayContext);
+  useEffect(() => setPageKey(null), [profileDisplay]);
   const [feed, setFeed] = useState({ items: [], nextKey: null });
   const [expandedTopics, setExpandedTopics] = useState(() => new Set());
   const position = useRef(null);
@@ -444,6 +446,7 @@ function TopicReplies({ topicId, replyId, replyCount, anonymous, updated, close,
   const scrollPage = useRef(false);
   const [form] = Form.useForm();
   const query = useLoad(page ?? 'initial', () => API.topicReplies(topicId, page, replyId), true);
+  const replyTarget = query.data?.items.find(reply => reply.id === replyTo?.id) ?? replyTo;
   const { run, busy } = useAction();
   const { run: remove, busy: removing, confirm } = useAction();
   const syncReplyCount = useEffectEvent(total => {
@@ -548,7 +551,7 @@ function TopicReplies({ topicId, replyId, replyCount, anonymous, updated, close,
       }
     )}>
       {replyTo && <div className="topic-reply-reference muted">
-        <strong>回复 {discussionName(replyTo, anonymous)}</strong>
+        <strong>回复 {discussionName(replyTarget, anonymous)}</strong>
         <p className="topic-preview">{replyTo.content}</p>
       </div>}
       <Form.Item name="content" label={replyTo ? '回复' : '评论'} rules={[filled(replyTo ? '请输入回复内容' : '请输入评论内容')]}>

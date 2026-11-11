@@ -7,6 +7,19 @@
     </view>
   </view>
 
+  <view class="card" wx:if="{{nicknameOpen}}">
+    <view class="c-title">设置花名</view>
+    <text class="password-help">花名保存后 30 天可再更改。可随时启用或禁用，禁用时显示姓名。</text>
+    <text wx:if="{{nicknameLocked}}" class="password-help">下次可设置时间 {{nicknameAvailableAt}}</text>
+    <form bindsubmit="submitNickname">
+      <view class="password-field"><text>花名</text><input name="nickname" value="{{user.nickname || ''}}" maxlength="32" disabled="{{nicknameLocked || nicknameSaving}}" placeholder="输入花名" /></view>
+      <text class="password-error" wx:if="{{nicknameError}}">{{nicknameError}}</text>
+      <button form-type="submit" type="primary" loading="{{nicknameSaving}}" disabled="{{nicknameLocked || nicknameSaving}}">保存花名</button>
+      <button wx:if="{{user.nickname}}" bindtap="toggleNicknameEnabled" disabled="{{nicknameSaving}}">{{user.nicknameEnabled ? '禁用花名' : '启用花名'}}</button>
+      <button bindtap="toggleNickname" disabled="{{nicknameSaving}}">取消</button>
+    </form>
+  </view>
+
   <!-- 我的工作分布 -->
   <view class="card" wx:if="{{stats && stats.byWorkType.length}}">
     <view class="c-title">我的工作分布（共 {{stats.total}} 班）</view>
@@ -42,6 +55,7 @@
   </view>
 
   <view class="menu">
+    <view class="menu-item" bindtap="toggleNickname"><text>设置花名</text><text class="arrow">›</text></view>
     <view class="menu-item" bindtap="togglePassword"><text>修改密码</text><text class="arrow">›</text></view>
     <view class="menu-item" bindtap="goEnroll">
       <text>报名排班</text>

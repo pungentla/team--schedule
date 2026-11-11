@@ -19,7 +19,7 @@ const participantSelect = `SELECT author_id FROM discussion_topics WHERE id=?
   UNION SELECT author_id FROM discussion_replies WHERE topic_id=?`;
 const topicSelect = `SELECT t.id, t.category, t.title, t.content, t.article_url AS articleUrl,
     t.created_at AS createdAt, t.is_anonymous AS anonymous, t.poll_mode AS pollMode, t.poll_closes_at AS pollClosesAt,
-    CASE WHEN t.is_anonymous = 0 THEN u.name END AS authorName,
+    CASE WHEN t.is_anonymous = 0 THEN u.display_name END AS authorName,
     a.name AS anonymousName,
     (SELECT COUNT(*) FROM discussion_replies r WHERE r.topic_id = t.id) AS replyCount,
     (SELECT COUNT(*) FROM discussion_images i WHERE i.topic_id = t.id) AS imageCount,
@@ -93,8 +93,8 @@ function pollResults(topicId, userId, { pollMode: mode, anonymous }) {
     ? db.pluck('SELECT COUNT(DISTINCT user_id) FROM discussion_poll_votes WHERE topic_id = ?', topicId) : null;
   if (!anonymous && votedPositions.length) {
     const votersByOption = new Map(options.map(option => [option.position, []]));
-    const voters = db.all(`SELECT v.position, u.name FROM discussion_poll_votes v JOIN users u ON u.id = v.user_id
-      WHERE v.topic_id = ? ORDER BY v.position, u.name, u.id`, topicId);
+    const voters = db.all(`SELECT v.position, u.display_name AS name FROM discussion_poll_votes v JOIN users u ON u.id = v.user_id
+      WHERE v.topic_id = ? ORDER BY v.position, name, u.id`, topicId);
     for (const { position, name } of voters) votersByOption.get(position).push(name);
     for (const option of options) option.voters = votersByOption.get(option.position);
   }
@@ -286,9 +286,9 @@ router.get('/:id/replies', (req, res) => {
     if (anchor) page = 1 + Math.floor(db.pluck('SELECT COUNT(*) FROM discussion_replies WHERE topic_id = ? AND id < ?', topicId, anchor) / PAGE_SIZE);
   }
   const items = db.all(`SELECT r.id, r.content, r.created_at AS createdAt, (unread.reply_id IS NOT NULL) AS unread,
-      CASE WHEN t.is_anonymous = 0 THEN u.name END AS authorName, (r.author_id IS ? OR ?) AS canDelete,
+      CASE WHEN t.is_anonymous = 0 THEN u.display_name END AS authorName, (r.author_id IS ? OR ?) AS canDelete,
       a.name AS anonymousName, parent_alias.name AS replyToAnonymousName,
-      parent.id AS replyToId, CASE WHEN t.is_anonymous = 0 THEN parent_user.name END AS replyToName,
+      parent.id AS replyToId, CASE WHEN t.is_anonymous = 0 THEN parent_user.display_name END AS replyToName,
       substr(parent.content, 1, 120) AS replyToExcerpt
     FROM discussion_replies r JOIN discussion_topics t ON t.id = r.topic_id LEFT JOIN users u ON u.id = r.author_id
     LEFT JOIN discussion_replies parent ON parent.id = r.parent_reply_id AND parent.topic_id = r.topic_id

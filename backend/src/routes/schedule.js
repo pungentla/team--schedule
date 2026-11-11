@@ -124,7 +124,7 @@ router.get('/periods/:periodId/input-preview', requireAuth, requireAdmin, (req, 
 router.get('/assignments/:id/explain', requireAuth, requireAdmin, (req, res) => {
   const id = intParam(req.params.id, 'id');
   const row = db.get(
-    `SELECT a.*, s.seq, u.name, u.employee_no FROM assignments a
+    `SELECT a.*, s.seq, u.display_name AS name, u.employee_no FROM assignments a
        JOIN shifts s ON s.id = a.shift_id
        JOIN users u ON u.id = a.user_id
       WHERE a.id = ?`,

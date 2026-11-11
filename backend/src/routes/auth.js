@@ -6,7 +6,8 @@ const express = require('express');
 const authService = require('../services/authService');
 const userRepo = require('../repositories/userRepo');
 const { requireAuth } = require('../middleware/auth');
-const { optionalString, requireString } = require('../utils/validate');
+const { optionalString, requireBoolean, requireString } = require('../utils/validate');
+const { badRequest } = require('../utils/errors');
 
 const router = express.Router();
 
@@ -46,6 +47,18 @@ router.post('/logout', requireAuth, (req, res) => {
 router.get('/me', requireAuth, (req, res) => {
   const user = userRepo.findById(req.user.id);
   res.json({ data: userRepo.publicUser(user) });
+});
+
+router.put('/me/nickname', requireAuth, (req, res) => {
+  const nickname = requireString(req.body?.nickname, '花名', { max: 32 }).normalize('NFC');
+  if (/[\p{Cc}\u2028-\u202e\u2066-\u2069]/u.test(nickname)) throw badRequest('请输入单行花名');
+  const enabled = req.body.enabled === undefined ? undefined : requireBoolean(req.body.enabled, '花名启用状态');
+  res.set('Cache-Control', 'no-store').json({ data: userRepo.updateNickname(req.user.id, nickname, enabled) });
+});
+
+router.put('/me/nickname/status', requireAuth, (req, res) => {
+  const enabled = requireBoolean(req.body?.enabled, '花名启用状态');
+  res.set('Cache-Control', 'no-store').json({ data: userRepo.setNicknameEnabled(req.user.id, enabled) });
 });
 
 router.post('/password', requireAuth, (req, res) => {

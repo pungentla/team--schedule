@@ -382,14 +382,14 @@ function getSchedule(periodId, viewer, { runId, version } = {}) {
   }
 
   const rows = scheduleRepo.listAssignmentsWithUser(run.id);
-  const savedGaps = run.gaps_json ? safeParse(run.gaps_json) : null;
+  const { gaps: savedGaps, metrics } = readRunReports(run);
   const roleWorkTypes = new Set((savedGaps?.byWorkType || []).filter((w) => w.requiresRoles).map((w) => w.workTypeId));
   const allEmployees = scheduleRepo.listActiveParticipantCount();
 
   const assignments = rows.map((r) => ({
     id: r.id,
     userId: r.user_id,
-    // 员工之间互相可见姓名，工号仅管理员可见
+    // 员工之间可见显示名，工号仅管理员可见
     name: r.name,
     employeeNo: ['admin', 'super_admin'].includes(viewer.role) ? r.employee_no : maskEmployeeNo(r.employee_no),
     workDate: r.work_date,
@@ -504,8 +504,8 @@ function getSchedule(periodId, viewer, { runId, version } = {}) {
     employees,
     myAssignments,
     matrix,
-    gaps: run.gaps_json ? safeParse(run.gaps_json) : null,
-    metrics: run.metrics_json ? safeParse(run.metrics_json) : null,
+    gaps: savedGaps,
+    metrics,
     activatedEmployees: allEmployees,
   };
 }
@@ -521,6 +521,27 @@ function safeParse(s) {
   } catch {
     return null;
   }
+}
+
+function readRunReports(run) {
+  const gaps = safeParse(run.gaps_json);
+  const metrics = safeParse(run.metrics_json);
+  if (!gaps && !metrics) return { gaps, metrics };
+
+  const names = new Map(db.all('SELECT id, display_name AS name FROM users').map(user => [user.id, user.name]));
+  function updateNames(people) {
+    for (const person of people ?? []) {
+      if (names.has(person.userId)) person.name = names.get(person.userId);
+    }
+  }
+  updateNames(gaps?.byEmployee);
+  updateNames(gaps?.fixedConflicts);
+  for (const shift of gaps?.byDateShift ?? []) {
+    for (const item of shift.items ?? []) updateNames(item.candidates);
+  }
+  updateNames(metrics?.workload?.distribution);
+  for (const workType of metrics?.perWorkType ?? []) updateNames(workType.distribution);
+  return { gaps, metrics };
 }
 
 /** 我的排班（跨周期） */
@@ -572,7 +593,7 @@ function getRecentSchedule(userId, range) {
   const { startDate, endDate } = recentDateRange(range);
   const rows = db.all(`SELECT a.*, p.name AS period_name, s.name AS shift_name, s.start_time, s.end_time,
       w.name AS work_type_name, w.color AS work_type_color,
-      peer.user_id AS peer_id, u.name AS peer_name, peer.duty_role AS peer_role
+      peer.user_id AS peer_id, u.display_name AS peer_name, peer.duty_role AS peer_role
     FROM assignments a
     JOIN schedule_runs r ON r.id=a.run_id AND r.status='published'
     JOIN periods p ON p.id=a.period_id AND p.deleted_at IS NULL
@@ -598,7 +619,7 @@ function getRecentSchedule(userId, range) {
 
 function getTeamSchedule(range) {
   const { startDate, endDate } = recentDateRange(range);
-  const rows = db.all(`SELECT a.id, a.user_id, a.work_date, a.duty_role, a.work_type_id, u.name, p.name AS period_name,
+  const rows = db.all(`SELECT a.id, a.user_id, a.work_date, a.duty_role, a.work_type_id, u.display_name AS name, p.name AS period_name,
       s.name AS shift_name, s.start_time, s.end_time, w.name AS work_type_name
     FROM assignments a
     JOIN schedule_runs r ON r.id=a.run_id AND r.status='published'
@@ -607,7 +628,7 @@ function getTeamSchedule(range) {
     JOIN shifts s ON s.id=a.shift_id
     JOIN work_types w ON w.id=a.work_type_id
     WHERE a.status='active' AND a.work_date BETWEEN ? AND ?
-    ORDER BY a.work_date,u.name,a.user_id,s.seq,w.sort_order,a.id`, startDate, endDate);
+    ORDER BY a.work_date,name,a.user_id,s.seq,w.sort_order,a.id`, startDate, endDate);
   return { startDate, endDate, assignments: rows.map((r) => ({
     id: r.id, userId: r.user_id, name: r.name, workDate: r.work_date, dutyRole: r.duty_role,
     periodName: r.period_name, shiftName: r.shift_name, startTime: r.start_time.slice(0, 5),
@@ -634,7 +655,7 @@ function getDashboard() {
         totalNeeded: run.total_needed,
         totalFilled: run.total_filled,
         fillRate: run.fill_rate,
-        metrics: run.metrics_json ? safeParse(run.metrics_json) : null,
+        metrics: readRunReports(run).metrics,
       };
     }
     pendingSwaps = db.pluck(
