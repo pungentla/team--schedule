@@ -15,6 +15,8 @@ const service = require('../src/services/periodService');
 const { getPreparation } = require('../src/services/periodWorkflowService');
 const enrollment = require('../src/services/enrollmentService');
 const schedule = require('../src/services/scheduleService');
+const { updatePublishedWork } = require('../src/services/publishedWorkService');
+const swaps = require('../src/services/swapService');
 let admin, employee, shift, work;
 const ctx = () => ({ user: { id: admin, role: 'super_admin' }, requestId: 'workflow-test' });
 const create = (extra = {}) => service.createPeriod({ name: '流程验证', startDate: '2026-11-09', endDate: '2026-11-15', initializeRequirements: true, ...extra }, ctx());
@@ -27,6 +29,82 @@ test.beforeEach(() => {
 });
 test.after(() => { db.close(); fs.rmSync(tmp, { recursive: true, force: true }); });
 
+test('跨周期参考历史时周日工作优先轮到其他报名人，只有一人符合时仍可安排', () => {
+  configs.updateWorkType(work, { weeklyAssignments: [] });
+  const previous = create({ startDate: '2026-11-08', endDate: '2026-11-08' });
+  const workTypes = [{ workTypeId: work }];
+  enrollment.saveAdminEnrollment(previous.id, employee, { workTypes }, ctx());
+  const oldRun = schedule.generate(previous.id, {}, ctx());
+  schedule.publish(previous.id, oldRun.runId, ctx());
+
+  const third = users.insertUser({ employeeNo: 'OTHER', name: '另一位员工', passwordHash: 'fixture' });
+  const current = create({ startDate: '2026-11-15', endDate: '2026-11-29' });
+  for (const person of [employee, admin, third]) enrollment.saveAdminEnrollment(current.id, person, { workTypes }, ctx());
+  const withHistory = schedule.generate(current.id, { referenceHistory: true }, ctx());
+  assert.deepEqual(new Set(withHistory.assignments.slice(0, 2).map(assignment => assignment.userId)), new Set([admin, third]));
+  assert.equal(withHistory.assignments[2].userId, employee);
+  assert.equal(schedule.getSchedule(current.id, ctx().user, { runId: withHistory.runId }).run.referenceHistory, true);
+  for (const person of [admin, third]) db.run('UPDATE enrollments SET max_shifts=0 WHERE period_id=? AND user_id=?', current.id, person);
+  const fallback = schedule.generate(current.id, { referenceHistory: true }, ctx());
+  assert.equal(fallback.assignments.length, 3);
+  assert.ok(fallback.assignments.every(assignment => assignment.userId === employee));
+  const withoutHistory = schedule.generate(current.id, { referenceHistory: false }, ctx());
+  assert.equal(withoutHistory.assignments.length, 3);
+  assert.equal(schedule.getSchedule(current.id, ctx().user, { runId: withoutHistory.runId }).run.referenceHistory, false);
+  assert.equal(schedule.publish(current.id, withoutHistory.runId, ctx()).filled, 3);
+});
+
+test('生效工作可补人但需求人数不变，满员后拒绝继续补人', () => {
+  const period = create();
+  const draft = schedule.generate(period.id, {}, ctx());
+  const preview = schedule.getSchedule(period.id, ctx().user, { runId: draft.runId });
+  schedule.adjustDraft(draft.runId, { action: 'remove', assignmentId: preview.assignments[0].id }, ctx());
+  schedule.publish(period.id, draft.runId, ctx());
+  const published = () => schedule.getSchedule(period.id, ctx().user, { runId: draft.runId });
+  const before = published();
+  const change = {
+    action: 'fill', revision: before.run.revision, workDate: '2026-11-15', shiftId: shift, workTypeId: work,
+    people: [{ userId: employee, dutyRole: 'member' }],
+  };
+  const result = updatePublishedWork(draft.runId, change, ctx());
+  const after = published();
+  assert.equal(after.run.totalNeeded, before.run.totalNeeded);
+  assert.equal(after.run.totalFilled, 1);
+  assert.equal(after.matrix[0].shifts[0].workTypes[0].gap, 0);
+  assert.throws(() => updatePublishedWork(draft.runId, { ...change, revision: result.revision }, ctx()), error => error.code === 'PUBLISHED_WORK_FULL');
+});
+
+test('手动增删生效工作同步安排、需求快照和待确认换班', t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-11T04:00:00Z') });
+  const extraWork = configs.insertWorkType({ code: 'EXTRA', name: '加开工作', defaultNeed: 0 });
+  const period = create();
+  const target = { workDate: '2026-11-15', shiftId: shift, workTypeId: extraWork };
+  for (const person of [employee, admin]) enrollment.saveAdminEnrollment(period.id, person, { workTypes: [{ workTypeId: extraWork }] }, ctx());
+  const { runId } = schedule.generate(period.id, {}, ctx());
+  schedule.publish(period.id, runId, ctx());
+  const current = () => schedule.getSchedule(period.id, ctx().user, { runId });
+  const original = current();
+  const added = updatePublishedWork(runId, { ...target, action: 'add', revision: original.run.revision,
+    people: [{ userId: employee, dutyRole: 'member' }] }, ctx());
+  const withWork = current();
+  const assignment = withWork.assignments.find(item => item.workTypeId === extraWork);
+  assert.equal(assignment.source, 'manual');
+  assert.equal(withWork.run.totalNeeded, original.run.totalNeeded + 1);
+  assert.equal(withWork.run.totalFilled, original.run.totalFilled + 1);
+  assert.ok(withWork.metrics.perWorkType.some(item => item.workTypeId === extraWork));
+  assert.throws(() => updatePublishedWork(runId, { ...target, action: 'remove', revision: original.run.revision }, ctx()), error => error.code === 'PUBLISHED_CHANGED');
+  const swap = swaps.createSwap({ type: 'transfer', fromAssignmentId: assignment.id, toUserId: admin },
+    { user: users.publicUser(users.findById(employee)), requestId: 'published-work-test' }).swap;
+  updatePublishedWork(runId, { ...target, action: 'remove', revision: added.revision }, ctx());
+  const after = current();
+  assert.deepEqual(after.assignments, original.assignments);
+  assert.equal(after.run.totalNeeded, original.run.totalNeeded);
+  assert.equal(after.run.totalFilled, original.run.totalFilled);
+  assert.equal(db.pluck('SELECT status FROM swap_requests WHERE id=?', swap.id), 'cancelled');
+  assert.equal(db.pluck('SELECT status FROM assignments WHERE id=?', assignment.id), 'released');
+  assert.ok(!after.metrics.perWorkType.some(item => item.workTypeId === extraWork));
+});
+
 test('新建周期一步准备日期班次及默认需求，固定人员自动参与并可直接生成发布', () => {
   configs.insertShift({ code: 'DISABLED', name: '停用班次', startTime: '14:00', endTime: '18:00', seq: 2, active: 0 });
   configs.updateWorkType(work, { defaultNeed: 0 });
@@ -38,6 +116,8 @@ test('新建周期一步准备日期班次及默认需求，固定人员自动�
   assert.equal(matrix.dates[0].shifts[0].requirements[0].needCount, 0);
   const ready = getPreparation(p.id);
   assert.equal(ready.canGenerate, true); assert.equal(ready.fixedCount, 1); assert.equal(ready.submittedCount, 0);
+  assert.deepEqual(ready.participants[0].workTypes, [{ id: work, name: '周日工作', fixedOnly: true }]);
+  assert.equal(ready.participants[0].submittedAt, null);
   assert.equal(ready.nextStep, 'people'); assert.equal(p.status, 'draft');
   const run = schedule.generate(p.id, {}, ctx()); schedule.publish(p.id, run.runId, ctx());
   assert.equal(getPreparation(p.id).nextStep, 'generate');
@@ -96,9 +176,14 @@ test('准备检查只统计匹配实际需求的人员，其他工作报名和�
   service.changeStatus(p.id, 'enrolling', ctx());
   enrollment.saveEnrollment(p.id, employee, { workTypes: [{ workTypeId: other, priority: 1 }], submit: true }, { user: { id: employee, role: 'employee' } });
   assert.equal(getPreparation(p.id).participants.length, 0);
-  enrollment.saveEnrollment(p.id, employee, { workTypes: [{ workTypeId: work, priority: 1 }], submit: true }, { user: { id: employee, role: 'employee' } });
+  const submitted = enrollment.saveEnrollment(p.id, employee, { workTypes: [{ workTypeId: work, priority: 1 }, { workTypeId: other, priority: 2 }], submit: true }, { user: { id: employee, role: 'employee' } });
   const ready = getPreparation(p.id);
   assert.equal(ready.canGenerate, true); assert.equal(ready.submittedCount, 1); assert.equal(ready.fixedCount, 0);
+  assert.deepEqual(ready.participants[0].workTypes, [
+    { id: work, name: '周日工作', fixedOnly: false },
+    { id: other, name: '其他工作', fixedOnly: false },
+  ]);
+  assert.equal(ready.participants[0].submittedAt, submitted.submittedAt);
 });
 test('就绪检查过滤停用工作、停用班次和无效主副人数，固定与普通报名去重', () => {
   const p = create();

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import Alert from 'antd/es/alert';
 import App from 'antd/es/app';
 import Button from 'antd/es/button';
@@ -10,6 +10,7 @@ import Tag from 'antd/es/tag';
 import dayjs from 'dayjs';
 import { API } from './api';
 import { helpContent } from './help';
+import { usePullRefresh } from './PullToRefresh';
 
 export const periodLabels = { draft: '未开放', enrolling: '报名中', scheduling: '排班中', published: '已发布', archived: '已归档' };
 export const roleLabels = { member: '普通成员', primary: '主负责人', deputy: '副负责人', both: '主副皆可', either: '主/副额外名额' };
@@ -45,20 +46,54 @@ export const ProfileDisplayContext = createContext(null);
 export function useLoad(key, load, keepPrevious = false) {
   const profileDisplay = useContext(ProfileDisplayContext);
   const [result, setResult] = useState({});
-  const [revision, setRevision] = useState(0);
+  const [revision, setRevision] = useState({});
+  const pendingPull = useRef(null);
+  useEffect(() => () => {
+    pendingPull.current?.resolve(true);
+    pendingPull.current = null;
+  }, []);
   useEffect(() => {
-    if (key == null) return;
+    const pull = pendingPull.current;
+    function finish(success) {
+      if (pull && pendingPull.current === pull) {
+        pendingPull.current = null;
+        pull.resolve(success);
+      }
+    }
+    if (key == null) { finish(true); return; }
     let current = true;
     Promise.resolve().then(load).then(data => {
-      if (current) setResult({ key, revision, profileDisplay, data });
+      if (!current) return;
+      setResult({ key, revision, profileDisplay, data });
+      finish(true);
     }, error => {
-      if (current) setResult({ key, revision, profileDisplay, error });
+      if (!current) return;
+      setResult(previous => pull && previous.key === key && previous.data !== undefined
+        ? { key, revision, profileDisplay, data: previous.data }
+        : { key, revision, profileDisplay, error });
+      finish(false);
     });
     return () => { current = false; };
   }, [key, revision, profileDisplay]);
+  const refresh = () => setRevision({ pull: !!pendingPull.current });
+  function refreshPage() {
+    if (pendingPull.current) return pendingPull.current.promise;
+    let resolve;
+    const promise = new Promise(done => { resolve = done; });
+    pendingPull.current = { promise, resolve };
+    refresh();
+    return promise;
+  }
   const sameRequest = result.key === key && result.revision === revision;
   const match = sameRequest && result.profileDisplay === profileDisplay;
-  return { ...(sameRequest || (keepPrevious && result.key === key) ? result : {}), loading: key != null && !match, refresh: () => setRevision(n => n + 1) };
+  return { ...(sameRequest || ((keepPrevious || revision.pull) && result.key === key) ? result : {}),
+    loading: key != null && !match, refresh, refreshPage };
+}
+
+export function usePageLoad(key, load, keepPrevious = false) {
+  const query = useLoad(key, load, keepPrevious);
+  usePullRefresh(query.refreshPage, key != null);
+  return query;
 }
 export function useAction() {
   const { message, modal } = App.useApp();
@@ -99,9 +134,16 @@ export const DutyTag = ({ role }) => role && role !== 'member' ? <Tag color="blu
 export const required = [{ required: true, message: '请填写此项' }];
 export async function checkRemoval(context, enrollment, works, confirm) {
   if (context.period.status !== 'published') return true;
-  const selected = new Set(works.map(w => w.workTypeId));
+  const selected = new Map(works.map(w => [w.workTypeId, w]));
   const previous = [...(enrollment.submittedWorkTypeIds || []), ...(context.fixedAssignments || []).map(a => a.workTypeId)].filter(id => !(enrollment.withdrawnWorkTypeIds || []).includes(id));
-  return !previous.some(id => !selected.has(id)) || confirm('取消部分工作报名？', '取消后，将移除明天起本周期内对应工作的已发布安排。', true);
+  const cancelled = previous.some(id => !selected.has(id));
+  const narrowed = works.some(work => {
+    if (!work.weekdays || !previous.includes(work.workTypeId)) return false;
+    const oldDays = enrollment.status === 'submitted' && enrollment.workTypes.find(w => w.workTypeId === work.workTypeId)?.weekdays;
+    const openDays = context.workTypes.find(w => w.id === work.workTypeId)?.weekdays || [];
+    return (oldDays || openDays).some(day => !work.weekdays.includes(day));
+  });
+  return !(cancelled || narrowed) || confirm('确认取消部分报名？', '明天起，本周期被取消的工作或星期所对应的已发布安排将移除。', true);
 }
 export function savedEnrollment(result) {
   const c = result.scheduleChanges;

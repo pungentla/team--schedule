@@ -7,6 +7,7 @@ const configRepo = require('../repositories/configRepo');
 const enrollmentRepo = require('../repositories/enrollmentRepo');
 const scheduleRepo = require('../repositories/scheduleRepo');
 const auditRepo = require('../repositories/auditRepo');
+const { enrollmentOpened } = require('./systemNoticeService');
 const db = require('../db/db');
 const { PERIOD_STATUS, PERIOD_DEFAULTS } = require('../config');
 const { badRequest, notFound, conflict, forbidden } = require('../utils/errors');
@@ -100,29 +101,32 @@ function updatePeriod(id, fields, ctx) {
 
 /** 状态流转，带合法性校验 */
 function changeStatus(id, nextStatus, ctx) {
-  const p = assertPeriod(id);
-  const allowed = ALLOWED_TRANSITIONS[p.status] || [];
-  if (p.status === nextStatus) return periodRepo.toPeriodDto(p);
-  if (!allowed.includes(nextStatus)) {
-    throw conflict(
-      'INVALID_STATUS_TRANSITION',
-      `周期状态不能从 ${p.status} 变为 ${nextStatus}（允许：${allowed.join(', ') || '无'}）`
-    );
-  }
-  if ([PERIOD_STATUS.DRAFT, PERIOD_STATUS.ENROLLING].includes(nextStatus) && scheduleRepo.findLatestDraftRun(id)) {
-    throw conflict('PERIOD_HAS_DRAFT', '已有待发布草稿，不能退回报名阶段');
-  }
-  periodRepo.updatePeriod(id, { status: nextStatus });
-  auditRepo.log({
-    action: auditRepo.ACTIONS.PERIOD_UPDATE,
-    entityType: 'period',
-    entityId: id,
-    periodId: id,
-    actorId: ctx.user.id,
-    detail: { from: p.status, to: nextStatus },
-    requestId: ctx.requestId,
+  return db.tx(() => {
+    const p = assertPeriod(id);
+    const allowed = ALLOWED_TRANSITIONS[p.status] || [];
+    if (p.status === nextStatus) return periodRepo.toPeriodDto(p);
+    if (!allowed.includes(nextStatus)) {
+      throw conflict(
+        'INVALID_STATUS_TRANSITION',
+        `周期状态不能从 ${p.status} 变为 ${nextStatus}（允许：${allowed.join(', ') || '无'}）`
+      );
+    }
+    if ([PERIOD_STATUS.DRAFT, PERIOD_STATUS.ENROLLING].includes(nextStatus) && scheduleRepo.findLatestDraftRun(id)) {
+      throw conflict('PERIOD_HAS_DRAFT', '已有待发布草稿，不能退回报名阶段');
+    }
+    periodRepo.updatePeriod(id, { status: nextStatus });
+    auditRepo.log({
+      action: auditRepo.ACTIONS.PERIOD_UPDATE,
+      entityType: 'period',
+      entityId: id,
+      periodId: id,
+      actorId: ctx.user.id,
+      detail: { from: p.status, to: nextStatus },
+      requestId: ctx.requestId,
+    });
+    if (nextStatus === PERIOD_STATUS.ENROLLING) enrollmentOpened(p);
+    return periodRepo.toPeriodDto(periodRepo.findPeriod(id));
   });
-  return periodRepo.toPeriodDto(periodRepo.findPeriod(id));
 }
 
 /**

@@ -12,21 +12,21 @@ import Select from 'antd/es/select';
 import Tabs from 'antd/es/tabs';
 import Tag from 'antd/es/tag';
 import TimePicker from 'antd/es/time-picker';
-import { API, Heading, Help, Load, accountRoles, dayjs, option, personLabel, required, roleOptions, shiftText, useAction, useLoad, weekdays } from './shared';
+import { API, Heading, Help, Load, accountRoles, dayjs, option, personLabel, required, roleOptions, shiftText, useAction, usePageLoad, weekdays } from './shared';
 
 const days = [1, 2, 3, 4, 5, 6, 0];
 const newCode = prefix => prefix + '_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
 const inputPassword = [{ required: true, min: 6, max: 128, message: '密码需为 6–128 位' }];
 
 export function Settings({ user, tab, setTab, back, onSessionChanged }) {
-  const query = useLoad('settings', () => Promise.all([API.workTypes(), API.shifts(), API.adminUsers()]));
+  const query = usePageLoad('settings', () => Promise.all([API.workTypes(), API.shifts(), API.adminUsers()]));
   return <Card>
     <Button type="link" className="period-back" onClick={back}>← 返回安排排班</Button>
     <div className="row-between"><Heading>基础设置</Heading><Button onClick={query.refresh}>刷新</Button></div>
     <Load query={query}>{([works, shifts, users]) => <Tabs activeKey={tab} onChange={setTab} items={[
       { key: 'worktypes', label: '工作类型', children: <><div className="inline muted">设置工作日和默认人数 <Help name="worktypes" /></div><Collapse accordion destroyOnHidden items={[
         { key: 'new', label: '＋ 新增工作类型', children: <WorkForm users={users} shifts={shifts} saved={query.refresh} /> },
-        ...works.map(w => ({ key: w.id, label: <>{w.name} · {w.active ? '启用' : '停用'} {w.requiresRoles && <Tag color="blue">主 + 副</Tag>}{w.dutyPairs?.length > 0 && <Tag>{w.dutyPairs.length} 组搭档</Tag>}</>, children: <WorkForm work={w} users={users} shifts={shifts} saved={query.refresh} /> })),
+        ...works.map(w => ({ key: w.id, label: <>{w.name} · {w.active ? '启用' : '停用'} {w.requiresRoles && <Tag color="blue">主 + 副</Tag>}{w.dutyPairs?.length > 0 && <Tag>{w.dutyPairs.length} 种搭配</Tag>}</>, children: <WorkForm work={w} users={users} shifts={shifts} saved={query.refresh} /> })),
       ]} /></> },
       { key: 'shifts', label: '班次', children: <><div className="inline muted">设置班次时间 <Help name="shifts" /></div><Collapse accordion destroyOnHidden items={[
         { key: 'new', label: '＋ 新增班次', children: <ShiftForm seq={Math.max(0, ...shifts.map(s => s.seq)) + 1} saved={query.refresh} /> },
@@ -48,13 +48,21 @@ function WorkForm({ work, users, shifts, saved }) {
   const { run, busy } = useAction();
   const people = users.map(u => ({ ...option(u.id, personLabel({ ...u, name: u.displayName ?? u.name }) + (u.status === 'active' ? '' : ' · 停用')), disabled: u.status !== 'active' }));
   const shiftOptions = shifts.map(s => ({ ...option(s.id, shiftText(s) + (s.active ? '' : ' · 停用')), disabled: !s.active }));
-  const initialValues = { name: '', description: '', color: '#4A90D9', sortOrder: 0, weekdays: [0], defaultNeed: 1, requiresRoles: false, weeklyAssignments: [], dutyPairs: [], active: true, ...work };
+  const deputiesByPrimary = new Map();
+  for (const { primaryUserId, deputyUserId } of work?.dutyPairs || []) {
+    if (!deputiesByPrimary.has(primaryUserId)) deputiesByPrimary.set(primaryUserId, []);
+    deputiesByPrimary.get(primaryUserId).push(deputyUserId);
+  }
+  const dutyGroups = [...deputiesByPrimary].map(([primaryUserId, deputyUserIds]) => ({ primaryUserId, deputyUserIds }));
+  const initialValues = { name: '', description: '', color: '#4A90D9', sortOrder: 0, weekdays: [0], allowWeekdaySelection: false, defaultNeed: 1, requiresRoles: false, weeklyAssignments: [], active: true, ...work, dutyGroups };
   function save(values) {
     const body = {
       name: values.name.trim(), description: values.description?.trim() || '', color: typeof values.color === 'string' ? values.color : values.color.toHexString(),
       sortOrder: values.sortOrder, weekdays: values.weekdays || [], defaultNeed: values.defaultNeed, requiresRoles: values.requiresRoles,
+      allowWeekdaySelection: values.allowWeekdaySelection,
       weeklyAssignments: (values.weeklyAssignments || []).map(a => ({ ...a, dutyRole: values.requiresRoles ? a.dutyRole === 'deputy' ? 'deputy' : 'primary' : 'member' })),
-      dutyPairs: values.requiresRoles ? values.dutyPairs || [] : [],
+      dutyPairs: values.requiresRoles ? (values.dutyGroups || []).flatMap(({ primaryUserId, deputyUserIds }) =>
+        deputyUserIds.map(deputyUserId => ({ primaryUserId, deputyUserId }))) : [],
     };
     return run(() => work ? API.updateWorkType(work.id, { ...body, active: values.active }) : API.createWorkType({ ...body, code: newCode('WT') }), '工作配置已保存', saved);
   }
@@ -66,15 +74,18 @@ function WorkForm({ work, users, shifts, saved }) {
       <Form.Item name="sortOrder" label="显示排序" rules={required}><InputNumber min={0} max={999} precision={0} /></Form.Item>
     </div>
     <Form.Item name="requiresRoles" valuePropName="checked"><Checkbox onChange={e => { if (e.target.checked && form.getFieldValue('defaultNeed') === 1) form.setFieldValue('defaultNeed', 2); }}>区分主副负责人</Checkbox></Form.Item>
-    {roles && <Form.List name="dutyPairs">{(fields, { add, remove }) => <div className="stack form-section">
+    {roles && <Form.List name="dutyGroups">{(fields, { add, remove }) => <div className="stack form-section">
       <Heading help="pairs">固定搭档轮值</Heading>
       {fields.map(({ key, name }) => <div className="choice" key={key}><div className="form-grid">
         <Form.Item name={[name, 'primaryUserId']} label="主负责人" rules={required}><Select showSearch optionFilterProp="label" options={people} /></Form.Item>
-        <Form.Item name={[name, 'deputyUserId']} label="副负责人" rules={required}><Select showSearch optionFilterProp="label" options={people} /></Form.Item>
+        <Form.Item name={[name, 'deputyUserIds']} label="副负责人" rules={[{ required: true, type: 'array', min: 1, message: '请选择至少一位副负责人' }]}>
+          <Select mode="multiple" optionFilterProp="label" options={people} placeholder="可多选" />
+        </Form.Item>
       </div><Button danger type="text" onClick={() => remove(name)}>移除此组</Button></div>)}
-      <Button onClick={() => add()}>＋ 添加主副搭档</Button>
+      <Button onClick={() => add()}>＋ 添加一组搭档</Button>
     </div>}</Form.List>}
     <Form.Item name="weekdays" label="每周需要哪些天"><Checkbox.Group options={days.map(d => option(d, weekdays[d]))} /></Form.Item>
+    <Form.Item name="allowWeekdaySelection" valuePropName="checked"><Checkbox>允许自选报名星期</Checkbox></Form.Item>
     <Form.Item name="defaultNeed" label="默认每班人数" rules={[...required, { validator: (_, v) => roles && v === 1 ? Promise.reject(new Error('主副工作至少需要 2 人')) : Promise.resolve() }]}><InputNumber min={0} max={99} precision={0} /></Form.Item>
     <Form.List name="weeklyAssignments">{(fields, { add, remove }) => <div className="stack form-section">
       <Heading help="fixed">长期固定人员</Heading>

@@ -47,7 +47,7 @@ function notifySwap(actorId, userIds, body, swapId) {
     title: '时禾 · 换班提醒', body,
     tag: swapId ? `shihe-swap-${swapId}` : 'shihe-schedule-change',
     path: swapId ? `/?swap=${swapId}` : '/',
-  });
+  }, 'swap');
 }
 
 /**
@@ -590,13 +590,16 @@ function refreshRunMetrics(runId) {
     workTypes: new Map(previous.perWorkType.filter((w) => w.distribution.some((d) => d.userId === u.userId)).map((w) => [w.workTypeId, 1])),
     historyCount: (id) => previous.perWorkType.find((w) => w.workTypeId === id)?.distribution.find((d) => d.userId === u.userId)?.historyCount || 0,
   }));
-  const history = require('./scheduleService').loadHistory(periodRepo.findPeriod(run.period_id).start_date);
+  const history = run.reference_history === 0 ? new Map() : require('./scheduleService').loadHistory(periodRepo.findPeriod(run.period_id).start_date);
   for (const e of enrollmentService.getEffectiveEnrollments(run.period_id)) {
     const current = employees.find((u) => u.id === e.userId);
     if (current) e.workTypes.forEach((w) => current.workTypes.set(w.workTypeId, w.priority));
     else employees.push({ id: e.userId, name: e.name, employeeNo: e.employeeNo, historyTotal: history.get(e.userId)?.total || 0, workTypes: new Map(e.workTypes.map((w) => [w.workTypeId, w.priority])), historyCount: (id) => history.get(e.userId)?.byWorkType.get(id) || 0 });
   }
-  const workTypes = previous.perWorkType.map((w) => ({ id: w.workTypeId, name: w.workTypeName, color: w.workTypeColor }));
+  const requirements = run.gaps_json ? JSON.parse(run.gaps_json).requirements : null;
+  const workTypes = [...new Map((requirements ?? previous.perWorkType).map(w => [
+    w.workTypeId, { id: w.workTypeId, name: w.workTypeName, color: w.workTypeColor },
+  ])).values()];
   const active = scheduleRepo.listAssignmentsWithUser(runId).map((a) => ({ userId: a.user_id, workTypeId: a.work_type_id, workDate: a.work_date, shiftId: a.shift_id }));
   db.run('UPDATE schedule_runs SET metrics_json=? WHERE id=?', JSON.stringify(computeMetrics({ employees, workTypes, assignments: active })), runId);
 }

@@ -10,6 +10,7 @@ const { migrate } = require('../src/db/migrate');
 const { createApp } = require('../src/app');
 const { issueSession } = require('../src/services/authService');
 const { insertUser } = require('../src/repositories/userRepo');
+const { setPreference } = require('../src/services/reminderService');
 
 test('旧匿名话题补上昵称，新话题和定向回复按话题复用昵称并隐藏实名', async t => {
   db.open(':memory:');
@@ -40,7 +41,12 @@ test('旧匿名话题补上昵称，新话题和定向回复按话题复用昵�
   const oldDetail = await request(member, `/${oldTopic}`);
   assert.equal(oldDetail.authorName, null);
   assert.ok(oldDetail.anonymousName);
+  db.run("INSERT INTO push_subscriptions (endpoint,user_id,p256dh,auth) VALUES ('fixture',?,'fixture','fixture')", member);
+  setPreference(member, 'direct_reply', false);
   await request(author, `/${oldTopic}/replies`, { content: '新回复', replyToId: oldReply });
+  const unread = await request(member, '/unread-replies');
+  assert.equal(unread.find(n => n.id === oldTopic).kind, 'direct_reply');
+  assert.equal(db.pluck('SELECT COUNT(*) FROM push_events WHERE user_id=?', member), 0);
   const { items: [first, second] } = await request(member, `/${oldTopic}/replies`);
   assert.ok(first.anonymousName);
   assert.notEqual(first.anonymousName, oldDetail.anonymousName);
@@ -48,6 +54,8 @@ test('旧匿名话题补上昵称，新话题和定向回复按话题复用昵�
   assert.equal(second.replyToAnonymousName, first.anonymousName);
   assert.equal(second.authorName, null);
   assert.equal(second.replyToName, null);
+  await request(author, `/${oldTopic}/replies`, { content: '一条普通评论' });
+  assert.equal(db.pluck('SELECT push_kind FROM push_events WHERE user_id=?', member), 'topic_replies');
 
   const created = await request(author, '/', { category: 'chat', title: '新匿名话题', content: '正文', anonymous: true });
   await request(member, `/${created.id}/replies`, { content: '新话题的评论' });

@@ -20,6 +20,7 @@ import { Schedule, readScheduleFilters, saveScheduleFilters } from './Schedule';
 import { Announcement } from './Announcement';
 import { DiscussionPreview } from './DiscussionPreview';
 import { ReminderSettings, logoutDevice, restoreDeviceReminder } from './ReminderSettings';
+import { PullToRefresh, usePullRefresh } from './PullToRefresh';
 import './style.css';
 
 dayjs.locale('zh-cn');
@@ -85,12 +86,24 @@ function readNotificationTarget() {
   const reply = Number(params.get('reply'));
   const swap = Number(params.get('swap'));
   const notice = Number(params.get('notice'));
+  const enrollment = Number(params.get('enrollment'));
+  const systemNotice = Number(params.get('systemNotice'));
+  const systemTarget = { systemNotice: Number.isSafeInteger(systemNotice) && systemNotice > 0 ? systemNotice : null };
+  if (Number.isSafeInteger(enrollment) && enrollment > 0) return { ...systemTarget, tab: 'enrollment', enrollment };
+  if (params.get('tab') === 'discussions') return { ...systemTarget, tab: 'discussions' };
   if (Number.isSafeInteger(topic) && topic > 0) return { tab: 'discussions', topic, reply: Number.isSafeInteger(reply) && reply > 0 ? reply : null };
   if (Number.isSafeInteger(swap) && swap > 0) return { tab: 'swaps', swap };
   return { tab: 'schedule', notice: Number.isSafeInteger(notice) && notice > 0 ? notice : null };
 }
 
-function Workspace({ user, updateProfile, endSession }) {
+function Workspace(props) {
+  const dirty = useRef(false);
+  return <PullToRefresh canRefresh={() => !dirty.current}>
+    <WorkspaceContent {...props} dirty={dirty} />
+  </PullToRefresh>;
+}
+
+function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
   const [notificationTarget, setNotificationTarget] = useState(readNotificationTarget);
   const [tab, setTab] = useState(notificationTarget.tab);
   const [settingsTab, setSettingsTab] = useState('worktypes');
@@ -98,6 +111,8 @@ function Workspace({ user, updateProfile, endSession }) {
   const [discussionTopicId, setDiscussionTopicId] = useState(notificationTarget.topic ?? null);
   const [discussionReplyId, setDiscussionReplyId] = useState(notificationTarget.reply ?? null);
   const [discussionOpenVersion, setDiscussionOpenVersion] = useState(0);
+  const [discussionFeedVersion, setDiscussionFeedVersion] = useState(0);
+  const [enrollmentPeriodId, setEnrollmentPeriodId] = useState(notificationTarget.enrollment);
   const [swapDetail, setSwapDetail] = useState(notificationTarget.swap ?? null);
   const [password, setPassword] = useState(false);
   const [nicknameOpen, setNicknameOpen] = useState(false);
@@ -107,25 +122,36 @@ function Workspace({ user, updateProfile, endSession }) {
   useEffect(() => { restoreDeviceReminder(user.id).catch(() => {}); }, [user.id]);
   useEffect(() => {
     const url = new URL(window.location.href);
-    for (const key of ['reply', 'swap', 'notice']) url.searchParams.delete(key);
+    for (const key of ['reply', 'swap', 'notice', 'enrollment', 'tab', 'systemNotice']) url.searchParams.delete(key);
     if (tab === 'discussions' && discussionTopicId) url.searchParams.set('topic', discussionTopicId);
     else url.searchParams.delete('topic');
     if (url.href !== window.location.href) window.history.replaceState(null, '', url);
   }, [tab, discussionTopicId]);
   const updateScheduleFilters = changes => setScheduleFilters(previous => ({ ...previous, ...changes }));
-  const dirty = useRef(false);
   const { confirm, busy, run } = useAction();
   const { message } = App.useApp();
   const periodsQuery = useLoad('periods', () => Promise.all([API.listPeriods(), API.currentPeriod()]), true);
   const unreadQuery = useLoad(user.id, API.unreadTopicReplies, true);
   const likeNotices = useLoad(user.id, API.unreadTopicLikes, true);
   const swapInbox = useLoad(user.id, API.swapInbox, true);
+  const systemInbox = useLoad(user.id, API.unreadSystemNotices, true);
   const hotTopicsQuery = useLoad(tab === 'schedule' || tab === 'discussions' ? 'hot-topics' : null,
     () => API.discussionTopics(1, { sort: 'hot', pageSize: 3 }), true);
+  usePullRefresh(periodsQuery.refreshPage, ['schedule', 'enrollment', 'workflow'].includes(tab));
+  usePullRefresh(hotTopicsQuery.refreshPage, tab === 'schedule' || tab === 'discussions');
+  usePullRefresh(swapInbox.refreshPage, tab === 'swaps');
+  usePullRefresh(async () => {
+    const results = await Promise.all([unreadQuery.refreshPage(), likeNotices.refreshPage()]);
+    return results.every(Boolean);
+  }, tab === 'discussions');
   const hotTopicRanks = new Map(hotTopicsQuery.data?.items
     .filter(topic => topic.likeCount + topic.replyCount > 0)
     .map((topic, index) => [topic.id, index + 1]));
-  const refreshNotifications = useEffectEvent(() => { unreadQuery.refresh(); likeNotices.refresh(); swapInbox.refresh(); });
+  const refreshNotifications = useEffectEvent(() => { unreadQuery.refresh(); likeNotices.refresh(); swapInbox.refresh(); systemInbox.refresh(); });
+  const readSystemNotice = useEffectEvent(id => API.markSystemNoticeRead(id).then(systemInbox.refresh, e => message.error(e.message)));
+  useEffect(() => {
+    if (notificationTarget.systemNotice) readSystemNotice(notificationTarget.systemNotice);
+  }, [notificationTarget.systemNotice]);
   useEffect(() => {
     const refreshVisible = () => { if (!document.hidden) refreshNotifications(); };
     window.addEventListener('focus', refreshVisible);
@@ -173,6 +199,21 @@ function Workspace({ user, updateProfile, endSession }) {
   async function openSwap(id) {
     if (await navigate('swaps')) setSwapDetail(id);
   }
+  async function openSystemNotice(notice) {
+    if (notice.kind === 'new_topics') {
+      if (!await navigate('discussions')) return;
+      setDiscussionTopicId(null);
+      setDiscussionReplyId(null);
+      setDiscussionFeedVersion(version => version + 1);
+      window.scrollTo(0, 0);
+    } else {
+      if (!await navigate('enrollment')) return;
+      setEnrollmentPeriodId(notice.periodId);
+      periodsQuery.refresh();
+      window.scrollTo(0, 0);
+    }
+    await API.markSystemNoticeRead(notice.id).then(systemInbox.refresh, e => message.error(e.message));
+  }
   async function logout() {
     if (!await confirm('确认退出登录？', dirty.current ? '未保存的需求会丢失。' : '退出后需重新登录。')) return;
     await run(() => logoutDevice(user.id), null, endSession);
@@ -185,7 +226,8 @@ function Workspace({ user, updateProfile, endSession }) {
       <header className="topbar"><div className="topbar-inner">
         <div className="brand-lockup"><span className="brand">时禾</span><span className="brand-caption">传3:2 栽种有时</span></div>
         <div className="account-actions">
-          <BellNotifications query={unreadQuery} likeNotices={likeNotices} swapInbox={swapInbox} open={openDiscussions} openSwap={openSwap} />
+          <BellNotifications query={unreadQuery} likeNotices={likeNotices} swapInbox={swapInbox} systemInbox={systemInbox}
+            open={openDiscussions} openSwap={openSwap} openSystemNotice={openSystemNotice} />
           <Dropdown trigger={['click']} menu={{ items: [
             { key: 'nickname', label: '设置花名' }, { key: 'reminders', label: '消息提醒' }, { key: 'password', label: '修改密码' },
           ], onClick: ({ key }) => {
@@ -207,9 +249,10 @@ function Workspace({ user, updateProfile, endSession }) {
       {isAdmin(user) && (tab === 'workflow' || tab === 'settings') && <Alert type="info" showIcon message="仅管理员可见" />}
       <Suspense fallback={<div className="loading"><Spin /></div>}>
         {tab === 'schedule' && <Schedule user={user} periods={periods} period={period} filters={scheduleFilters} updateFilters={updateScheduleFilters} />}
-        {tab === 'enrollment' && <Load query={periodsQuery}>{() => <Enrollment periods={periods} period={period} />}</Load>}
+        {tab === 'enrollment' && <Load query={periodsQuery}>{() => <Enrollment periods={periods} period={period}
+          selected={enrollmentPeriodId} setSelected={setEnrollmentPeriodId} />}</Load>}
         {tab === 'swaps' && <Swaps user={user} detail={swapDetail} setDetail={setSwapDetail} inbox={swapInbox} />}
-        {tab === 'discussions' && <Discussions topicId={discussionTopicId} replyId={discussionReplyId} openVersion={discussionOpenVersion} open={openDiscussions}
+        {tab === 'discussions' && <Discussions key={discussionFeedVersion} topicId={discussionTopicId} replyId={discussionReplyId} openVersion={discussionOpenVersion} open={openDiscussions}
           unreadCounts={unreadCounts} refreshUnread={unreadQuery.refresh} refreshLikeNotices={likeNotices.refresh}
           hotTopicRanks={hotTopicRanks} refreshHotTopics={hotTopicsQuery.refresh}
           back={() => setDiscussionTopicId(null)} />}
@@ -234,7 +277,7 @@ function Workspace({ user, updateProfile, endSession }) {
   </div>;
 }
 
-function BellNotifications({ query, likeNotices, swapInbox, open, openSwap }) {
+function BellNotifications({ query, likeNotices, swapInbox, systemInbox, open, openSwap, openSystemNotice }) {
   const { notification } = App.useApp();
   const seenThrough = useRef(null);
   const openTopic = useRef(open);
@@ -256,11 +299,22 @@ function BellNotifications({ query, likeNotices, swapInbox, open, openSwap }) {
   const topics = query.data ?? [];
   const likes = likeNotices.data ?? [];
   const swaps = swapInbox.data ?? [];
-  const total = [...topics, ...likes].reduce((sum, topic) => sum + topic.unreadCount, swaps.length);
+  const system = systemInbox.data ?? [];
+  const total = [...topics, ...likes].reduce((sum, topic) => sum + topic.unreadCount, swaps.length + system.length);
   const label = `消息提醒，${total} 条`;
   const button = <Button ghost className="reply-notification-button" aria-label={label} title={label}
     icon={<Badge count={total} size="small" overflowCount={999}><BellOutlined /></Badge>} />;
   const items = [];
+  if (system.length) items.push({ type: 'group', key: 'system', label: '系统消息', children: system.map(notice => {
+    const isTopic = notice.kind === 'new_topics';
+    const isProxy = notice.kind === 'proxy_enrollment';
+    const title = isTopic ? '互动区有新话题了' : isProxy ? `${notice.actorName || '管理员'}帮你代报名了` : `「${notice.periodName}」正在报名`;
+    const action = isTopic ? '查看话题' : isProxy ? '查看报名' : '参与报名';
+    return { key: `system:${notice.id}`, label: <div className="reply-notification-copy">
+      <div className="reply-notification-item"><span>{title}</span></div>
+      <p className="muted">{isProxy && `${notice.periodName} · `}{action}</p>
+    </div> };
+  }) });
   if (topics.length) items.push({ type: 'group', key: 'topics', label: '话题互动', children: topics.map(topic => ({
     key: `topic:${topic.id}`, label: <div className="reply-notification-copy">
       <div className="reply-notification-item"><span>{topic.title}</span><small className="muted">{topic.unreadCount} 条未读</small></div>
@@ -280,13 +334,19 @@ function BellNotifications({ query, likeNotices, swapInbox, open, openSwap }) {
       {swap.fromAssign && <p className="muted">{assignmentLabel(swap.fromAssign)}</p>}
     </div>,
   })) });
-  if (query.error || likeNotices.error || swapInbox.error) items.push({ key: 'retry', label: '部分提醒加载失败，点击重试' });
-  if (!items.length) items.push({ key: 'empty', label: query.loading || likeNotices.loading || swapInbox.loading ? '正在加载' : '暂无消息提醒', disabled: true });
+  const inboxes = [query, likeNotices, swapInbox, systemInbox];
+  if (inboxes.some(inbox => inbox.error)) items.push({ key: 'retry', label: '部分提醒加载失败，点击重试' });
+  if (!items.length) items.push({ key: 'empty', label: inboxes.some(inbox => inbox.loading) ? '正在加载' : '暂无消息提醒', disabled: true });
   return <Dropdown trigger={['click']} onOpenChange={visible => { if (visible) notification.destroy(replyNotificationKey); }}
     menu={{ items, className: 'reply-notification-menu',
     onClick: ({ key }) => {
-      if (key === 'retry') { query.refresh(); likeNotices.refresh(); swapInbox.refresh(); return; }
+      if (key === 'retry') { inboxes.forEach(inbox => inbox.refresh()); return; }
       const [type, id] = key.split(':');
+      if (type === 'system') {
+        const notice = system.find(item => item.id === Number(id));
+        if (notice) return openSystemNotice(notice);
+        return;
+      }
       if (type === 'swap') return openSwap(Number(id));
       if (type === 'like') return open(Number(id));
       const topic = topics.find(item => item.id === Number(id));

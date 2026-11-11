@@ -18,7 +18,8 @@ import Upload from 'antd/es/upload';
 import ShareAltOutlined from '@ant-design/icons/es/icons/ShareAltOutlined';
 import { TopicHeat } from './DiscussionPreview';
 import { TopicShare } from './TopicShare';
-import { API, Blank, Heading, Load, ProfileDisplayContext, discussionName, option, timeText, useAction, useLoad } from './shared';
+import { API, Blank, Heading, Load, ProfileDisplayContext, discussionName, option, timeText, useAction, useLoad, usePageLoad } from './shared';
+import { usePullRefresh } from './PullToRefresh';
 
 const categories = { chat: '闲聊', feedback: '吐槽', share: '文章分享', poll: '投票' };
 const categoryTabs = [{ key: 'all', label: '全部' }, ...Object.entries(categories).map(([key, label]) => ({ key, label }))];
@@ -81,6 +82,10 @@ export default function Discussions({ topicId, replyId, openVersion, back, open,
     sort, ...(category === 'all' ? {} : { category }), ...(anonymousOnly ? { anonymous: true } : {}),
     ...(sort === 'recent' && pageKey ? { before: pageKey } : {}),
   }));
+  usePullRefresh(() => {
+    setPageKey(null);
+    return query.refreshPage();
+  }, !topicId);
   useLayoutEffect(() => {
     if (!query.data) return;
     const { items, nextCursor, pageSize, total } = query.data;
@@ -139,7 +144,7 @@ export default function Discussions({ topicId, replyId, openVersion, back, open,
 
 function TopicDetail({ topicId, replyId, now, back, updateTopic, deleted, refreshUnread, refreshLikeNotices, heatRank, refreshHotTopics }) {
   const [expanded, setExpanded] = useState(true);
-  const query = useLoad(topicId, () => API.discussionTopic(topicId), true);
+  const query = usePageLoad(topicId, () => API.discussionTopic(topicId), true);
   const refreshLikes = useEffectEvent(refreshLikeNotices);
   const unreadLikeThrough = query.data?.unreadLikeThrough;
   useEffect(() => {
@@ -445,7 +450,7 @@ function TopicReplies({ topicId, replyId, replyCount, anonymous, updated, close,
   const focused = useRef(false);
   const scrollPage = useRef(false);
   const [form] = Form.useForm();
-  const query = useLoad(page ?? 'initial', () => API.topicReplies(topicId, page, replyId), true);
+  const query = usePageLoad(page ?? 'initial', () => API.topicReplies(topicId, page, replyId), true);
   const replyTarget = query.data?.items.find(reply => reply.id === replyTo?.id) ?? replyTo;
   const { run, busy } = useAction();
   const { run: remove, busy: removing, confirm } = useAction();

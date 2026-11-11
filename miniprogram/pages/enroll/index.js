@@ -1,4 +1,8 @@
 const { request } = require('../../utils/request');
+const weekdayNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+const weekdayOptions = (openDays, selected = openDays) => [1, 2, 3, 4, 5, 6, 0]
+  .filter(day => openDays.includes(day))
+  .map(day => ({ value: String(day), label: weekdayNames[day], checked: selected.includes(day) }));
 
 Page({
   data: {
@@ -32,10 +36,12 @@ Page({
       const selected = {};
       const priorities = {};
       const dutyRoles = {};
+      const signupDays = {};
       (mine.workTypes || []).forEach((w) => {
         selected[w.workTypeId] = true;
         priorities[w.workTypeId] = w.priority;
         dutyRoles[w.workTypeId] = w.dutyRole || 'member';
+        signupDays[w.workTypeId] = w.weekdays;
       });
       this.workTypesAll = ctx.workTypes;
       this.shiftsAll = ctx.shifts;
@@ -61,7 +67,20 @@ Page({
       this.setData({
         period: ctx.period,
         fixedAssignments: (ctx.fixedAssignments || []).map((r) => ({...r, weekdayLabel: ['周日','周一','周二','周三','周四','周五','周六'][r.weekday], roleLabel: { member: '普通成员', primary: '主负责人', deputy: '副负责人' }[r.dutyRole] })),
-        workTypes: ctx.workTypes.map((w) => ({ ...w, selected: !!selected[w.id], priority: priorities[w.id] || 0, dutyRole: dutyRoles[w.id] || 'member', roleIndex: Math.max(0, ['member', 'primary', 'deputy', 'both'].indexOf(dutyRoles[w.id])) })),
+        workTypes: ctx.workTypes.map((w) => {
+          let signupWeekdays;
+          if (w.allowWeekdaySelection) {
+            signupWeekdays = selected[w.id]
+              ? signupDays[w.id]?.filter(day => w.weekdays.includes(day))
+              : w.weekdays.length === 1 ? w.weekdays : [];
+          }
+          return {
+            ...w, selected: !!selected[w.id], priority: priorities[w.id] || 0,
+            dutyRole: dutyRoles[w.id] || 'member',
+            roleIndex: Math.max(0, ['member', 'primary', 'deputy', 'both'].indexOf(dutyRoles[w.id])),
+            signupWeekdays: signupWeekdays ?? null, weekdayOptions: weekdayOptions(w.weekdays, signupWeekdays),
+          };
+        }),
         shifts: ctx.shifts,
         dates: ctx.dates,
         maxShifts: mine.maxShifts ?? 6,
@@ -79,6 +98,7 @@ Page({
     const id = Number(e.currentTarget.dataset.id);
     const workTypes = this.data.workTypes.map((w) => {
       if (w.id !== id) return w;
+      if (!w.selected && !w.weekdays.length) return w;
       const next = !w.selected;
       return { ...w, selected: next, priority: next ? (w.priority || w.id && 1) : 0 };
     });
@@ -115,6 +135,23 @@ Page({
     this.setData({ workTypes: this.data.workTypes.map((w) => w.id === id ? { ...w, roleIndex, dutyRole: ['member', 'primary', 'deputy', 'both'][roleIndex] } : w) });
   },
 
+  onSignupWeekdays(e) {
+    this.setSignupWeekdays(Number(e.currentTarget.dataset.id), e.detail.value.map(Number));
+  },
+
+  setSignupWeekdays(id, signupWeekdays) {
+    this.setData({ workTypes: this.data.workTypes.map(w => w.id === id
+      ? { ...w, signupWeekdays, weekdayOptions: weekdayOptions(w.weekdays, signupWeekdays) }
+      : w) });
+  },
+
+  toggleAllSignupWeekdays(e) {
+    const id = Number(e.currentTarget.dataset.id);
+    const work = this.data.workTypes.find(w => w.id === id);
+    const days = (work.signupWeekdays ?? work.weekdays).length === work.weekdays.length ? [] : work.weekdays;
+    this.setSignupWeekdays(id, days);
+  },
+
   onNote(e) {
     this.setData({ note: e.detail.value });
   },
@@ -148,11 +185,21 @@ Page({
       wx.showToast({ title: '请选择报名的主副负责人角色', icon: 'none' });
       return;
     }
+    if (chosen.some(w => !(w.signupWeekdays ?? w.weekdays).length)) {
+      wx.showToast({ title: '请为每项工作选择报名星期', icon: 'none' });
+      return;
+    }
 
-    const removed = (this.data.existing?.submittedWorkTypeIds || []).filter((id) => !chosen.some((w) => w.id === id));
-    if (this.data.period.status === 'published' && removed.length) {
-      const names = removed.map((id) => this.data.workTypes.find((w) => w.id === id)?.name || `工作 #${id}`).join('、');
-      const confirmed = await new Promise((resolve) => wx.showModal({ title: '取消工作报名', content: `确认取消 ${names}？将移除本周期明天起这些工作的安排，保留今天和历史。`, success: (res) => resolve(res.confirm), fail: () => resolve(false) }));
+    const existing = this.data.existing;
+    const previousIds = existing?.submittedWorkTypeIds || [];
+    const removed = previousIds.some(id => !chosen.some(w => w.id === id));
+    const narrowed = chosen.some(w => {
+      if (!w.signupWeekdays || !previousIds.includes(w.id) && !this.data.fixedAssignments.some(rule => rule.workTypeId === w.id)) return false;
+      const oldDays = existing?.status === 'submitted' && existing.workTypes.find(work => work.workTypeId === w.id)?.weekdays;
+      return (oldDays || w.weekdays).some(day => !w.signupWeekdays.includes(day));
+    });
+    if (this.data.period.status === 'published' && (removed || narrowed)) {
+      const confirmed = await new Promise((resolve) => wx.showModal({ title: '确认取消部分报名？', content: '明天起，本周期被取消的工作或星期所对应的已发布安排将移除。', success: (res) => resolve(res.confirm), fail: () => resolve(false) }));
       if (!confirmed) return;
     }
     const availability = [];
@@ -173,7 +220,7 @@ Page({
       const result = await request(`/api/enrollments/${this.data.periodId}`, {
         method: 'POST',
         data: {
-          workTypes: chosen.map((w) => ({ workTypeId: w.id, priority: w.priority || 3, dutyRole: w.requiresRoles ? w.dutyRole : 'member' })),
+          workTypes: chosen.map((w) => ({ workTypeId: w.id, priority: w.priority || 3, dutyRole: w.requiresRoles ? w.dutyRole : 'member', weekdays: w.signupWeekdays })),
           maxShifts: this.data.maxShifts,
           availability,
           unavailability,

@@ -30,7 +30,7 @@ function readFields(req) {
 function notifyPublished(userId, id) {
   queuePushEvent(userId, null, {
     title: '时禾 · 新公告', body: '有一条新公告，打开时禾查看。', tag: `shihe-announcement-${id}`, path: `/?notice=${id}`,
-  });
+  }, 'announcement');
 }
 
 function publish(req, replaceCurrent = false) {

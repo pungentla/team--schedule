@@ -8,7 +8,7 @@
 const db = require('./db');
 const { ensureAlias } = require('../repositories/discussionAliasRepo');
 
-const CURRENT_VERSION = 23;
+const CURRENT_VERSION = 29;
 
 function migrate() {
   db.open();
@@ -28,6 +28,7 @@ function migrate() {
         const rebuildVotes = db.all('PRAGMA table_info(discussion_poll_votes)').some(column => column.name === 'position' && !column.pk);
         if (rebuildVotes) db.exec('ALTER TABLE discussion_poll_votes RENAME TO discussion_poll_votes_legacy');
         db.exec(db.readSchemaSql());
+        if (fromVersion < 29) migratePushPreferences();
         const userColumns = new Set(db.all('PRAGMA table_xinfo(users)').map(column => column.name));
         for (const [column, definition] of [
           ['nickname', 'TEXT'],
@@ -55,6 +56,15 @@ function migrate() {
         }
 
         if (fromVersion < 9) migrateLegacySchema();
+        if (!db.all('PRAGMA table_info(work_types)').some(column => column.name === 'allow_weekday_selection')) {
+          db.exec('ALTER TABLE work_types ADD COLUMN allow_weekday_selection INTEGER NOT NULL DEFAULT 0 CHECK (allow_weekday_selection IN (0, 1))');
+        }
+        if (!db.all('PRAGMA table_info(enrollment_work_types)').some(column => column.name === 'weekdays_json')) {
+          db.exec('ALTER TABLE enrollment_work_types ADD COLUMN weekdays_json TEXT');
+        }
+        if (!db.all('PRAGMA table_info(schedule_runs)').some(column => column.name === 'reference_history')) {
+          db.exec('ALTER TABLE schedule_runs ADD COLUMN reference_history INTEGER CHECK (reference_history IN (0, 1))');
+        }
         if (!db.all('PRAGMA table_info(discussion_replies)').some(column => column.name === 'parent_reply_id')) {
           db.exec('ALTER TABLE discussion_replies ADD COLUMN parent_reply_id INTEGER REFERENCES discussion_replies(id) ON DELETE SET NULL');
         }
@@ -63,6 +73,12 @@ function migrate() {
           UNION SELECT r.topic_id, r.author_id FROM discussion_replies r JOIN discussion_topics t ON t.id = r.topic_id
           WHERE t.is_anonymous = 1 AND r.author_id IS NOT NULL`);
         for (const { topicId, userId } of anonymousAuthors) ensureAlias(topicId, userId);
+        if (fromVersion < 27) {
+          const { enrollmentOpened } = require('../services/systemNoticeService');
+          for (const period of db.all("SELECT id,name FROM periods WHERE status='enrolling' AND deleted_at IS NULL")) {
+            enrollmentOpened(period, { sendPush: false });
+          }
+        }
         if (rebuildTopics && db.get('PRAGMA foreign_key_check')) throw new Error('数据库迁移后存在无效引用');
         db.exec(`PRAGMA user_version = ${CURRENT_VERSION}`);
       });
@@ -73,6 +89,29 @@ function migrate() {
 
   const toVersion = Number(db.pluck('PRAGMA user_version') || 0);
   return { fromVersion, toVersion };
+}
+
+function migratePushPreferences() {
+  const columns = db.all('PRAGMA table_info(push_events)').map(column => column.name);
+  if (columns.includes('system_notice_kind')) {
+    db.exec('ALTER TABLE push_events RENAME COLUMN system_notice_kind TO push_kind');
+  } else if (!columns.includes('push_kind')) {
+    db.exec('ALTER TABLE push_events ADD COLUMN push_kind TEXT');
+  }
+  if (db.get("SELECT 1 FROM sqlite_master WHERE type='table' AND name='system_notice_opt_outs'")) {
+    db.exec(`INSERT OR IGNORE INTO push_opt_outs (user_id,kind) SELECT user_id,kind FROM system_notice_opt_outs;
+      DROP TABLE system_notice_opt_outs;`);
+  }
+  db.run(`UPDATE push_events SET push_kind=CASE
+    WHEN json_extract(payload, '$.tag') LIKE 'shihe-enrollment-open-%' THEN 'enrollment_open'
+    WHEN json_extract(payload, '$.tag') LIKE 'shihe-proxy-enrollment-%' THEN 'proxy_enrollment'
+    WHEN json_extract(payload, '$.tag')='shihe-new-topics' THEN 'new_topics'
+    WHEN json_extract(payload, '$.tag') LIKE 'shihe-topic-reply-%' THEN CASE
+      WHEN json_extract(payload, '$.body')='有人回复了你的评论。' THEN 'direct_reply' ELSE 'topic_replies' END
+    WHEN json_extract(payload, '$.tag') LIKE 'shihe-topic-%' THEN 'topic_likes'
+    WHEN json_extract(payload, '$.tag') LIKE 'shihe-swap-%' OR json_extract(payload, '$.tag')='shihe-schedule-change' THEN 'swap'
+    WHEN json_extract(payload, '$.tag') LIKE 'shihe-announcement-%' THEN 'announcement'
+  END WHERE push_kind IS NULL AND json_valid(payload)`);
 }
 
 function migrateDiscussionTopics() {
@@ -140,6 +179,8 @@ function migrateLegacySchema() {
 /** 删除全部业务数据（保留表结构），用于 reset */
 function truncateAll() {
   const tables = [
+    'push_opt_outs',
+    'system_notices',
     'swap_participants',
     'swap_requests',
     'assignments',

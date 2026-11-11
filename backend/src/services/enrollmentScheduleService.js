@@ -51,29 +51,40 @@ function refreshPublishedRun(runId, viewer) {
   require('./swapService').refreshRunMetrics(runId);
 }
 
+function cancelPendingAssignmentSwaps(periodId, assignmentIds, ctx, detail) {
+  if (!assignmentIds.length) return 0;
+  const ids = new Set(assignmentIds);
+  const swaps = db.all("SELECT * FROM swap_requests WHERE period_id=? AND status='pending'", periodId)
+    .filter(swap => ids.has(swap.from_assignment_id) || ids.has(swap.to_assignment_id));
+  for (const swap of swaps) {
+    db.run("UPDATE swap_requests SET status='cancelled',decided_at=? WHERE id=?", nowIso(), swap.id);
+    audit.log({ action: audit.ACTIONS.SWAP_CANCEL, entityType: 'swap', entityId: swap.id, periodId,
+      actorId: ctx.user.id, requestId: ctx.requestId, detail });
+  }
+  return swaps.length;
+}
+
 /** Runs inside the enrollment transaction; released records remain available for audit. */
-function applyPublishedEnrollment(periodId, userId, workTypeIds, ctx) {
+function applyPublishedEnrollment(periodId, userId, workTypeIds, workTypes, ctx) {
   const afterDate = today();
   const now = nowIso();
   const selected = new Set(workTypeIds);
+  const weekdaysByWork = new Map(workTypes.map((work) => [work.workTypeId, work.weekdays]));
   const assignments = db.all(`SELECT a.* FROM assignments a JOIN schedule_runs r ON r.id=a.run_id AND r.status='published'
-    WHERE a.period_id=? AND a.user_id=? AND a.status='active' AND a.work_date>?`, periodId, userId, afterDate).filter((a) => selected.has(a.work_type_id));
-  const ids = new Set(assignments.map((a) => a.id));
-  const swaps = db.all("SELECT * FROM swap_requests WHERE period_id=? AND status='pending'", periodId).filter((s) => ids.has(s.from_assignment_id) || ids.has(s.to_assignment_id));
+    WHERE a.period_id=? AND a.user_id=? AND a.status='active' AND a.work_date>?`, periodId, userId, afterDate).filter((a) => {
+    const weekdays = weekdaysByWork.get(a.work_type_id);
+    return selected.has(a.work_type_id) || (weekdays && !weekdays.includes(weekday(a.work_date)));
+  });
   for (const a of assignments) {
     db.run("UPDATE assignments SET status='released',released_at=? WHERE id=? AND status='active'", now, a.id);
     audit.log({ action: audit.ACTIONS.ASSIGNMENT_MANUAL, entityType: 'assignment', entityId: a.id, periodId, actorId: ctx.user.id, requestId: ctx.requestId,
       detail: { action: 'enrollment_withdrawal', userId, workTypeId: a.work_type_id, workDate: a.work_date, afterDate } });
   }
-  for (const swap of swaps) {
-    db.run("UPDATE swap_requests SET status='cancelled',decided_at=? WHERE id=?", now, swap.id);
-    audit.log({ action: audit.ACTIONS.SWAP_CANCEL, entityType: 'swap', entityId: swap.id, periodId, actorId: ctx.user.id, requestId: ctx.requestId,
-      detail: { reason: 'enrollment_withdrawal', userId } });
-  }
+  const cancelledSwapCount = cancelPendingAssignmentSwaps(periodId, assignments.map(a => a.id), ctx, { reason: 'enrollment_withdrawal', userId });
   const run = scheduleRepo.findPublishedRun(periodId);
   const added = run ? fillUpcomingVacancies(run, userId, afterDate, ctx) : [];
   if (run && (assignments.length || added.length)) refreshPublishedRun(run.id, ctx.user);
-  return { afterDate, endDate: addDays(afterDate, 6), withdrawnWorkTypeIds: workTypeIds, removedCount: assignments.length, addedCount: added.length, cancelledSwapCount: swaps.length };
+  return { afterDate, endDate: addDays(afterDate, 6), withdrawnWorkTypeIds: workTypeIds, removedCount: assignments.length, addedCount: added.length, cancelledSwapCount };
 }
 
 function fillUpcomingVacancies(run, userId, startDate, ctx) {
@@ -130,4 +141,4 @@ function fillUpcomingVacancies(run, userId, startDate, ctx) {
   return added;
 }
 
-module.exports = { applyPublishedEnrollment };
+module.exports = { applyPublishedEnrollment, cancelPendingAssignmentSwaps, refreshPublishedRun };

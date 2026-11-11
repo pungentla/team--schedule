@@ -5,6 +5,9 @@
       <text class="seed-label">随机种子（同种子=同结果，可复现）</text>
       <input class="seed-input" type="number" value="{{seed}}" bindinput="onSeed" />
     </view>
+    <checkbox-group bindchange="onReferenceHistory">
+      <label><checkbox value="history" checked="{{referenceHistory}}" disabled="{{generating}}" />参考历史排班</label>
+    </checkbox-group>
     <button class="btn main" bindtap="onGenerate">
       {{generating ? '计算中...' : (generated ? '重新生成' : '开始生成')}}
     </button>

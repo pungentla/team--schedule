@@ -5,10 +5,11 @@
 const express = require('express');
 const scheduleService = require('../services/scheduleService');
 const swapService = require('../services/swapService');
+const { updatePublishedWork } = require('../services/publishedWorkService');
 const periodRepo = require('../repositories/periodRepo');
 const db = require('../db/db');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
-const { requireInt, optionalInt, intParam, requireEnum } = require('../utils/validate');
+const { requireInt, optionalInt, intParam, requireEnum, requireBoolean, requireArray } = require('../utils/validate');
 const { notFound } = require('../utils/errors');
 const { isDateString } = require('../utils/date');
 const { badRequest } = require('../utils/errors');
@@ -42,11 +43,29 @@ router.post('/runs/:runId/adjust', requireAuth, requireAdmin, (req, res) => {
   res.json({ data: scheduleService.adjustDraft(intParam(req.params.runId, 'runId'), change, ctx(req)) });
 });
 
+router.post('/runs/:runId/work', requireAuth, requireAdmin, (req, res) => {
+  const body = req.body || {};
+  if (!isDateString(body.workDate)) throw badRequest('日期格式必须为 YYYY-MM-DD');
+  const action = requireEnum(body.action, '工作调整方式', ['add', 'fill', 'remove']);
+  const people = action !== 'remove' ? requireArray(body.people, '人员', { min: 1, max: 99 }).map(person => ({
+    userId: requireInt(person?.userId, '人员', { min: 1 }),
+    dutyRole: requireEnum(person?.dutyRole, '岗位角色', ['member', 'primary', 'deputy']),
+  })) : [];
+  const change = {
+    action, people, workDate: body.workDate,
+    shiftId: requireInt(body.shiftId, '班次', { min: 1 }),
+    workTypeId: requireInt(body.workTypeId, '工作', { min: 1 }),
+    revision: requireInt(body.revision, '生效排班修订', { min: 0 }),
+  };
+  res.json({ data: updatePublishedWork(intParam(req.params.runId, 'runId'), change, ctx(req)) });
+});
+
 /** 生成排班（draft） */
 router.post('/periods/:periodId/generate', requireAuth, requireAdmin, (req, res) => {
   const periodId = intParam(req.params.periodId, 'periodId');
   const seed = optionalInt(req.body?.seed, 'seed', { min: 0, max: 2147483647 });
-  const data = scheduleService.generate(periodId, { seed: seed ?? undefined }, ctx(req));
+  const referenceHistory = req.body?.referenceHistory === undefined ? undefined : requireBoolean(req.body.referenceHistory, '参考历史排班');
+  const data = scheduleService.generate(periodId, { seed: seed ?? undefined, referenceHistory }, ctx(req));
   res.json({ data });
 });
 

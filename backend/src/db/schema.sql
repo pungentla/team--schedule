@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS push_events (
   endpoint         TEXT NOT NULL REFERENCES push_subscriptions(endpoint) ON DELETE CASCADE,
   user_id          INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   payload          TEXT NOT NULL,
+  push_kind        TEXT,
   expires_at       INTEGER NOT NULL,
   next_attempt_at  INTEGER NOT NULL,
   attempts         INTEGER NOT NULL DEFAULT 0
@@ -171,6 +172,7 @@ CREATE TABLE IF NOT EXISTS work_types (
   active      INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
   requires_roles INTEGER NOT NULL DEFAULT 0 CHECK (requires_roles IN (0, 1)),
   weekdays_json TEXT NOT NULL DEFAULT '[0,1,2,3,4,5,6]',
+  allow_weekday_selection INTEGER NOT NULL DEFAULT 0 CHECK (allow_weekday_selection IN (0, 1)),
   default_need INTEGER NOT NULL DEFAULT 1 CHECK (default_need BETWEEN 0 AND 99),
   weekly_assignments_json TEXT NOT NULL DEFAULT '[]',
   duty_pairs_json TEXT NOT NULL DEFAULT '[]',
@@ -222,6 +224,25 @@ CREATE TABLE IF NOT EXISTS periods (
 
 CREATE INDEX IF NOT EXISTS idx_periods_status ON periods(status, start_date);
 
+CREATE TABLE IF NOT EXISTS system_notices (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind        TEXT NOT NULL CHECK (kind IN ('enrollment_open', 'proxy_enrollment', 'new_topics')),
+  period_id   INTEGER REFERENCES periods(id) ON DELETE CASCADE,
+  actor_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at  INTEGER NOT NULL,
+  read_at     INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_system_notices_user ON system_notices(user_id, kind, period_id);
+CREATE INDEX IF NOT EXISTS idx_system_notices_topic_time ON system_notices(created_at) WHERE kind = 'new_topics';
+
+CREATE TABLE IF NOT EXISTS push_opt_outs (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind    TEXT NOT NULL CHECK (kind IN ('enrollment_open', 'proxy_enrollment', 'new_topics', 'direct_reply',
+    'topic_replies', 'topic_likes', 'swap', 'announcement', 'next_day_schedule')),
+  PRIMARY KEY (user_id, kind)
+);
+
 -- 开班格子：某天某班次开班了。被 slot_requirements 复合外键引用
 CREATE TABLE IF NOT EXISTS period_slots (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -259,6 +280,7 @@ CREATE TABLE IF NOT EXISTS enrollment_work_types (
   work_type_id  INTEGER NOT NULL REFERENCES work_types(id),
   priority      INTEGER NOT NULL DEFAULT 1 CHECK (priority BETWEEN 1 AND 3),
   duty_role     TEXT NOT NULL DEFAULT 'member' CHECK (duty_role IN ('member', 'primary', 'deputy', 'both')),
+  weekdays_json TEXT,
   PRIMARY KEY (enrollment_id, work_type_id)
 );
 
@@ -315,6 +337,7 @@ CREATE TABLE IF NOT EXISTS schedule_runs (
   period_id     INTEGER NOT NULL REFERENCES periods(id) ON DELETE CASCADE,
   algo_version  TEXT NOT NULL,
   seed          INTEGER NOT NULL,
+  reference_history INTEGER CHECK (reference_history IN (0, 1)),
   input_hash    TEXT,
   status        TEXT NOT NULL DEFAULT 'draft'
                   CHECK (status IN ('draft', 'published', 'discarded')),

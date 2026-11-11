@@ -61,7 +61,7 @@ function listWorkTypes(ctx) {
   }));
 }
 
-function createWorkType({ code, name, description, color, sortOrder, requiresRoles, weekdays, defaultNeed, weeklyAssignments = [], dutyPairs = [] }, ctx) {
+function createWorkType({ code, name, description, color, sortOrder, requiresRoles, weekdays, allowWeekdaySelection, defaultNeed, weeklyAssignments = [], dutyPairs = [] }, ctx) {
   weeklyAssignments = validateWeeklyAssignments(weeklyAssignments, requiresRoles, weekdays || [0, 1, 2, 3, 4, 5, 6]);
   dutyPairs = validateDutyPairs(dutyPairs, requiresRoles);
   if (requiresRoles && defaultNeed === 1) throw badRequest('主副工作默认人数必须为 0 或至少 2 人');
@@ -77,6 +77,7 @@ function createWorkType({ code, name, description, color, sortOrder, requiresRol
     active: 1,
     requiresRoles,
     weekdays,
+    allowWeekdaySelection,
     defaultNeed,
     weeklyAssignments,
     dutyPairs,

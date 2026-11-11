@@ -19,7 +19,12 @@ Page({
     const it = this.data.items.find((x) => x.id === e.currentTarget.dataset.id);
     this.setData({ showForm: true, editing: it, form: { ...it }, weekdays: DAYS.map((d) => ({ ...d, checked: it.weekdays.includes(d.value) })) });
     this.setRules(it.weeklyAssignments || []);
-    this.setPairs(it.dutyPairs || []);
+    const groups = new Map();
+    for (const { primaryUserId, deputyUserId } of it.dutyPairs || []) {
+      if (!groups.has(primaryUserId)) groups.set(primaryUserId, { primaryUserId, deputyUserIds: [] });
+      groups.get(primaryUserId).deputyUserIds.push(deputyUserId);
+    }
+    this.setPairs([...groups.values()]);
   },
 
   closeForm() { this.setData({ showForm: false }); },
@@ -51,22 +56,38 @@ Page({
     this.setRules(rows);
   },
   setPairs(pairs) {
-    this.setData({ pairs: pairs.map((p) => ({ ...p,
-      primaryIndex: this.data.employees.findIndex((u) => u.id === p.primaryUserId),
-      deputyIndex: this.data.employees.findIndex((u) => u.id === p.deputyUserId),
+    const { employees } = this.data;
+    this.setData({ pairs: pairs.map(({ primaryUserId, deputyUserIds }) => ({
+      primaryUserId, deputyUserIds,
+      primaryIndex: employees.findIndex((u) => u.id === primaryUserId),
+      deputies: deputyUserIds.map(id => ({ id, label: employees.find(u => u.id === id)?.label || `人员 #${id}（已停用）` })),
+      deputyOptions: employees.filter(u => u.id !== primaryUserId && !deputyUserIds.includes(u.id)),
     })) });
   },
-  addPair() { this.setPairs([...this.data.pairs, {}]); },
+  addPair() { this.setPairs([...this.data.pairs, { primaryUserId: null, deputyUserIds: [] }]); },
   removePair(e) { this.setPairs(this.data.pairs.filter((p, i) => i !== Number(e.currentTarget.dataset.index))); },
   onPair(e) {
-    const pairs = this.data.pairs.map((p) => ({ ...p }));
-    pairs[Number(e.currentTarget.dataset.index)][e.currentTarget.dataset.field] = this.data.employees[Number(e.detail.value)].id;
-    this.setPairs(pairs);
+    const index = Number(e.currentTarget.dataset.index);
+    const primaryUserId = this.data.employees[Number(e.detail.value)].id;
+    this.setPairs(this.data.pairs.map((p, i) => i === index ? { primaryUserId, deputyUserIds: p.deputyUserIds.filter(id => id !== primaryUserId) } : p));
+  },
+  addDeputy(e) {
+    const index = Number(e.currentTarget.dataset.index);
+    const deputy = this.data.pairs[index].deputyOptions[Number(e.detail.value)];
+    this.setPairs(this.data.pairs.map((p, i) => i === index ? { ...p, deputyUserIds: [...p.deputyUserIds, deputy.id] } : p));
+  },
+  removeDeputy(e) {
+    const { index, id } = e.currentTarget.dataset;
+    this.setPairs(this.data.pairs.map((p, i) => i === Number(index) ? { ...p, deputyUserIds: p.deputyUserIds.filter(deputyId => deputyId !== Number(id)) } : p));
   },
   async onSave() {
     const { form, editing } = this.data;
     if (!form.name.trim()) { wx.showToast({ title: '请填写名称', icon: 'none' }); return; }
-    form.dutyPairs = form.requiresRoles ? this.data.pairs.map(({ primaryUserId, deputyUserId }) => ({ primaryUserId, deputyUserId })) : [];
+    if (form.requiresRoles && this.data.pairs.some(p => !p.primaryUserId || !p.deputyUserIds.length)) {
+      wx.showToast({ title: '每组请选择一主和至少一副', icon: 'none' }); return;
+    }
+    form.dutyPairs = form.requiresRoles ? this.data.pairs.flatMap(({ primaryUserId, deputyUserIds }) =>
+      deputyUserIds.map(deputyUserId => ({ primaryUserId, deputyUserId }))) : [];
     form.weeklyAssignments = this.data.rules.map(({ weekday, shiftId, userId, dutyRole }) => ({ weekday, shiftId, userId, dutyRole }));
     if (editing) {
       await request(`/api/work-types/${editing.id}`, { method: 'PUT', data: form });

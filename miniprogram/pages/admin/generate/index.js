@@ -7,6 +7,7 @@ Page({
     result: null,
     gradeLabel: '',
     seed: 42,
+    referenceHistory: true,
     generating: false,
     publishing: false,
     generated: false,
@@ -20,13 +21,17 @@ Page({
     this.setData({ seed: Number(e.detail.value) || 42 });
   },
 
+  onReferenceHistory(e) {
+    this.setData({ referenceHistory: e.detail.value.includes('history') });
+  },
+
   async onGenerate() {
     if (this.data.generating) return;
     this.setData({ generating: true });
     try {
       const result = await request(`/api/schedule/periods/${this.data.periodId}/generate`, {
         method: 'POST',
-        data: { seed: this.data.seed },
+        data: { seed: this.data.seed, referenceHistory: this.data.referenceHistory },
       });
       this.setData({
         result,

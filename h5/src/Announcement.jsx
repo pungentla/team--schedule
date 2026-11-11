@@ -5,10 +5,10 @@ import Form from 'antd/es/form';
 import Input from 'antd/es/input';
 import Modal from 'antd/es/modal';
 import Tag from 'antd/es/tag';
-import { API, isAdmin, timeText, useAction, useLoad } from './shared';
+import { API, isAdmin, timeText, useAction, usePageLoad } from './shared';
 
 export function Announcement({ user, initialId = null }) {
-  const query = useLoad('announcements', API.announcements, true);
+  const query = usePageLoad('announcements', API.announcements, true);
   const listId = useId();
   const [expanded, setExpanded] = useState(false);
   const [reading, setReading] = useState(initialId);

@@ -21,7 +21,14 @@ function getPreparation(periodId) {
     const emp = new EmployeeState(e, periods.toPeriodDto(period));
     if (!cells.some((cell) => emp.matchesWork(cell))) return [];
     const hasFixed = e.workTypes.some((w) => (w.fixedRules || []).some((r) => cells.some((c) => c.workTypeId === w.workTypeId && c.shiftId === r.shiftId && weekday(c.workDate) === r.weekday)));
-    return [{ userId: e.userId, name: e.name, employeeNo: e.employeeNo, hasSubmitted: e.hasSubmitted, hasFixed, maxShifts: e.maxShifts }];
+    const works = e.workTypes.flatMap((entry) => {
+      const work = workTypes.get(entry.workTypeId);
+      return work ? [{ id: work.id, name: work.name, fixedOnly: !!entry.fixedOnly }] : [];
+    });
+    return [{
+      userId: e.userId, name: e.name, employeeNo: e.employeeNo, hasSubmitted: e.hasSubmitted,
+      hasFixed, maxShifts: e.maxShifts, submittedAt: e.submittedAt ?? null, workTypes: works,
+    }];
   });
   const totalNeeded = requirements.reduce((n, r) => n + r.need_count, 0);
   const blockers = [];
@@ -40,6 +47,7 @@ function getPreparation(periodId) {
     canGenerate: blockers.length === 0, blockers,
     nextStep: blockers[0]?.step || (draft || published ? 'generate' : 'people'),
     draftRunId: draft?.id || null, publishedRunId: published?.id || null,
+    publishedTotalNeeded: published?.total_needed ?? null,
   };
 }
 module.exports = { getPreparation };

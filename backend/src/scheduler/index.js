@@ -56,7 +56,8 @@ function generateSchedule(input, opts = {}) {
   // 按历史轮转的关键字排序，让确定性抖动之外的顺序也稳定
   employees.sort((a, b) => a.employeeNo.localeCompare(b.employeeNo) || a.id - b.id);
 
-  const ctx = { seed, periodStartDate: period.startDate, refDate: period.startDate, employees };
+  const ctx = { seed, periodStartDate: period.startDate, refDate: period.startDate, employees,
+    turnRotation: period.referenceHistory !== undefined };
 
   // 岗位稀缺度：每个工作类型有多少人报名。人越少越"难找替补"，需要额外加成。
   const rarityMap = new Map();
@@ -166,11 +167,26 @@ function generateSchedule(input, opts = {}) {
       const deputy = cellSeats.find((s) => s.dutyRole === 'deputy');
       if (!primary || !deputy) continue;
       if (!assigned.has(primary.seatKey) && !assigned.has(deputy.seatKey) && !fixedSeats.has(primary.seatKey) && !fixedSeats.has(deputy.seatKey)) {
-        const candidates = slot.dutyPairs.map((p) => ({ p: empById.get(p.primaryUserId), d: empById.get(p.deputyUserId) }))
-          .filter(({ p, d }) => p && d && p.id !== d.id && canAssignWith(p, { ...primary, allowConcurrent }, period) && canAssignWith(d, { ...deputy, allowConcurrent }, period));
-        candidates.sort((a, b) => (scoreEmployee(b.p, primary, ctx) + scoreEmployee(b.d, deputy, ctx)) - (scoreEmployee(a.p, primary, ctx) + scoreEmployee(a.d, deputy, ctx)) || a.p.id - b.p.id || a.d.id - b.d.id);
-        if (candidates.length) {
-          recordAssignment(primary, candidates[0].p); recordAssignment(deputy, candidates[0].d);
+        const available = new Map();
+        for (const pair of slot.dutyPairs) {
+          const lead = empById.get(pair.primaryUserId);
+          const backup = empById.get(pair.deputyUserId);
+          if (!lead || !backup || lead.id === backup.id || !canAssignWith(lead, { ...primary, allowConcurrent }, period)
+            || !canAssignWith(backup, { ...deputy, allowConcurrent }, period)) continue;
+          if (!available.has(lead.id)) available.set(lead.id, { lead, deputies: [] });
+          available.get(lead.id).deputies.push({ employee: backup, score: scoreEmployee(backup, deputy, ctx) });
+        }
+        const deputySeats = cellSeats.filter(s => s.dutyRole !== 'primary' && !assigned.has(s.seatKey) && !fixedSeats.has(s.seatKey)).length;
+        const groups = [...available.values()].map(({ lead, deputies }) => {
+          deputies.sort((a, b) => b.score - a.score || a.employee.id - b.employee.id);
+          const selected = deputies.slice(0, deputySeats);
+          const score = selected.reduce((total, candidate) => total + candidate.score, scoreEmployee(lead, primary, ctx));
+          return { lead, deputy: deputies[0].employee, coverage: selected.length, score };
+        });
+        groups.sort((a, b) => b.coverage - a.coverage || b.score - a.score || a.lead.id - b.lead.id);
+        if (groups.length) {
+          recordAssignment(primary, groups[0].lead);
+          recordAssignment(deputy, groups[0].deputy);
         }
       }
       for (const seat of cellSeats) {
@@ -179,7 +195,8 @@ function generateSchedule(input, opts = {}) {
         if (!existing.length) continue;
         const candidates = employees.flatMap((emp) => (seat.dutyRole === 'either' ? ['primary', 'deputy'] : [seat.dutyRole]).map((dutyRole) => ({ emp, seat: { ...seat, dutyRole, allowConcurrent } })))
           .filter((c) => canAssignWith(c.emp, c.seat, period) && !pairProblem(slot.dutyPairs, [...existing, { userId: c.emp.id, dutyRole: c.seat.dutyRole }]));
-        candidates.sort((a, b) => scoreEmployee(b.emp, b.seat, ctx) - scoreEmployee(a.emp, a.seat, ctx) || a.emp.id - b.emp.id);
+        candidates.sort((a, b) => Number(b.seat.dutyRole === 'deputy') - Number(a.seat.dutyRole === 'deputy')
+          || scoreEmployee(b.emp, b.seat, ctx) - scoreEmployee(a.emp, a.seat, ctx) || a.emp.id - b.emp.id);
         if (candidates.length) recordAssignment(candidates[0].seat, candidates[0].emp);
       }
     }
@@ -235,7 +252,7 @@ function generateSchedule(input, opts = {}) {
         // 临时释放，看是否有人能顶替且得分更高
         releaseAssignment(current);
         let bestEmp = null;
-        let bestScore = current.score + minImprovement; // 必须显著更优才换
+        let bestScore = (ctx.turnRotation ? scoreEmployee(currentEmp, seat, ctx) : current.score) + minImprovement;
         for (const emp of employees) {
           if (emp.id === currentEmp.id) continue;
           if (!canAssignWith(emp, seat, period)) continue;
@@ -257,27 +274,19 @@ function generateSchedule(input, opts = {}) {
     }
 
     // (b) PairSwap：两个人都更适合对方的槽位
-    const entries = [...assigned.values()];
+    const entries = [...assigned.keys()];
     for (let i = 0; i < entries.length; i += 1) {
-      const a = entries[i];
-      if (a.isFixed || pairedWorks.has(a.workTypeId)) continue;
-      if (!assigned.has(a.seatKey)) continue;
-      const aEmp = empById.get(a.userId);
-      const aSeat = seatByKey.get(a.seatKey);
-      if (!aSeat) continue;
-
       for (let j = i + 1; j < entries.length; j += 1) {
-        const b = entries[j];
-        if (b.isFixed || pairedWorks.has(b.workTypeId)) continue;
+        const a = assigned.get(entries[i]);
+        const b = assigned.get(entries[j]);
+        if (!a || !b || a.isFixed || b.isFixed || pairedWorks.has(a.workTypeId) || pairedWorks.has(b.workTypeId)) continue;
         if (a.workDate === b.workDate && a.shiftId === b.shiftId) continue; // 同一班次不互换
-        if (!assigned.has(a.seatKey) || !assigned.has(b.seatKey)) continue;
-
+        const aEmp = empById.get(a.userId);
         const bEmp = empById.get(b.userId);
-        const bSeat = seatByKey.get(b.seatKey);
-        if (!bSeat) continue;
         if (aEmp.id === bEmp.id) continue;
-
-        const before = a.score + b.score;
+        const aSeat = seatByKey.get(a.seatKey);
+        const bSeat = seatByKey.get(b.seatKey);
+        if (!aSeat || !bSeat) continue;
 
         // 评估互换：先释放两者，再互相试探
         releaseAssignment(a);
@@ -287,6 +296,7 @@ function generateSchedule(input, opts = {}) {
         const bOk = canAssignWith(bEmp, aSeat, period);
 
         if (aOk && bOk) {
+          const before = ctx.turnRotation ? scoreEmployee(aEmp, aSeat, ctx) + scoreEmployee(bEmp, bSeat, ctx) : a.score + b.score;
           const aNewScore = scoreEmployee(aEmp, bSeat, ctx);
           const bNewScore = scoreEmployee(bEmp, aSeat, ctx);
           const after = aNewScore + bNewScore;
@@ -463,6 +473,7 @@ function computeInputHash(input) {
       maxShiftsPerDay: period.maxShiftsPerDay,
       maxShiftsPerWeek: period.maxShiftsPerWeek,
       forbidConsecutive: period.forbidConsecutive,
+      referenceHistory: period.referenceHistory,
     },
     seed,
     slots: [...slots]
@@ -473,7 +484,11 @@ function computeInputHash(input) {
       .map(
         (e) =>
           `${e.userId}:${e.maxShifts ?? 'x'}:${e.workTypes
-            .map((w) => `${w.workTypeId}-${w.priority}-${w.dutyRole || 'member'}-${!!w.fixedOnly}-${(w.fixedRules || []).map((r) => `${r.weekday}:${r.shiftId}:${r.dutyRole}`).sort().join('/')}`)
+            .map((w) => {
+              const fixed = (w.fixedRules || []).map((r) => `${r.weekday}:${r.shiftId}:${r.dutyRole}`).sort().join('/');
+              const days = w.weekdays ? `-${[...w.weekdays].sort().join('/')}` : '';
+              return `${w.workTypeId}-${w.priority}-${w.dutyRole || 'member'}-${!!w.fixedOnly}-${fixed}${days}`;
+            })
             .sort()
             .join(',')}:${[...(e.availability || [])].sort().join(',')}:${[...(e.unavailableDates || [])]
             .sort()
@@ -482,6 +497,13 @@ function computeInputHash(input) {
       .sort()
       .join(';'),
   };
+  if (period.referenceHistory) {
+    norm.history = employees.map(e => [
+      e.userId, e.historyTotal,
+      [...(e.historyByWorkType || [])].sort(([a], [b]) => a - b),
+      [...(e.lastDateByWorkType || [])].sort(([a], [b]) => a - b),
+    ]).sort(([a], [b]) => a - b);
+  }
   return hashString(JSON.stringify(norm)).toString(16);
 }
 

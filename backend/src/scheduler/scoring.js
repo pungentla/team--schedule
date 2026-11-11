@@ -16,13 +16,22 @@ const { deterministicJitter } = require('../utils/random');
 
 function rotationRecency(emp, slot, ctx) {
   const lastDate = emp.lastWorkDateBefore(slot.workTypeId, slot.workDate);
+  if (!lastDate) return { repeatPenalty: 0, freshness: W.freshness };
+  const days = Math.max(0, diffDays(lastDate, slot.workDate));
+  const freshness = W.freshness * days / (1 + days);
+  if (ctx.turnRotation) {
+    const waiting = (ctx.employees || []).filter(person => {
+      if (!person.matchesWork(slot)) return false;
+      const date = person.lastWorkDateBefore(slot.workTypeId, slot.workDate);
+      return !date || date < lastDate;
+    }).length;
+    return { repeatPenalty: W.rotationTurn * waiting, freshness };
+  }
   const latest = (ctx.employees || []).reduce((last, person) => {
     const date = person.lastWorkDateBefore(slot.workTypeId, slot.workDate);
     return date && (!last || date > last) ? date : last;
   }, null);
-  const repeatPenalty = lastDate && lastDate === latest ? W.repeatWork : 0;
-  const days = lastDate ? Math.max(0, diffDays(lastDate, slot.workDate)) : null;
-  return { repeatPenalty, freshness: days === null ? W.freshness : W.freshness * days / (1 + days) };
+  return { repeatPenalty: lastDate === latest ? W.repeatWork : 0, freshness };
 }
 
 /**

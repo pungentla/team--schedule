@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import Button from 'antd/es/button';
 import Card from 'antd/es/card';
 import Segmented from 'antd/es/segmented';
-import { API, Heading, Load, option, useLoad } from './shared';
+import { API, Heading, Load, option, usePageLoad } from './shared';
 
 const orders = [option('recent', '最近'), option('hot', '最热')];
 
@@ -14,7 +14,7 @@ export function TopicHeat({ rank }) {
 
 export function DiscussionPreview({ openDiscussions, hotTopicsQuery, hotTopicRanks }) {
   const [sort, setSort] = useState('recent');
-  const recentQuery = useLoad(sort === 'recent' ? sort : null, () => API.discussionTopics(1, { sort: 'recent', pageSize: 3 }));
+  const recentQuery = usePageLoad(sort === 'recent' ? sort : null, () => API.discussionTopics(1, { sort: 'recent', pageSize: 3 }));
   const query = sort === 'hot' ? hotTopicsQuery : recentQuery;
   return <Card size="small">
     <section aria-label="互动区话题">

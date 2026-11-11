@@ -9,16 +9,18 @@ import Form from 'antd/es/form';
 import Input from 'antd/es/input';
 import InputNumber from 'antd/es/input-number';
 import Modal from 'antd/es/modal';
+import Segmented from 'antd/es/segmented';
 import Select from 'antd/es/select';
 import Space from 'antd/es/space';
 import Statistic from 'antd/es/statistic';
 import Steps from 'antd/es/steps';
-import Table from 'antd/es/table';
 import Tag from 'antd/es/tag';
-import { API, Blank, Field, Heading, Load, assignmentLabel, dateText, dayjs, iso, monthOf, option, periodLabels, required, shiftText, swapLabels, timeText, today, useAction, useLoad } from './shared';
+import { API, Blank, Field, Heading, Load, assignmentLabel, dateText, dayjs, iso, monthOf, option, periodLabels, required, shiftText, swapLabels, timeText, today, useAction, useLoad, usePageLoad } from './shared';
+import { usePullRefresh } from './PullToRefresh';
 import { Matrix } from './Schedule';
 import { Adjustments } from './Adjustments';
 import { ProxyEnrollment } from './Enrollment';
+import { MonthCalendar } from './MonthCalendar';
 
 const transitions = { draft: ['enrolling', 'archived'], enrolling: ['scheduling', 'draft', 'archived'], scheduling: ['enrolling', 'archived'], published: ['archived'], archived: [] };
 const durations = [option('custom', '自定义起止日期'), option('week', '一周'), option('month', '一个月'), option('bimonth', '双月'), option('quarter', '一个季度'), option('halfyear', '半年'), option('year', '一年')];
@@ -100,7 +102,7 @@ function periodProgress(period, prep) {
 }
 
 function PeriodDetail({ user, period, step, changeStep, back, refreshPeriods, openSettings, dirty }) {
-  const prep = useLoad(period.id, () => API.periodPreparation(period.id), true);
+  const prep = usePageLoad(period.id, () => API.periodPreparation(period.id), true);
   const [proxy, setProxy] = useState(false);
   const { run, busy, confirm } = useAction();
 
@@ -169,7 +171,7 @@ function PeriodDetail({ user, period, step, changeStep, back, refreshPeriods, op
   } else if (activeStep === 'people') {
     content = <People period={current} prep={preparation} readOnly={readOnly} openProxy={() => setProxy(true)} go={go} refresh={refresh} />;
   } else if (activeStep === 'published') {
-    content = <PublishedSchedule period={current} user={user}
+    content = <PublishedSchedule period={current} user={user} refresh={refresh}
       openDraft={preparation.draftRunId ? () => go('generate') : undefined} />;
   } else {
     content = <DraftSchedule period={current} prep={preparation} user={user} readOnly={readOnly}
@@ -194,7 +196,7 @@ function PeriodDetail({ user, period, step, changeStep, back, refreshPeriods, op
           }))} />
       </nav>
       <Alert className="period-progress" message={progress.label}
-        description={`需求 ${preparation.totalNeeded} 人次 · 匹配需求 ${preparation.participants.length} 人`} />
+        description={`需求 ${preparation.publishedTotalNeeded ?? preparation.totalNeeded} 人次 · 匹配需求 ${preparation.participants.length} 人`} />
     </Card>
     {content}
     {proxy && !readOnly && <ProxyEnrollment period={current} close={() => setProxy(false)} saved={() => { setProxy(false); refresh(); }} />}
@@ -216,7 +218,18 @@ function People({ period, prep, readOnly, openProxy, go, refresh }) {
   return <Card><Heading help="participants">参与人员</Heading><div className="stack">
     <div className="muted">匹配需求 {prep.participants.length} 人 · 本期已报名 {prep.submittedCount} 人 · 长期固定 {prep.fixedCount} 人</div>
     <Collapse items={[{ key: 'people', label: '参与名单', children: prep.participants.length
-      ? prep.participants.map(u => <div className="choice" key={u.userId}>{u.name}（{u.employeeNo}） {u.hasFixed && <Tag>长期固定</Tag>} {u.hasSubmitted && <Tag color="green">本期报名</Tag>} {u.maxShifts === 0 && <Tag>本期不接班</Tag>}</div>)
+      ? prep.participants.map(u => <div className="choice" key={u.userId}>
+        <div className="inline">
+          <span>{u.name}（{u.employeeNo}）</span>
+          {u.hasFixed && <Tag>长期固定</Tag>}
+          {u.hasSubmitted && <Tag color="green">本期报名</Tag>}
+          {u.maxShifts === 0 && <Tag>本期不接班</Tag>}
+          {u.submittedAt && <span className="muted">报名时间 {timeText(u.submittedAt)}</span>}
+        </div>
+        {!!u.workTypes?.length && <Space wrap size={[4, 4]} className="participant-work-tags">
+          {u.workTypes.map(work => <Tag key={work.id} color={work.fixedOnly ? undefined : 'blue'}>{work.name}{work.fixedOnly && ' · 固定'}</Tag>)}
+        </Space>}
+      </div>)
       : <Blank>暂无参与人员</Blank> }]} />
     {!readOnly && <>
       <Space wrap>
@@ -299,71 +312,99 @@ function Trash({ close, restored }) {
 }
 
 function Requirements({ period, readOnly, dirty, saved }) {
-  const query = useLoad(period.id, () => API.requirements(period.id));
+  const query = usePageLoad(period.id, () => API.requirements(period.id));
   return <Card><Heading help="requirements">排班需求</Heading>
-    <Load query={query}>{data => <RequirementTable data={data} readOnly={readOnly} dirty={dirty} saved={saved} refresh={query.refresh} />}</Load>
+    <Load query={query}>{data => <RequirementCalendar data={data} readOnly={readOnly} dirty={dirty} saved={saved} refresh={query.refresh} />}</Load>
   </Card>;
 }
 
-function RequirementTable({ data, readOnly, dirty, saved, refresh }) {
-  const months = [...new Set(data.dates.map(d => monthOf(d.workDate)))];
-  const [month, setMonth] = useState(months[0]);
+function RequirementCalendar({ data, readOnly, dirty, saved, refresh }) {
+  const [month, setMonth] = useState(monthOf(data.dates[0]?.workDate));
+  const [date, setDate] = useState(null);
   const [work, setWork] = useState(data.workTypes[0]?.id || 'all');
   const [edits, setEdits] = useState({});
   const { run, busy, confirm } = useAction();
   const locked = readOnly || ['published', 'archived'].includes(data.period.status);
   const hasSlots = data.dates.length > 0;
-  const summary = !hasSlots ? '尚未填充需求' : !locked && data.matchesDefaultRules ? '已按默认规则填充' : '本周期需求';
-  const rows = data.dates.filter(d => monthOf(d.workDate) === month).flatMap(d => d.shifts.map(s => ({ ...s, workDate: d.workDate, id: d.workDate + '|' + s.shiftId })));
+  const pending = Object.values(edits);
+  const summary = !hasSlots ? '尚未填充需求' : pending.length ? '需求待保存' : !locked && data.matchesDefaultRules ? '已按默认规则填充' : '本周期需求';
+  const days = new Map(data.dates.map(day => [day.workDate, day]));
+  const workTypes = new Map(data.workTypes.map(type => [type.id, type]));
+  const totalNeeded = pending.reduce((total, edit) => {
+    const shift = days.get(edit.workDate).shifts.find(s => s.shiftId === edit.shiftId);
+    const original = shift.requirements.find(r => r.workTypeId === edit.workTypeId).needCount;
+    return total + edit.needCount - original;
+  }, data.totalNeeded);
+  const visibleRequirements = shift => shift.requirements.filter(r => r.allowed !== false && (work === 'all' || r.workTypeId === work));
+  const requirementKey = (day, shiftId, workTypeId) => `${day}|${shiftId}|${workTypeId}`;
+  const needCount = (day, shiftId, requirement) => edits[requirementKey(day, shiftId, requirement.workTypeId)]?.needCount ?? requirement.needCount;
+  const dayShifts = (days.get(date)?.shifts || []).filter(shift => visibleRequirements(shift).length);
+  function dayInfo(day) {
+    const entry = days.get(day);
+    if (!entry) return;
+    const count = entry.shifts.reduce((total, shift) => total + visibleRequirements(shift)
+      .reduce((sum, requirement) => sum + needCount(day, shift.shiftId, requirement), 0), 0);
+    return { label: `${count} 人次需求`, badge: count > 0 && <small className="calendar-count">{count}</small> };
+  }
+  function editRequirement(shiftId, requirement, count) {
+    if (count == null) return;
+    const { workTypeId } = requirement;
+    const key = requirementKey(date, shiftId, workTypeId);
+    const nextEdits = { ...edits };
+    if (count === requirement.needCount) delete nextEdits[key];
+    else nextEdits[key] = { workDate: date, shiftId, workTypeId, needCount: count };
+    dirty.current = Object.keys(nextEdits).length > 0;
+    setEdits(nextEdits);
+  }
   async function initialize(reset) {
     if (reset && !await confirm('重新按默认规则填充？', '会覆盖本周期的手工人数。', true)) return;
     await run(() => reset ? API.applyWorkRules(data.period.id) : API.preparePeriod(data.period.id), '需求已更新', () => { dirty.current = false; refresh(); });
   }
   async function next() {
     await run(async () => {
-      const items = Object.values(edits);
-      if (items.length) await API.saveRequirements(data.period.id, items);
+      if (pending.length) await API.saveRequirements(data.period.id, pending);
       dirty.current = false;
       setEdits({});
       try { await saved(); } catch (error) { refresh(); throw error; }
     });
   }
   return <div className="stack">
-    <Alert message={hasSlots ? `${summary} · ${data.totalNeeded} 人次` : summary} />
+    <Alert message={hasSlots ? `${summary} · ${totalNeeded} 人次` : summary} />
     {!hasSlots && !locked && <Button type="primary" onClick={() => initialize(false)} loading={busy}>按默认规则填充</Button>}
-    {hasSlots && <Collapse items={[{
+    {hasSlots && <Collapse className="compact-calendar" items={[{
       key: 'details',
       label: locked ? '查看需求明细' : '查看或调整明细',
       children: <div className="stack">
-        <Form layout="vertical" className="form-grid">
-          <Field label="查看月份"><Select aria-label="查看月份" value={month} onChange={setMonth} options={months.map(m => option(m, m))} /></Field>
+        <Form layout="vertical">
           <Field label="工作类型"><Select aria-label="工作类型" value={work} onChange={setWork} options={[option('all', '全部工作'), ...data.workTypes.map(w => option(w.id, w.name))]} /></Field>
         </Form>
-        <Table size="small" rowKey="id" pagination={false} scroll={{ x: 'max-content' }} dataSource={rows} columns={[
-          { title: '日期 / 班次', render: (_, s) => <>{s.workDate}<div className="muted">{s.shiftName}</div></> },
-          ...data.workTypes.filter(w => work === 'all' || w.id === work).map(w => ({
-            title: w.requiresRoles ? w.name + '（主 + 副）' : w.name, key: w.id,
-            render: (_, s) => {
-              const r = s.requirements.find(r => r.workTypeId === w.id);
-              if (!r || r.allowed === false) return <span className="muted">—</span>;
-              if (locked) return r.needCount;
-              const id = s.id + '|' + w.id;
-              return <InputNumber aria-label={`${s.workDate} ${s.shiftName} ${w.name}需求人数`} className="demand-number" disabled={busy} value={edits[id]?.needCount ?? r.needCount} min={0} max={99} precision={0} onChange={n => {
-                if (n == null) return;
-                const next = { ...edits };
-                if (n === r.needCount) delete next[id];
-                else next[id] = { workDate: s.workDate, shiftId: s.shiftId, workTypeId: w.id, needCount: n };
-                dirty.current = Object.keys(next).length > 0; setEdits(next);
-              }} />;
-            },
-          })),
-        ]} />
+        <MonthCalendar month={month} startDate={data.period.startDate} endDate={data.period.endDate}
+          move={setMonth} selected={date} pick={setDate} blocked={day => !days.has(iso(day))} dayInfo={dayInfo} />
         {!locked && <Button onClick={() => initialize(true)} loading={busy}>重新按默认规则填充</Button>}
       </div>,
     }]} />}
     {!locked && hasSlots && <Button type="primary" onClick={next} loading={busy}>
-      {Object.keys(edits).length ? '保存需求，下一步' : '下一步：参与人员'}
+      {pending.length ? '保存需求，下一步' : '下一步：参与人员'}
     </Button>}
+    <Modal open={!!date} title={date && `${dateText(date)} · 排班需求`} onCancel={() => setDate(null)}
+      footer={<Button type="primary" onClick={() => setDate(null)}>{locked ? '关闭' : '完成'}</Button>}>
+      <div className="stack">{dayShifts.length ? dayShifts.map(shift => (
+        <section className="choice" key={shift.shiftId}>
+          <h3>{shiftText(shift)}</h3>
+          <div className="stack">{visibleRequirements(shift).map(requirement => {
+            const type = workTypes.get(requirement.workTypeId);
+            const count = needCount(date, shift.shiftId, requirement);
+            return <div className="row-between requirement-row" key={requirement.workTypeId}>
+              <span>{type.name}{type.requiresRoles && '（主 + 副）'}</span>
+              {locked ? <strong>{count} 人</strong> : <InputNumber
+                aria-label={`${date} ${shift.shiftName} ${type.name}需求人数`} className="demand-number"
+                disabled={busy} value={count} min={0} max={99} precision={0}
+                onChange={value => editRequirement(shift.shiftId, requirement, value)} />}
+            </div>;
+          })}</div>
+        </section>
+      )) : <Blank>当天没有所选工作的需求</Blank>}</div>
+    </Modal>
   </div>;
 }
 
@@ -378,11 +419,19 @@ function DraftSchedule({ period, prep, user, readOnly, refresh, go, openSettings
   const [review, setReview] = useState(null);
   const [adjusting, setAdjusting] = useState(false);
   const [draftOverride, setDraftOverride] = useState(null);
+  usePullRefresh(async () => {
+    const refreshed = await query.refreshPage();
+    if (refreshed) setDraftOverride(null);
+    return refreshed;
+  }, !review);
   const [editingOptions, setEditingOptions] = useState(false);
+  const [detailView, setDetailView] = useState('calendar');
   const [seed, setSeed] = useState(42);
+  const [historyChoice, setHistoryChoice] = useState();
   const { run, busy, confirm } = useAction();
   const draft = draftOverride || query.data;
   const hasDraft = !!draft?.run;
+  const referenceHistory = historyChoice ?? draft?.run?.referenceHistory ?? true;
   const stage = review ? 2 : hasDraft && !editingOptions ? 1 : 0;
   const canPublish = hasDraft && !draftHasRoleGaps(draft) && !draft.gaps?.fixedConflicts?.length;
 
@@ -398,7 +447,7 @@ function DraftSchedule({ period, prep, user, readOnly, refresh, go, openSettings
   }
   async function generate() {
     if (hasDraft && !await confirm('重新生成草稿？', '这会替换当前草稿及其中的手工调配。')) return;
-    await run(() => API.generate(period.id, seed ?? 42),
+    await run(() => API.generate(period.id, seed ?? 42, referenceHistory),
       result => `草稿已生成 · 已排 ${result.gaps.totalFilled}/${result.gaps.totalNeeded}`,
       () => { returnToDraft(); reload(); });
   }
@@ -423,13 +472,13 @@ function DraftSchedule({ period, prep, user, readOnly, refresh, go, openSettings
       </div>
       {!readOnly && <Steps className="workflow-steps" current={stage} size="small" labelPlacement="vertical" responsive={false} items={publishSteps} />}
       <Load query={query}>{() => {
-        if (readOnly) return hasDraft ? <DraftDetails draft={draft} user={user} /> : <Blank>本周期暂无草稿</Blank>;
-        if (review) return <PublishReview data={review} period={period} back={returnToDraft} saved={() => {
+        if (readOnly) return hasDraft ? <DraftDetails draft={draft} user={user} view={detailView} setView={setDetailView} /> : <Blank>本周期暂无草稿</Blank>;
+        if (review) return <PublishReview data={review} period={period} user={user} view={detailView} setView={setDetailView} back={returnToDraft} saved={() => {
           refresh();
           void go('published');
         }} />;
         if (stage === 1) return <section className="stack" aria-label="核对草稿">
-          <DraftDetails draft={draft} user={user} />
+          <DraftDetails draft={draft} user={user} view={detailView} setView={setDetailView} />
           <Space wrap>
             {prep.canGenerate && <Button disabled={busy} onClick={() => { setEditingOptions(true); window.scrollTo(0, 0); }}>调整生成设置</Button>}
             <Button disabled={busy} onClick={() => setAdjusting(true)}>手工调配草稿</Button>
@@ -444,6 +493,10 @@ function DraftSchedule({ period, prep, user, readOnly, refresh, go, openSettings
           </div>
           {prep.blockers.map(b => <Alert key={b.message} type="warning" message={b.message}
             action={<Button onClick={() => b.configTab ? openSettings(b.configTab) : go(b.step)}>去处理</Button>} />)}
+          {prep.canGenerate && <div>
+            <Checkbox checked={referenceHistory} disabled={busy} onChange={event => setHistoryChoice(event.target.checked)}>参考历史排班</Checkbox>
+            <p className="muted">优先轮给较久没做这项工作的人，兼顾总班次。</p>
+          </div>}
           {prep.canGenerate && <Collapse items={[{ key: 'seed', label: '生成设置（可选）', children:
             <Field label="随机种子"><InputNumber aria-label="随机种子" value={seed} onChange={setSeed} precision={0} disabled={busy} /></Field>,
           }]} />}
@@ -459,18 +512,57 @@ function DraftSchedule({ period, prep, user, readOnly, refresh, go, openSettings
   </>;
 }
 
-function DraftDetails({ draft, user }) {
+function DraftDetails({ draft, user, view, setView }) {
   const conflicts = draft.gaps?.fixedConflicts || [];
   const { totalFilled, totalNeeded } = draft.run;
   return <div className="stack">
     <Alert message={`草稿 #${draft.run.id} · 已排 ${totalFilled}/${totalNeeded} 人次 · 缺口 ${totalNeeded - totalFilled} 人次`} />
     {draftHasRoleGaps(draft) && <Alert showIcon type="error" message="主副负责人未配齐，暂不可发布" />}
     {conflicts.map((c, i) => <Alert key={i} type="error" message={`${c.workDate} ${c.name || ''}：${c.message}`} />)}
-    <Collapse items={[{ key: 'matrix', label: '查看草稿明细', children: <div className="stack"><Matrix data={draft} user={user} /></div> }]} />
+    <ScheduleDetailViews data={draft} user={user} view={view} setView={setView} />
   </div>;
 }
 
-function PublishReview({ data, period, back, saved }) {
+function ScheduleDetailViews({ data, user, view, setView, published = false, onAdjustWork }) {
+  const { startDate, endDate } = data.period;
+  const [month, setMonth] = useState(monthOf(startDate));
+  const [date, setDate] = useState(null);
+  const days = new Map(data.matrix.map(day => [day.workDate, day]));
+  const selectedDay = days.get(date);
+  function dayInfo(day) {
+    const works = days.get(day)?.shifts.flatMap(shift => shift.workTypes) || [];
+    const filled = works.reduce((count, work) => count + work.filled, 0);
+    const needed = works.reduce((count, work) => count + work.needCount, 0);
+    return {
+      label: `已排 ${filled} / ${needed} 人次`,
+      badge: (needed > 0 || filled > 0) && <small className={`calendar-count${filled < needed ? ' draft-calendar-gap' : ''}`}>{filled}/{needed}</small>,
+    };
+  }
+  return <Collapse className="compact-calendar" defaultActiveKey={published ? ['details'] : undefined} items={[{
+    key: 'details', label: published ? '查看生效明细' : '查看草稿明细',
+    children: <div className="stack">
+      <Segmented block aria-label={published ? '生效明细视图' : '草稿明细视图'} value={view} onChange={setView}
+        options={[option('calendar', '日历'), option('list', '列表')]} />
+      {published && (view === 'calendar' || onAdjustWork) && <div className="muted">
+        {view === 'calendar' && '点击日期查看当天安排。'}
+        {onAdjustWork && '点击工作旁的「调班」可调整安排。'}
+      </div>}
+      {view === 'list' ? <Matrix data={data} user={user} onAdjustWork={onAdjustWork} /> : <>
+        <MonthCalendar month={month} startDate={startDate} endDate={endDate} move={setMonth} selected={date} pick={setDate}
+          blocked={day => iso(day) < startDate || iso(day) > endDate} dayInfo={dayInfo} />
+        <Modal open={!!date} title={date && `${dateText(date)} · ${published ? '生效安排' : '草稿安排'}`} onCancel={() => setDate(null)}
+          footer={<Space>
+            {onAdjustWork && <Button onClick={() => onAdjustWork({ workDate: date })}>新增工作</Button>}
+            <Button onClick={() => setDate(null)}>关闭</Button>
+          </Space>}>
+          <Matrix data={{ matrix: selectedDay ? [selectedDay] : [] }} user={user} showDate={false} onAdjustWork={onAdjustWork} />
+        </Modal>
+      </>}
+    </div>,
+  }]} />;
+}
+
+function PublishReview({ data, period, user, view, setView, back, saved }) {
   const { draft, published } = data;
   const { run, busy } = useAction();
   const [confirmed, setConfirmed] = useState(false);
@@ -487,6 +579,7 @@ function PublishReview({ data, period, back, saved }) {
     <Alert message={`${period.name} · 草稿 #${draft.run.id} · ${draft.assignments.length} 人次`}
       description={published.run ? `发布后将替换生效版本 #${published.run.id}` : '首次发布后，团队成员即可查看安排。'} />
     {draft.run.totalNeeded > draft.run.totalFilled && <Alert type="warning" showIcon message={`仍有 ${draft.run.totalNeeded - draft.run.totalFilled} 人次缺口`} />}
+    <ScheduleDetailViews data={draft} user={user} view={view} setView={setView} />
     <div className="muted">新增或调整 {added.length} 项 · 移出 {removed.length} 项 · 保留 {draft.assignments.length - added.length} 项</div>
     <Collapse items={[['新增或调整', added], ['移出', removed]].map(([title, rows]) => ({
       key: title, label: `${title}（${rows.length}）`,
@@ -500,16 +593,18 @@ function PublishReview({ data, period, back, saved }) {
   </Form>;
 }
 
-function PublishedSchedule({ period, user, openDraft }) {
-  const [adjusting, setAdjusting] = useState(false);
-  const query = useLoad(period.id, () => Promise.all([
+function PublishedSchedule({ period, user, openDraft, refresh }) {
+  const [adjusting, setAdjusting] = useState(null);
+  const [detailView, setDetailView] = useState('calendar');
+  const query = usePageLoad(period.id, () => Promise.all([
     API.schedule(period.id, 'published'), API.adminSwaps(period.id), API.get(`/enrollments/${period.id}`),
   ]), true);
   const archived = period.status === 'archived';
   const canAdjust = period.status === 'published' && ['admin', 'super_admin'].includes(user.role);
   function afterAdjustment() {
-    setAdjusting(false);
+    setAdjusting(null);
     query.refresh();
+    refresh();
   }
   return <Load query={query}>{([published, swaps, stats]) => <>
     {published.run && <div className="stat-grid">{[
@@ -522,20 +617,21 @@ function PublishedSchedule({ period, user, openDraft }) {
       <Heading help="published">{archived ? '历史排班' : '生效排班'}</Heading>
       <Space wrap>
         {openDraft && <Button onClick={openDraft}>查看草稿</Button>}
-        {canAdjust && !!published.assignments.length && <Button type="primary" disabled={query.loading} onClick={() => setAdjusting(true)}>手动调班</Button>}
+        {canAdjust && published.run && <Button type="primary" disabled={query.loading} onClick={() => setAdjusting({})}>手动调班</Button>}
       </Space>
     </div>{published.run ? <div className="stack">
       <Alert message={`生效版本 #${published.run.id} · 已安排 ${published.assignments.length} 人次`} />
-      <Collapse items={[{ key: 'matrix', label: '查看生效明细', children: <div className="stack"><Matrix data={published} user={user} /></div> }]} />
+      <ScheduleDetailViews data={published} user={user} view={detailView} setView={setDetailView} published
+        onAdjustWork={canAdjust && !query.loading ? setAdjusting : undefined} />
     </div> : <Blank>本周期暂无已发布排班</Blank>}</Card>
     <Records metrics={published.metrics} swaps={swaps} revision={published.run?.revision} />
-    {adjusting && canAdjust && <Adjustments mode="published" data={published} close={() => setAdjusting(false)} saved={afterAdjustment} />}
+    {adjusting && canAdjust && <Adjustments mode="published" data={published} target={adjusting} close={() => setAdjusting(null)} saved={afterAdjustment} />}
   </>}</Load>;
 }
 
 function Records({ metrics, swaps, revision }) {
   const [active, setActive] = useState([]);
-  const audit = useLoad(active.includes('audit') ? revision ?? 'audit' : null, () => API.auditLogs(15));
+  const audit = usePageLoad(active.includes('audit') ? revision ?? 'audit' : null, () => API.auditLogs(15));
   return <Card><Heading help="fairness">统计与记录</Heading><Collapse activeKey={active} onChange={setActive} items={[
     ...(metrics ? [{ key: 'metrics', label: `公平度 · ${metrics.fairnessScore} 分`, children: <>
       <p>工作量：人均 {metrics.workload.avg} 班 · 标准差 {metrics.workload.std} · 最多 {metrics.workload.max} / 最少 {metrics.workload.min}</p>

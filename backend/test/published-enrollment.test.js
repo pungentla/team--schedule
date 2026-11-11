@@ -63,6 +63,42 @@ test('新报名只填今天起7天的真实空位，不动已有人员、过去�
   const repeated = submit(newcomer, [c]); assert.equal(repeated.scheduleChanges.addedCount, 0); assert.equal(live().run.revision, 1);
 });
 
+test('按星期报名只补所选星期的空位，取消星期只释放本周期未来对应班次', () => {
+  const original = active();
+  const work = choices([c])[0];
+  const configService = require('../src/services/configService');
+  assert.throws(() => submit(newcomer, [c], { workTypes: [{ ...work, weekdays: [0] }] }), /未开放自选报名星期/);
+  assert.equal(configService.updateWorkType(c, { allowWeekdaySelection: true }, ctx(admin)).allowWeekdaySelection, true);
+  const result = submit(newcomer, [c], { workTypes: [{ ...work, weekdays: [0, 4] }] });
+  assert.deepEqual(result.workTypes[0].weekdays, [0, 4]);
+  assert.equal(result.scheduleChanges.addedCount, 2);
+  assert.deepEqual(active().filter(r => r.user_id === newcomer).map(r => r.work_date), ['2026-11-05', '2026-11-08']);
+
+  const narrowed = submit(newcomer, [c], { workTypes: [{ ...work, weekdays: [0] }] });
+  assert.equal(narrowed.scheduleChanges.removedCount, 1);
+  assert.equal(narrowed.scheduleChanges.addedCount, 0);
+  assert.deepEqual(active().filter(r => r.user_id === newcomer).map(r => r.work_date), ['2026-11-08']);
+  assert.deepEqual(active().filter(r => r.user_id !== newcomer), original);
+  assert.equal(configService.updateWorkType(c, { allowWeekdaySelection: false }, ctx(admin)).allowWeekdaySelection, false);
+  assert.throws(() => submit(newcomer, [c], { workTypes: [{ ...work, weekdays: [4] }] }), /未开放自选报名星期/);
+  assert.deepEqual(submit(newcomer, [c]).workTypes[0].weekdays, [0]);
+});
+
+test('不同工作分别按报名星期排班，旧固定名单不会覆盖本人选择', () => {
+  configs.updateWorkType(a, { allowWeekdaySelection: true });
+  configs.updateWorkType(b, { allowWeekdaySelection: true, weeklyAssignments: [{ weekday: 1, shiftId: pm, userId: owner, dutyRole: 'member' }] });
+  const workTypes = choices([a, b]).map(work => ({ ...work, weekdays: work.workTypeId === a ? [1] : [0] }));
+  assert.throws(() => submit(owner, [b], { workTypes: [{ ...workTypes[1], weekdays: [7] }] }), /选择开放工作日/);
+  assert.throws(() => submit(owner, [b], { workTypes: [{ ...workTypes[1], weekdays: [] }] }), /报名星期/);
+  submit(owner, [a, b], { workTypes });
+
+  const draft = schedule.generate(period, {}, ctx(admin));
+  const own = db.all('SELECT work_type_id, work_date FROM assignments WHERE run_id=? AND user_id=?', draft.runId, owner);
+  assert.deepEqual(own.filter(r => r.work_type_id === a).map(r => r.work_date).sort(), ['2026-11-02', '2026-11-09']);
+  assert.deepEqual(own.filter(r => r.work_type_id === b).map(r => r.work_date), ['2026-11-08']);
+  assert.deepEqual(draft.gaps.fixedConflicts, []);
+});
+
 for (const byAdmin of [false, true]) test(`${byAdmin ? '管理员代办' : '本人'}取消工作：只移除明天起本周期该工作的安排，撤回受影响换班并同步主副缺口`, () => {
   const swapId = pendingTransfer();
   const original = active();

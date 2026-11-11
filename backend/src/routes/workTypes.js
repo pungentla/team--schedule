@@ -25,6 +25,7 @@ router.post('/', requireAuth, requireAdmin, (req, res) => {
       sortOrder: optionalInt(b.sortOrder, '排序', { min: 0, max: 999 }) ?? 0,
       requiresRoles: b.requiresRoles === undefined ? false : requireBoolean(b.requiresRoles, '区分主副负责人'),
       weekdays: b.weekdays === undefined ? undefined : parseWeekdays(b.weekdays),
+      allowWeekdaySelection: b.allowWeekdaySelection === undefined ? undefined : requireBoolean(b.allowWeekdaySelection, '允许自选报名星期'),
       defaultNeed: optionalInt(b.defaultNeed, '默认人数', { min: 0, max: 99 }) ?? undefined,
       weeklyAssignments: b.weeklyAssignments,
       dutyPairs: b.dutyPairs,
@@ -45,6 +46,7 @@ router.put('/:id', requireAuth, requireAdmin, (req, res) => {
   if (b.active !== undefined) fields.active = b.active ? 1 : 0;
   if (b.requiresRoles !== undefined) fields.requiresRoles = requireBoolean(b.requiresRoles, '区分主副负责人');
   if (b.weekdays !== undefined) fields.weekdays = parseWeekdays(b.weekdays);
+  if (b.allowWeekdaySelection !== undefined) fields.allowWeekdaySelection = requireBoolean(b.allowWeekdaySelection, '允许自选报名星期');
   if (b.defaultNeed !== undefined) fields.defaultNeed = requireInt(b.defaultNeed, '默认人数', { min: 0, max: 99 });
   if (b.weeklyAssignments !== undefined) fields.weeklyAssignments = b.weeklyAssignments;
   if (b.dutyPairs !== undefined) fields.dutyPairs = b.dutyPairs;

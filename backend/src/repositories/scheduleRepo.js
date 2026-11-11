@@ -11,6 +11,7 @@ function insertRun({
   periodId,
   algoVersion,
   seed,
+  referenceHistory,
   inputHash,
   status,
   totalNeeded,
@@ -24,12 +25,13 @@ function insertRun({
 }) {
   const { lastInsertRowid } = db.run(
     `INSERT INTO schedule_runs
-       (period_id, algo_version, seed, input_hash, status, total_needed, total_filled, fill_rate,
+       (period_id, algo_version, seed, reference_history, input_hash, status, total_needed, total_filled, fill_rate,
         metrics_json, gaps_json, rounds, duration_ms, created_by, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     periodId,
     algoVersion,
     seed,
+    referenceHistory ?? null,
     inputHash,
     status,
     totalNeeded,

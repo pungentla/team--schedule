@@ -6,7 +6,7 @@ const { once } = require('node:events');
 
 process.env.RATE_LIMIT_ENABLED = '0';
 const db = require('../src/db/db');
-const { migrate } = require('../src/db/migrate');
+const { migrate, CURRENT_VERSION } = require('../src/db/migrate');
 const { createApp } = require('../src/app');
 const { issueSession } = require('../src/services/authService');
 const { insertUser } = require('../src/repositories/userRepo');
@@ -21,7 +21,7 @@ test('花名全局显示、实名映射仅供账号管理，禁用和启用不�
     ALTER TABLE users DROP COLUMN nickname;
     ALTER TABLE users DROP COLUMN nickname_changed_at;
     PRAGMA user_version = 21`);
-  assert.deepEqual(migrate(), { fromVersion: 21, toVersion: 23 });
+  assert.deepEqual(migrate(), { fromVersion: 21, toVersion: CURRENT_VERSION });
   const tokens = new Map([employee, admin].map(id => [id, issueSession(id).token]));
   const server = createApp().listen(0, '127.0.0.1');
   t.after(() => { server.close(); db.close(); });

@@ -6,6 +6,7 @@ const { ROLES } = require('../config');
 const { requireAuth } = require('../middleware/auth');
 const { ensureAlias } = require('../repositories/discussionAliasRepo');
 const { queuePushEvent } = require('../services/reminderService');
+const { newTopic } = require('../services/systemNoticeService');
 const { nowIso } = require('../utils/date');
 const { badRequest, conflict, forbidden, notFound } = require('../utils/errors');
 const { intParam, optionalInt, requireArray, requireBoolean, requireEnum, requireInt, requireString } = require('../utils/validate');
@@ -37,9 +38,9 @@ function notifyParticipants(topicId, actorId, body, replyToUserId = null, replyI
     path: replyId == null ? `/?topic=${topicId}` : `/?topic=${topicId}&reply=${replyId}`,
   };
   const otherParticipants = participants.map(row => row.author_id).filter(id => id !== replyToUserId);
-  queuePushEvent(actorId, otherParticipants, notification);
+  queuePushEvent(actorId, otherParticipants, notification, replyId == null ? 'topic_likes' : 'topic_replies');
   if (replyToUserId !== null) {
-    queuePushEvent(actorId, [replyToUserId], { ...notification, body: '有人回复了你的评论。' });
+    queuePushEvent(actorId, [replyToUserId], { ...notification, body: '有人回复了你的评论。' }, 'direct_reply');
   }
 }
 
@@ -133,9 +134,9 @@ router.get('/unread-replies', (req, res) => {
     FROM discussion_unread_replies u JOIN discussion_replies r ON r.id = u.reply_id
     WHERE u.user_id = ?1 GROUP BY r.topic_id
   ) SELECT t.id, t.title, unread.unreadCount, unread.latestReplyId, substr(r.content, 1, 120) AS excerpt,
-    CASE WHEN t.author_id = ?1 AND r.parent_reply_id IS NULL THEN 'topic_comment'
+    CASE WHEN parent.author_id = ?1 THEN 'direct_reply'
+      WHEN t.author_id = ?1 AND r.parent_reply_id IS NULL THEN 'topic_comment'
       WHEN t.author_id = ?1 THEN 'topic_reply'
-      WHEN parent.author_id = ?1 THEN 'direct_reply'
       ELSE 'discussion_reply' END AS kind
     FROM unread JOIN discussion_topics t ON t.id = unread.topic_id
     JOIN discussion_replies r ON r.id = unread.latestReplyId
@@ -178,6 +179,7 @@ router.post('/', (req, res) => {
       lastInsertRowid, index + 1, label));
     images.forEach((image, index) => db.run('INSERT INTO discussion_images (topic_id, position, mime_type, content) VALUES (?, ?, ?, ?)',
       lastInsertRowid, index + 1, image.mimeType, image.content));
+    newTopic(req.user.id);
     return lastInsertRowid;
   });
   res.status(201).json({ data: { id, category, anonymous } });

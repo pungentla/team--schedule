@@ -8,12 +8,12 @@ import Modal from 'antd/es/modal';
 import Select from 'antd/es/select';
 import Space from 'antd/es/space';
 import Tag from 'antd/es/tag';
-import { API, Blank, Field, Heading, Load, assignmentLabel, option, personLabel, swapLabels, useAction, useLoad } from './shared';
+import { API, Blank, Field, Heading, Load, assignmentLabel, option, personLabel, swapLabels, useAction, useLoad, usePageLoad } from './shared';
 
 export const problemsText = items => (items || []).map(p => p.label || p.message || p.code).join('；');
 
-export function SwapForm({ assignments, admin, saved }) {
-  const [from, setFrom] = useState();
+export function SwapForm({ assignments, admin, saved, initialAssignmentId }) {
+  const [from, setFrom] = useState(initialAssignmentId);
   const [type, setType] = useState('transfer');
   const [person, setPerson] = useState();
   const [target, setTarget] = useState();
@@ -43,8 +43,8 @@ export function SwapForm({ assignments, admin, saved }) {
 }
 
 export function Swaps({ user, detail, setDetail, inbox }) {
-  const assignments = useLoad('assignments', API.myAssignments);
-  const requests = useLoad('requests', API.mySwaps);
+  const assignments = usePageLoad('assignments', API.myAssignments);
+  const requests = usePageLoad('requests', API.mySwaps);
   const refresh = () => { assignments.refresh(); requests.refresh(); inbox.refresh(); };
   return <>
     <Card><Heading help="swaps">发起换班</Heading><Load query={assignments}>{list => <SwapForm assignments={list.filter(a => a.periodStatus === 'published')} saved={result => { refresh(); setDetail(result.swap.id); }} />}</Load></Card>

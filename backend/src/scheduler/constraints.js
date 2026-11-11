@@ -61,6 +61,7 @@ class EmployeeState {
     /** 工作类型 → 意愿优先级（1 最高） */
     this.workTypes = new Map(emp.workTypes.map((w) => [w.workTypeId, w.priority]));
     this.dutyRoles = new Map(emp.workTypes.map((w) => [w.workTypeId, w.dutyRole || 'member']));
+    this.workWeekdays = new Map(emp.workTypes.filter((w) => w.weekdays).map((w) => [w.workTypeId, w.weekdays]));
     this.fixedOnly = new Set(emp.workTypes.filter((w) => w.fixedOnly).map((w) => w.workTypeId));
     this.fixedRules = new Map(emp.workTypes.map((w) => [w.workTypeId, w.fixedRules || []]));
     /** Set<'date'> 整日不可用 */
@@ -85,9 +86,13 @@ class EmployeeState {
     this.lastDateByWorkType = emp.lastDateByWorkType || new Map();
   }
 
-  /** 该工作类型的历史次数 */
+  matchesWeekday({ workTypeId, workDate }) {
+    const days = this.workWeekdays.get(workTypeId);
+    return !days || days.includes(weekday(workDate));
+  }
+
   matchesWork(slot) {
-    if (!this.workTypes.has(slot.workTypeId)) return false;
+    if (!this.workTypes.has(slot.workTypeId) || !this.matchesWeekday(slot)) return false;
     if (!this.fixedOnly.has(slot.workTypeId) && roleMatches(this.dutyRoles.get(slot.workTypeId), slot.dutyRole)) return true;
     return (this.fixedRules.get(slot.workTypeId) || []).some((r) => roleMatches(r.dutyRole, slot.dutyRole)
       && (slot.manualOverride || (r.weekday === weekday(slot.workDate) && r.shiftId === slot.shiftId)));
@@ -172,6 +177,7 @@ class EmployeeState {
     c.effectiveCap = this.effectiveCap;
     c.workTypes = new Map(this.workTypes);
     c.dutyRoles = new Map(this.dutyRoles);
+    c.workWeekdays = new Map(this.workWeekdays);
     c.fixedOnly = new Set(this.fixedOnly);
     c.fixedRules = new Map(this.fixedRules);
     c.unavailableDates = new Set(this.unavailableDates);
@@ -201,6 +207,7 @@ function checkSlot(emp, slot, period) {
     return { code: REASON.NOT_ENROLLED, message: REASON_LABELS[REASON.NOT_ENROLLED] };
   }
 
+  if (!emp.matchesWeekday(slot)) return { code: REASON.NOT_AVAILABLE_SLOT, message: '未报名该工作的这个星期' };
   if (!emp.matchesWork(slot)) return { code: REASON.ROLE_MISMATCH, message: '未报名该岗位角色，或长期报名不包含这个星期和班次' };
 
   // H3 整日请假

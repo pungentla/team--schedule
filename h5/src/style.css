@@ -5,6 +5,12 @@ h3 { font-size: 15px; margin: 8px 0; }
 button, input { font: inherit; }
 .workspace, .content, .stack > *, .form-grid > *, .person-row > * { min-width: 0; }
 .workspace { min-height: 100dvh; }
+:root:has(.pull-refresh-surface) { overscroll-behavior-y: none; }
+.pull-refresh-indicator {
+  position: fixed; z-index: 12; left: 50%; transform: translateX(-50%); pointer-events: none;
+  display: flex; align-items: center; gap: 6px; border-radius: 20px; padding: 6px 14px;
+  background: #fff; color: #2e55a3; box-shadow: 0 2px 12px #1f2a3c24; font-size: 13px;
+}
 .workspace-top { position: sticky; top: 0; z-index: 11; background: #f2f5f9; }
 .content { width: min(100%, 960px); margin: 0 auto; padding: 14px 12px calc(76px + env(safe-area-inset-bottom)); }
 .topbar { background: #2e55a3; color: white; }
@@ -36,6 +42,8 @@ button, input { font: inherit; }
 .help-icon.ant-btn { color: #58677e; height: 32px; min-width: 32px; font-size: 17px; }
 .help-copy { white-space: pre-line; max-width: min(330px, calc(100vw - 70px)); }
 .stack { display: flex; flex-direction: column; gap: 12px; }
+.push-option-group { gap: 8px; }
+.push-option-group h4 { margin: 0; }
 .stack > .ant-btn { align-self: flex-start; }
 .inline, .row-between { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .row-between { justify-content: space-between; gap: 8px; }
@@ -138,8 +146,29 @@ button, input { font: inherit; }
 .stack > .choice + .choice { margin-top: 0; }
 .choice > .ant-btn, .choice > .ant-space, .choice > .ant-input { margin-top: 6px; }
 .choice > .form-grid { margin-top: 8px; }
+.participant-work-tags .ant-tag { margin-inline-end: 0; white-space: normal; overflow-wrap: anywhere; }
 .enrollment-summary, .enrollment-note { overflow-wrap: anywhere; }
 .enrollment-note { white-space: pre-wrap; }
+.enrollment-work-fields { display: grid; gap: 6px; margin-top: 4px; }
+.enrollment-work-field.ant-form-item { margin-bottom: 0; }
+.enrollment-work-field .ant-form-item-row { display: grid; grid-template-columns: 4em minmax(0, 1fr); gap: 8px; }
+.enrollment-work-field.ant-form-item .ant-form-item-label { padding: 0; text-align: start; }
+.enrollment-weekday-field .ant-form-item-row { align-items: start; }
+.enrollment-weekday-field .ant-form-item-label > label { height: auto; }
+.enrollment-weekday-field .ant-form-item-control-input { min-height: 0; }
+.enrollment-weekday-options.ant-checkbox-group { display: flex; align-items: center; gap: 4px 8px; }
+.enrollment-weekday-options .ant-checkbox-wrapper { white-space: nowrap; }
+.enrollment-weekday-options .ant-btn { padding-inline: 2px; }
+.compact-calendar .ant-collapse-content-box { padding-inline: 8px; }
+.compact-calendar .calendar-heading { margin-bottom: 0; }
+.compact-calendar .calendar-heading strong { font-size: 13px; white-space: nowrap; }
+.compact-calendar .calendar-heading .ant-btn { font-size: 13px; padding-inline: 6px; }
+.availability-legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: #53627a; }
+.availability-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.availability-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; }
+.availability-full { background: #268354; }
+.availability-partial { background: #b76b00; }
+.availability-none { background: #c84337; }
 .assignment { padding: 8px 0; overflow-wrap: anywhere; }
 .assignment + .assignment, .person-row + .person-row { border-top: 1px solid #eef1f6; }
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: #4a90d9; }
@@ -152,6 +181,8 @@ button, input { font: inherit; }
 .calendar-date small { font-size: 11px; }
 .matrix-row { display: grid; grid-template-columns: minmax(80px, 28%) minmax(0, 1fr); gap: 8px; align-items: start; padding: 8px 0; border-bottom: 1px solid #eef1f6; overflow-wrap: anywhere; }
 .matrix-row:last-child { border-bottom: 0; }
+.matrix-row-adjustable { grid-template-columns: minmax(72px, 28%) minmax(0, 1fr) auto; }
+.matrix-row-adjustable > .ant-btn { padding-inline: 2px; }
 .matrix-row .ant-tag, .assignment .ant-tag { white-space: normal; margin-inline-end: 0; }
 .period-list-item { display: grid; gap: 4px; width: 100%; color: inherit; background: #fff; text-align: start; cursor: pointer; overflow-wrap: anywhere; }
 .period-list-item:hover, .period-list-item:focus-visible { border-color: #2e59ae; }
@@ -206,7 +237,10 @@ button, input { font: inherit; }
 .schedule-breakdown { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; overflow-wrap: anywhere; }
 .schedule-breakdown-track { height: 6px; margin-top: 4px; border-radius: 4px; background: #eaf0f8; overflow: hidden; }
 .schedule-breakdown-track span { display: block; height: 100%; border-radius: inherit; background: #4776bf; }
-.demand-number.ant-input-number { width: 78px; }
+.calendar-count { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.calendar-date:not([aria-pressed=true]) .draft-calendar-gap { color: #b6372b; }
+.requirement-row > span { overflow-wrap: anywhere; }
+.demand-number.ant-input-number { flex: none; width: 78px; }
 .review-changes { max-height: 42dvh; overflow-y: auto; }
 .ant-message .ant-message-notice-content { max-width: calc(100vw - 24px); white-space: normal; overflow-wrap: anywhere; }
 .ant-modal { max-width: calc(100% - 24px); }

@@ -4,10 +4,31 @@ const express = require('express');
 const { requireAuth } = require('../middleware/auth');
 const { createRateLimiter } = require('../middleware/rateLimit');
 const { AppError, notFound } = require('../utils/errors');
+const { intParam, requireBoolean, requireEnum } = require('../utils/validate');
 const reminders = require('../services/reminderService');
+const systemNotices = require('../services/systemNoticeService');
 
 const router = express.Router();
 router.use(requireAuth);
+
+router.get('/preferences', (req, res) => {
+  res.set('Cache-Control', 'no-store').json({ data: reminders.getPreferences(req.user.id) });
+});
+
+router.put('/preferences/:kind', (req, res) => {
+  const kind = requireEnum(req.params.kind, '推送类型', reminders.PUSH_KINDS);
+  const enabled = requireBoolean(req.body?.enabled, '开启状态');
+  res.json({ data: reminders.setPreference(req.user.id, kind, enabled) });
+});
+
+router.get('/unread', (req, res) => {
+  res.set('Cache-Control', 'no-store').json({ data: systemNotices.listUnread(req.user.id) });
+});
+
+router.put('/:id/read', (req, res) => {
+  systemNotices.markRead(req.user.id, intParam(req.params.id, '消息'));
+  res.status(204).end();
+});
 
 router.post('/status', (req, res) => {
   const endpoint = req.body?.endpoint == null ? null : reminders.validateEndpoint(req.body.endpoint);

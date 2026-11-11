@@ -54,7 +54,7 @@ function loadHistory(periodStartDate, historyPeriods = config.historyPeriods) {
  * 组装算法输入。
  * 这一步把"数据库视角"翻译成"算法视角"，是排班正确性的关键环节。
  */
-function buildScheduleInput(periodId, { seed } = {}) {
+function buildScheduleInput(periodId, { seed, referenceHistory } = {}) {
   const period = periodRepo.findPeriod(periodId);
   if (!period) throw notFound('排班周期不存在');
 
@@ -91,7 +91,7 @@ function buildScheduleInput(periodId, { seed } = {}) {
 
   const availabilityMap = enrollmentRepo.loadAvailabilityMap(periodId);
   const unavailabilityMap = enrollmentRepo.loadUnavailabilityMap(periodId);
-  const historyMap = loadHistory(period.start_date);
+  const historyMap = referenceHistory === false ? new Map() : loadHistory(period.start_date);
 
   const employees = enrollments.map((e) => {
     const hist = historyMap.get(e.userId) || { byWorkType: new Map(), total: 0, lastDateByWorkType: new Map() };
@@ -109,6 +109,7 @@ function buildScheduleInput(periodId, { seed } = {}) {
       lastDateByWorkType: hist.lastDateByWorkType,
     };
   });
+  const employeesById = new Map(employees.map((employee) => [employee.userId, employee]));
 
   return {
     period: {
@@ -119,11 +120,16 @@ function buildScheduleInput(periodId, { seed } = {}) {
       maxShiftsPerDay: period.max_shifts_per_day,
       maxShiftsPerWeek: period.max_shifts_per_week,
       forbidConsecutive: period.forbid_consecutive === 1,
+      referenceHistory,
     },
     employees,
     slots,
     fixedAssignments: slots.flatMap((slot) => JSON.parse(workTypeMap.get(slot.workTypeId).weekly_assignments_json)
-      .filter((r) => r.weekday === weekday(slot.workDate) && r.shiftId === slot.shiftId)
+      .filter((rule) => {
+        if (rule.weekday !== weekday(slot.workDate) || rule.shiftId !== slot.shiftId) return false;
+        const days = employeesById.get(rule.userId)?.workTypes.find((work) => work.workTypeId === slot.workTypeId)?.weekdays;
+        return !days || days.includes(rule.weekday);
+      })
       .map((r) => ({ ...r, ...slot, dutyRole: r.dutyRole, userId: r.userId }))),
     seed: seed ?? config.defaultSeed,
   };
@@ -132,14 +138,14 @@ function buildScheduleInput(periodId, { seed } = {}) {
 /**
  * 生成排班（写入 draft run，不自动发布）
  */
-function generate(periodId, { seed, saveDraft = true } = {}, ctx) {
+function generate(periodId, { seed, referenceHistory, saveDraft = true } = {}, ctx) {
   const period = periodRepo.findPeriod(periodId);
   if (!period) throw notFound('排班周期不存在');
   if (period.status === PERIOD_STATUS.ARCHIVED) {
     throw conflict('PERIOD_ARCHIVED', '已归档的周期不能排班');
   }
 
-  const input = buildScheduleInput(periodId, { seed });
+  const input = buildScheduleInput(periodId, { seed, referenceHistory });
   const result = generateSchedule(input, {
     maxRounds: config.maxOptimizeRounds,
     minImprovement: config.minImprovement,
@@ -158,6 +164,7 @@ function generate(periodId, { seed, saveDraft = true } = {}, ctx) {
       periodId,
       algoVersion: result.algoVersion,
       seed: result.seed,
+      referenceHistory,
       inputHash: result.inputHash,
       status: RUN_STATUS.DRAFT,
       totalNeeded: result.gaps.totalNeeded,
@@ -200,6 +207,7 @@ function generate(periodId, { seed, saveDraft = true } = {}, ctx) {
     actorId: ctx.user.id,
     detail: {
       seed: result.seed,
+      referenceHistory: referenceHistory ?? null,
       filled: result.gaps.totalFilled,
       needed: result.gaps.totalNeeded,
       fillRate: result.gaps.fillRate,
@@ -226,8 +234,8 @@ function publish(periodId, runId, ctx, { expectedRevision, publishedRunId, publi
   if (run.status !== RUN_STATUS.DRAFT) throw conflict('RUN_DISCARDED', '该草稿已作废，请重新生成排班');
   if (expectedRevision !== undefined && run.revision !== expectedRevision) throw conflict('DRAFT_CHANGED', '草稿已被其他管理员调配，请重新检查后再发布');
   if (run.gaps_json && safeParse(run.gaps_json)?.fixedConflicts?.length) throw conflict('FIXED_ASSIGNMENTS_UNRESOLVED', '部分固定人员尚未安排成功，请先在草稿中处理固定名单冲突');
-  if (run.input_hash && computeInputHash(buildScheduleInput(periodId, { seed: run.seed })) !== run.input_hash) {
-    throw conflict('SCHEDULE_INPUT_CHANGED', '工作配置、需求或员工报名已变化，请重新生成排班再发布');
+  if (run.input_hash && computeInputHash(buildRunInput(run)) !== run.input_hash) {
+    throw conflict('SCHEDULE_INPUT_CHANGED', '工作配置、需求、报名或参考排班已变化，请重新生成排班再发布');
   }
 
   // 负责人岗位不能以缺主或缺副的状态发布；总人数的其他缺口仍按原规则展示。
@@ -280,6 +288,13 @@ function publish(periodId, runId, ctx, { expectedRevision, publishedRunId, publi
   return { runId: run.id, filled, published: true };
 }
 
+function buildRunInput(run) {
+  return buildScheduleInput(run.period_id, {
+    seed: run.seed,
+    referenceHistory: run.reference_history == null ? undefined : run.reference_history === 1,
+  });
+}
+
 function readEditableDraft(runId) {
   const run = scheduleRepo.findRun(runId);
   if (!run) throw notFound('排班草稿不存在');
@@ -287,8 +302,8 @@ function readEditableDraft(runId) {
   const period = periodRepo.findPeriod(run.period_id);
   if (!period) throw notFound('排班周期不存在');
   if (period.status === PERIOD_STATUS.ARCHIVED) throw conflict('PERIOD_ARCHIVED', '已归档周期不能调配');
-  const input = buildScheduleInput(run.period_id, { seed: run.seed });
-  if (computeInputHash(input) !== run.input_hash) throw conflict('SCHEDULE_INPUT_CHANGED', '工作配置、需求或报名已变化，请先重新生成草稿');
+  const input = buildRunInput(run);
+  if (computeInputHash(input) !== run.input_hash) throw conflict('SCHEDULE_INPUT_CHANGED', '工作配置、需求、报名或参考排班已变化，请先重新生成草稿');
   const assignments = scheduleRepo.listAssignmentsWithUser(run.id).map((a) => ({ id: a.id, workDate: a.work_date, shiftId: a.shift_id, workTypeId: a.work_type_id, dutyRole: a.duty_role, userId: a.user_id, source: a.source, isFixed: a.is_fixed === 1 }));
   return { run, input, assignments };
 }
@@ -492,6 +507,7 @@ function getSchedule(periodId, viewer, { runId, version } = {}) {
       status: run.status,
       algoVersion: run.algo_version,
       seed: run.seed,
+      referenceHistory: run.reference_history == null ? null : run.reference_history === 1,
       inputHash: run.input_hash,
       totalNeeded: run.total_needed,
       totalFilled: run.total_filled,

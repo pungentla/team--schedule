@@ -6,11 +6,29 @@ const db = require('../db/db');
 const { config } = require('../config');
 const { addDays, nowTime, today } = require('../utils/date');
 const { badRequest } = require('../utils/errors');
-const { getTeamSchedule } = require('./scheduleService');
 
 const vapidDetails = config.webPush;
 const publicKey = vapidDetails.subject && vapidDetails.publicKey && vapidDetails.privateKey
   ? vapidDetails.publicKey : null;
+const PUSH_KINDS = ['enrollment_open', 'proxy_enrollment', 'new_topics', 'direct_reply',
+  'topic_replies', 'topic_likes', 'swap', 'announcement', 'next_day_schedule'];
+
+function getPreferences(userId) {
+  const disabled = new Set(db.all('SELECT kind FROM push_opt_outs WHERE user_id=?', userId).map(row => row.kind));
+  return Object.fromEntries(PUSH_KINDS.map(kind => [kind, !disabled.has(kind)]));
+}
+
+function setPreference(userId, kind, enabled) {
+  return db.tx(() => {
+    if (enabled) {
+      db.run('DELETE FROM push_opt_outs WHERE user_id=? AND kind=?', userId, kind);
+    } else {
+      db.run('INSERT OR IGNORE INTO push_opt_outs (user_id,kind) VALUES (?,?)', userId, kind);
+      db.run('DELETE FROM push_events WHERE user_id=? AND push_kind=?', userId, kind);
+    }
+    return getPreferences(userId);
+  });
+}
 
 // 订阅由浏览器生成，只向受支持的推送服务发送请求。
 const pushHost = /^(fcm\.googleapis\.com|updates\.push\.services\.mozilla\.com|[a-z0-9-]+\.notify\.windows\.com|[a-z0-9-]+\.push\.apple\.com)$/;
@@ -68,13 +86,14 @@ function sendTest(device) {
   return sendDevice(device, { title: '时禾 · 测试通知', body: '这台设备已能接收时禾提醒。', tag: 'shihe-test' }, 120);
 }
 
-function queuePushEvent(actorId, userIds, payload) {
+function queuePushEvent(actorId, userIds, payload, kind = null) {
   const now = Date.now();
   const recipients = userIds && JSON.stringify(userIds);
-  db.run(`INSERT INTO push_events (endpoint,user_id,payload,expires_at,next_attempt_at)
-    SELECT s.endpoint,s.user_id,?,?,? FROM push_subscriptions s JOIN users u ON u.id=s.user_id
-    WHERE u.status='active' AND u.id<>? AND (? IS NULL OR u.id IN (SELECT value FROM json_each(?)))`,
-  JSON.stringify(payload), now + 6 * 3600_000, now, actorId, recipients, recipients);
+  db.run(`INSERT INTO push_events (endpoint,user_id,payload,push_kind,expires_at,next_attempt_at)
+    SELECT s.endpoint,s.user_id,?,?,?,? FROM push_subscriptions s JOIN users u ON u.id=s.user_id
+    WHERE u.status='active' AND u.id<>? AND (? IS NULL OR u.id IN (SELECT value FROM json_each(?)))
+      AND NOT EXISTS (SELECT 1 FROM push_opt_outs o WHERE o.user_id=s.user_id AND o.kind=?)`,
+  JSON.stringify(payload), kind, now + 6 * 3600_000, now, actorId, recipients, recipients, kind);
 }
 
 async function sendQueuedPushEvents() {
@@ -100,6 +119,7 @@ async function sendScheduleReminders(workDate, stopped = () => false) {
   const devices = db.all(`SELECT s.* FROM push_subscriptions s JOIN users u ON u.id=s.user_id
     WHERE u.status='active' AND s.reminded_date IS NOT ?`, workDate);
   if (!devices.length) return;
+  const { getTeamSchedule } = require('./scheduleService');
   const counts = new Map();
   for (const { userId } of getTeamSchedule({ startDate: workDate, days: 1 }).assignments) {
     counts.set(userId, (counts.get(userId) || 0) + 1);
@@ -107,9 +127,13 @@ async function sendScheduleReminders(workDate, stopped = () => false) {
   for (const device of devices) {
     if (stopped()) break;
     const count = counts.get(device.user_id);
-    if (!count || !findSubscription(device.user_id, device.endpoint)) continue;
+    if (!count) continue;
+    const current = db.get(`SELECT s.* FROM push_subscriptions s WHERE s.user_id=? AND s.endpoint=?
+      AND NOT EXISTS (SELECT 1 FROM push_opt_outs o WHERE o.user_id=s.user_id AND o.kind='next_day_schedule')`,
+    device.user_id, device.endpoint);
+    if (!current) continue;
     try {
-      const sent = await sendDevice(device, {
+      const sent = await sendDevice(current, {
         title: '时禾 · 排班提醒', body: `${workDate} 有 ${count} 项排班，打开时禾查看。`, tag: `shihe-${workDate}`,
       }, 6 * 3600);
       if (sent) db.run('UPDATE push_subscriptions SET reminded_date=? WHERE user_id=? AND endpoint=?', workDate, device.user_id, device.endpoint);
@@ -145,4 +169,4 @@ function startScheduleReminders() {
   return () => { stopped = true; clearInterval(timer); clearInterval(eventTimer); };
 }
 
-module.exports = { publicKey, validateEndpoint, findSubscription, saveSubscription, removeSubscription, sendTest, queuePushEvent, sendQueuedPushEvents, sendScheduleReminders, startScheduleReminders };
+module.exports = { publicKey, PUSH_KINDS, getPreferences, setPreference, validateEndpoint, findSubscription, saveSubscription, removeSubscription, sendTest, queuePushEvent, sendQueuedPushEvents, sendScheduleReminders, startScheduleReminders };

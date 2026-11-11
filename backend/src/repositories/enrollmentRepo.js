@@ -58,7 +58,7 @@ function updateEnrollmentMeta(id, { maxShifts, status, note }) {
 /** 全周期已提交报名的员工 + 其工作类型（算法输入） */
 function loadSubmittedEnrollments(periodId) {
   const rows = db.all(
-    `SELECT e.id AS enrollment_id, e.user_id, e.max_shifts, e.note,
+    `SELECT e.id AS enrollment_id, e.user_id, e.max_shifts, e.note, e.submitted_at,
             u.display_name AS name, u.employee_no
        FROM enrollments e
        JOIN users u ON u.id = e.user_id
@@ -71,7 +71,7 @@ function loadSubmittedEnrollments(periodId) {
   const ids = rows.map((r) => r.enrollment_id);
   const placeholders = ids.map(() => '?').join(',');
   const wtRows = db.all(
-    `SELECT enrollment_id, work_type_id, priority, duty_role
+    `SELECT enrollment_id, work_type_id, priority, duty_role, weekdays_json
        FROM enrollment_work_types WHERE enrollment_id IN (${placeholders})`,
     ...ids
   );
@@ -83,6 +83,7 @@ function loadSubmittedEnrollments(periodId) {
       workTypeId: r.work_type_id,
       priority: r.priority,
       dutyRole: r.duty_role,
+      weekdays: JSON.parse(r.weekdays_json),
     });
   }
 
@@ -93,6 +94,7 @@ function loadSubmittedEnrollments(periodId) {
     employeeNo: r.employee_no,
     maxShifts: r.max_shifts,
     note: r.note,
+    submittedAt: r.submitted_at,
     workTypes: byEnrollment.get(r.enrollment_id) || [],
   }));
 }
@@ -117,7 +119,7 @@ function listEnrollmentsWithDetails(periodId) {
   const ids = rows.map((r) => r.id);
   const placeholders = ids.map(() => '?').join(',');
   const wtRows = db.all(
-    `SELECT ewt.enrollment_id, ewt.work_type_id, ewt.priority, ewt.duty_role, wt.name, wt.color
+    `SELECT ewt.enrollment_id, ewt.work_type_id, ewt.priority, ewt.duty_role, ewt.weekdays_json, wt.name, wt.color
        FROM enrollment_work_types ewt
        JOIN work_types wt ON wt.id = ewt.work_type_id
       WHERE ewt.enrollment_id IN (${placeholders})
@@ -136,7 +138,7 @@ function listEnrollmentsWithDetails(periodId) {
   const wtMap = new Map();
   for (const r of wtRows) {
     if (!wtMap.has(r.enrollment_id)) wtMap.set(r.enrollment_id, []);
-    wtMap.get(r.enrollment_id).push({ workTypeId: r.work_type_id, name: r.name, color: r.color, priority: r.priority, dutyRole: r.duty_role });
+    wtMap.get(r.enrollment_id).push({ workTypeId: r.work_type_id, name: r.name, color: r.color, priority: r.priority, dutyRole: r.duty_role, weekdays: JSON.parse(r.weekdays_json) });
   }
   const unavailMap = new Map();
   for (const r of unavailRows) {
@@ -166,11 +168,12 @@ function replaceEnrollmentWorkTypes(enrollmentId, items) {
   db.run('DELETE FROM enrollment_work_types WHERE enrollment_id = ?', enrollmentId);
   for (const it of items) {
     db.run(
-      'INSERT INTO enrollment_work_types (enrollment_id, work_type_id, priority, duty_role) VALUES (?, ?, ?, ?)',
+      'INSERT INTO enrollment_work_types (enrollment_id, work_type_id, priority, duty_role, weekdays_json) VALUES (?, ?, ?, ?, ?)',
       enrollmentId,
       it.workTypeId,
       it.priority,
-      it.dutyRole || 'member'
+      it.dutyRole || 'member',
+      it.weekdays == null ? null : JSON.stringify(it.weekdays)
     );
   }
 }

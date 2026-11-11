@@ -13,7 +13,8 @@ import Space from 'antd/es/space';
 import Spin from 'antd/es/spin';
 import Tag from 'antd/es/tag';
 import { ScheduleOverview } from './ScheduleOverview';
-import { API, Blank, DutyTag, Field, Heading, Load, dateText, dayjs, group, isAdmin, iso, monthOf, option, periodOptions, personLabel, roleLabels, shiftText, today, useLoad, weekdays } from './shared';
+import { MonthCalendar } from './MonthCalendar';
+import { API, Blank, DutyTag, Field, Heading, Load, dateText, dayjs, group, isAdmin, iso, monthOf, option, periodOptions, personLabel, roleLabels, shiftText, today, usePageLoad, weekdays } from './shared';
 
 const Table = lazy(() => import('antd/es/table'));
 const rangePickerTheme = { components: { DatePicker: { cellWidth: 34, cellHeight: 28 } } };
@@ -107,11 +108,11 @@ export function Schedule({ user, periods, period, filters, updateFilters }) {
     if (isAdmin(user)) viewOptions.push(option('daily', '按人员日表'));
   }
   const view = viewOptions.some(o => o.value === filters.view) ? filters.view : 'recent';
-  const recent = useLoad(view === 'recent' ? JSON.stringify([scope, range, dates]) : null,
+  const recent = usePageLoad(view === 'recent' ? JSON.stringify([scope, range, dates]) : null,
     () => API.recentSchedule(recentParams(range, dates), scope));
-  const works = useLoad(scope === 'work' ? 'works' : null, API.workTypes);
-  const waitingForWorks = scope === 'work' && (works.error || works.loading);
-  const schedule = useLoad(view !== 'recent' ? period?.id : null, () => API.schedule(period.id, 'published'));
+  const works = usePageLoad(scope === 'work' ? 'works' : null, API.workTypes);
+  const waitingForWorks = scope === 'work' && (works.error || (works.loading && works.data === undefined));
+  const schedule = usePageLoad(view !== 'recent' ? period?.id : null, () => API.schedule(period.id, 'published'));
   const assignments = recent.data?.assignments || [];
   const usedWorks = new Set(assignments.map(a => a.workTypeId));
   const choices = (works.data || []).filter(w => w.active || usedWorks.has(w.id));
@@ -229,35 +230,26 @@ function PeriodView({ data, user, scope, view, person, selectedWeekdays }) {
 }
 
 function Calendar({ period, month, move, assignments, selected, pick, blocked }) {
-  const first = dayjs(month + '-01');
-  const offset = (first.day() + 6) % 7;
   const counts = new Map(group(assignments, a => a.workDate));
-  return <Card className="calendar"><div className="calendar-heading">
-    <Button disabled={month <= monthOf(period.startDate)} onClick={() => move(first.subtract(1, 'month').format('YYYY-MM'))}>上个月</Button>
-    <strong>{first.format('YYYY 年 M 月')}</strong>
-    <Button disabled={month >= monthOf(period.endDate)} onClick={() => move(first.add(1, 'month').format('YYYY-MM'))}>下个月</Button>
-  </div><div className="calendar-grid">
-    {[...'一二三四五六日'].map(w => <span className="muted" key={w}>周{w}</span>)}
-    {Array.from({ length: offset }, (_, i) => <span key={`blank${i}`} />)}
-    {Array.from({ length: first.daysInMonth() }, (_, i) => {
-      const value = first.add(i, 'day');
-      const date = iso(value), items = counts.get(date);
-      return <Button key={date} className="calendar-date" type={date === selected ? 'primary' : 'default'} disabled={blocked(value)}
-        aria-label={`${date}，${items?.length || 0} 项安排`} aria-pressed={date === selected} onClick={() => pick(date)}>
-        <span>{i + 1}</span>{items?.length > 0 && <small>{items.length} 项</small>}
-      </Button>;
-    })}
-  </div></Card>;
+  return <Card className="calendar"><MonthCalendar startDate={period.startDate} endDate={period.endDate}
+    month={month} move={move} selected={selected} pick={pick} blocked={blocked}
+    dayInfo={date => {
+      const count = counts.get(date)?.length || 0;
+      return { label: `${count} 项安排`, badge: count > 0 && <small>{count} 项</small> };
+    }} /></Card>;
 }
 
-export function Matrix({ data, user }) {
-  return data?.matrix?.length ? data.matrix.map(d => <Card size="small" key={d.workDate} title={dateText(d.workDate)}>
+export function Matrix({ data, user, showDate = true, onAdjustWork }) {
+  return data?.matrix?.length ? data.matrix.map(d => <Card size="small" key={d.workDate} title={showDate ? dateText(d.workDate) : undefined}>
     {d.shifts.map(s => <div key={s.shiftId}><h3>{s.shiftName}</h3>
-      {s.workTypes.map(w => <div className="matrix-row" key={w.workTypeId}><strong><i className="dot" style={{ background: w.workTypeColor }} />{w.workTypeName}</strong>
+      {s.workTypes.map(w => <div className={onAdjustWork ? 'matrix-row matrix-row-adjustable' : 'matrix-row'} key={w.workTypeId}><strong><i className="dot" style={{ background: w.workTypeColor }} />{w.workTypeName}</strong>
         <Space wrap size={[4, 4]}>{w.assigned.map(p => <Tag key={p.userId} color={p.source === 'swap' ? 'purple' : p.userId === user?.id ? 'blue' : 'default'}>{p.name}{p.isFixed ? '（固定）' : p.source === 'swap' ? '（换班）' : p.source === 'manual' ? '（调配）' : ''}{p.dutyRole !== 'member' && ` · ${roleLabels[p.dutyRole]}`}</Tag>)}
           {!w.assigned.length && <Tag>无人</Tag>}<Tag color={w.gap ? 'red' : 'green'}>{w.gap ? `缺 ${w.gap}` : `${w.filled}/${w.needCount}`}</Tag>
           {w.roleGaps?.map(r => <Tag color="red" key={r}>缺{roleLabels[r]}</Tag>)}
-        </Space></div>)}
+        </Space>
+        {onAdjustWork && <Button type="link" size="small" aria-label={`${dateText(d.workDate)} ${s.shiftName} ${w.workTypeName} 调班`}
+          onClick={() => onAdjustWork({ workDate: d.workDate, shiftId: s.shiftId, workTypeId: w.workTypeId })}>调班</Button>}
+      </div>)}
     </div>)}
   </Card>) : <Blank>暂无排班明细</Blank>;
 }

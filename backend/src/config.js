@@ -133,6 +133,7 @@ const SCORE_WEIGHTS = Object.freeze({
   base: 100,
   rotation: 60,
   repeatWork: -120,
+  rotationTurn: -60,
   rarity: 12,
   balance: 25,
   preference: { 1: 15, 2: 8, 3: 0 },
