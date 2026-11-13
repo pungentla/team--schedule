@@ -74,17 +74,20 @@ function createPeriod({ name, startDate, endDate, maxShiftsPerDay, maxShiftsPerW
 
 function updatePeriod(id, fields, ctx) {
   const p = assertPeriod(id);
-  if ([PERIOD_STATUS.PUBLISHED, PERIOD_STATUS.ARCHIVED].includes(p.status)) {
-    throw conflict('PERIOD_LOCKED', '已发布或已归档的周期设置仅供查看');
+  const nameOnly = fields.name !== undefined && Object.keys(fields).length === 1;
+  if (!nameOnly) {
+    if ([PERIOD_STATUS.PUBLISHED, PERIOD_STATUS.ARCHIVED].includes(p.status)) {
+      throw conflict('PERIOD_LOCKED', '已发布或已归档的周期只能修改名称');
+    }
+    if (fields.startDate && !isDateString(fields.startDate)) throw badRequest('日期格式错误');
+    if (fields.endDate && !isDateString(fields.endDate)) throw badRequest('日期格式错误');
+    const startDate = fields.startDate ?? p.start_date;
+    const endDate = fields.endDate ?? p.end_date;
+    if (endDate < startDate) throw badRequest('结束日期不能早于开始日期');
+    if (diffDays(startDate, endDate) > 365) throw badRequest('单个周期最长一年（含首尾最多 366 天）');
+    const outside = db.pluck('SELECT COUNT(*) FROM period_slots WHERE period_id=? AND (work_date<? OR work_date>?)', id, startDate, endDate);
+    if (outside) throw conflict('PERIOD_HAS_SLOTS', '新的日期范围不能排除已配置的班次日期，请保留原范围或创建新周期');
   }
-  if (fields.startDate && !isDateString(fields.startDate)) throw badRequest('日期格式错误');
-  if (fields.endDate && !isDateString(fields.endDate)) throw badRequest('日期格式错误');
-  const startDate = fields.startDate ?? p.start_date;
-  const endDate = fields.endDate ?? p.end_date;
-  if (endDate < startDate) throw badRequest('结束日期不能早于开始日期');
-  if (diffDays(startDate, endDate) > 365) throw badRequest('单个周期最长一年（含首尾最多 366 天）');
-  const outside = db.pluck('SELECT COUNT(*) FROM period_slots WHERE period_id=? AND (work_date<? OR work_date>?)', id, startDate, endDate);
-  if (outside) throw conflict('PERIOD_HAS_SLOTS', '新的日期范围不能排除已配置的班次日期，请保留原范围或创建新周期');
 
   periodRepo.updatePeriod(id, fields);
   auditRepo.log({

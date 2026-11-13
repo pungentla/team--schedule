@@ -121,7 +121,17 @@ test('新建周期一步准备日期班次及默认需求，固定人员自动�
   assert.equal(ready.nextStep, 'people'); assert.equal(p.status, 'draft');
   const run = schedule.generate(p.id, {}, ctx()); schedule.publish(p.id, run.runId, ctx());
   assert.equal(getPreparation(p.id).nextStep, 'generate');
-  assert.throws(() => service.updatePeriod(p.id, { name: '已发布后改名' }, ctx()), (e) => e.code === 'PERIOD_LOCKED');
+  const before = schedule.getSchedule(p.id, ctx().user, { runId: run.runId });
+  assert.throws(() => service.updatePeriod(p.id, { name: '不能同时调整', endDate: '2026-11-16' }, ctx()), (e) => e.code === 'PERIOD_LOCKED');
+  const renamed = service.updatePeriod(p.id, { name: '已发布后改名' }, ctx());
+  assert.deepEqual([renamed.name, renamed.status, renamed.endDate], ['已发布后改名', 'published', p.endDate]);
+  const after = schedule.getSchedule(p.id, ctx().user, { runId: run.runId });
+  assert.deepEqual(after.run, before.run);
+  assert.deepEqual(after.assignments, before.assignments);
+  assert.equal(getPreparation(p.id).period.name, renamed.name);
+  service.changeStatus(p.id, 'archived', ctx());
+  assert.equal(service.updatePeriod(p.id, { name: '归档后改名' }, ctx()).name, '归档后改名');
+  assert.throws(() => service.updatePeriod(p.id, { maxShiftsPerDay: 2 }, ctx()), (e) => e.code === 'PERIOD_LOCKED');
 });
 test('初始化旧周期补齐缺失需求，重复执行保留手工人数及显式0，不重置已有工作日规则', () => {
   const p = create({ initializeRequirements: false });

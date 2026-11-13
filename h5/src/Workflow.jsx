@@ -91,7 +91,7 @@ export function Workflow({ user, periods, page, setPage, refreshPeriods, openSet
 }
 
 function periodProgress(period, prep) {
-  if (period.status === 'archived') return { step: 'published', label: '已归档，仅供查看' };
+  if (period.status === 'archived') return { step: 'published', label: '已归档' };
   if (prep.publishedRunId || period.status === 'published') return { step: 'published', label: '排班已生效' };
   if (prep.draftRunId) return { step: 'generate', label: '草稿待发布' };
   if (prep.nextStep === 'requirements') return { step: 'requirements', label: '待确认需求' };
@@ -103,6 +103,7 @@ function periodProgress(period, prep) {
 function PeriodDetail({ user, period, step, changeStep, back, refreshPeriods, openSettings, dirty }) {
   const prep = usePageLoad(period.id, () => API.periodPreparation(period.id), true);
   const [proxy, setProxy] = useState(false);
+  const [renaming, setRenaming] = useState(false);
   const { run, busy, confirm } = useAction();
 
   async function leave() {
@@ -182,7 +183,10 @@ function PeriodDetail({ user, period, step, changeStep, back, refreshPeriods, op
       {backButton}
       <div className="row-between">
         <Heading>{current.name}</Heading>
-        {canDelete && <Button type="text" danger loading={busy} onClick={removePeriod}>删除本周期</Button>}
+        <Space wrap>
+          <Button type="link" onClick={() => setRenaming(true)}>修改名称</Button>
+          {canDelete && <Button type="text" danger loading={busy} onClick={removePeriod}>删除本周期</Button>}
+        </Space>
       </div>
       <div className="inline"><PeriodBadge period={current} hasDraft={!!preparation.draftRunId} /><span className="muted">{current.startDate} 至 {current.endDate}</span></div>
       <nav aria-label="排班流程">
@@ -198,8 +202,24 @@ function PeriodDetail({ user, period, step, changeStep, back, refreshPeriods, op
         description={`需求 ${preparation.publishedTotalNeeded ?? preparation.totalNeeded} 人次 · 匹配需求 ${preparation.participants.length} 人`} />
     </Card>
     {content}
+    {renaming && <RenamePeriod period={current} close={() => setRenaming(false)} saved={() => { setRenaming(false); refresh(); }} />}
     {proxy && !readOnly && <ProxyEnrollment currentUserId={user.id} period={current} close={() => setProxy(false)} saved={() => { setProxy(false); refresh(); }} />}
   </>;
+}
+
+function RenamePeriod({ period, close, saved }) {
+  const { run, busy } = useAction();
+  function rename({ name }) {
+    return run(() => API.updatePeriod(period.id, { name: name.trim() }), '周期名称已更新', saved);
+  }
+  return <Modal open title="修改周期名称" onCancel={() => !busy && close()} footer={null}>
+    <Form layout="vertical" initialValues={{ name: period.name }} requiredMark={false} disabled={busy} onFinish={rename}>
+      <Form.Item label="周期名称" name="name" rules={[{ required: true, whitespace: true, message: '请输入周期名称' }]}>
+        <Input maxLength={64} />
+      </Form.Item>
+      <Space><Button type="primary" htmlType="submit" loading={busy}>保存名称</Button><Button onClick={close}>取消</Button></Space>
+    </Form>
+  </Modal>;
 }
 
 function PeriodSettingsSummary({ period }) {
@@ -265,11 +285,11 @@ function PeriodForm({ period, works, shifts, saved }) {
   const locked = period && ['published', 'archived'].includes(period.status);
   const initialValues = { maxShiftsPerDay: 1, maxShiftsPerWeek: 5, forbidConsecutive: true, ...period, duration: period ? 'custom' : 'week', startDate: dayjs(period?.startDate || today()), endDate: period ? dayjs(period.endDate) : dayjs(today()).add(6, 'day') };
   function save(v) {
-    const fields = { name: v.name.trim(), startDate: iso(v.startDate), endDate: iso(v.endDate), maxShiftsPerDay: v.maxShiftsPerDay, maxShiftsPerWeek: v.maxShiftsPerWeek, forbidConsecutive: v.forbidConsecutive };
-    return run(() => period ? API.updatePeriod(period.id, fields) : API.createPeriod({ ...fields, initializeRequirements: true, workTypeIds: v.workTypeIds, shiftIds: v.shiftIds }), period ? '周期设置已保存' : '周期已创建，请确认需求', saved);
+    const fields = { startDate: iso(v.startDate), endDate: iso(v.endDate), maxShiftsPerDay: v.maxShiftsPerDay, maxShiftsPerWeek: v.maxShiftsPerWeek, forbidConsecutive: v.forbidConsecutive };
+    return run(() => period ? API.updatePeriod(period.id, fields) : API.createPeriod({ ...fields, name: v.name.trim(), initializeRequirements: true, workTypeIds: v.workTypeIds, shiftIds: v.shiftIds }), period ? '周期设置已保存' : '周期已创建，请确认需求', saved);
   }
   return <Form form={form} layout="vertical" initialValues={initialValues} requiredMark={false} disabled={locked || busy} onFinish={save}>
-    <Form.Item label="周期名称" name="name" rules={required}><Input maxLength={64} /></Form.Item>
+    {!period && <Form.Item label="周期名称" name="name" rules={required}><Input maxLength={64} /></Form.Item>}
     <Form.Item label="周期长度" name="duration"><Select options={durations} /></Form.Item>
     <div className="form-grid">
       <Form.Item label="开始日期" name="startDate" rules={required}><DatePicker allowClear={false} /></Form.Item>
@@ -295,7 +315,7 @@ function PeriodStatus({ period, hasDraft, saved }) {
   const currentLabel = hasDraft && period.status !== 'published' ? '草稿待发布' : periodLabels[period.status];
   const options = [option(period.status, currentLabel), ...allowed.map(next => option(next, periodLabels[next]))];
   return <Form layout="vertical" onFinish={async () => {
-    if (status !== 'archived' || await confirm('归档排班周期？', '归档后只能查看该周期。')) await run(() => API.updatePeriod(period.id, { status }), '周期状态已更新', saved);
+    if (status !== 'archived' || await confirm('归档排班周期？', '归档后仍可查看排班和修改周期名称。')) await run(() => API.updatePeriod(period.id, { status }), '周期状态已更新', saved);
   }}>
     <Field label="周期状态"><Select aria-label="周期状态" value={status} onChange={setStatus} options={options} /></Field>
     <Button htmlType="submit" disabled={period.status === status} loading={busy}>更新周期状态</Button>
