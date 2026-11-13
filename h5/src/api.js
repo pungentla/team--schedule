@@ -116,6 +116,7 @@ export const API = (() => {
     announcements: () => request('/announcements'),
     publishAnnouncement: body => request('/announcements', { method: 'POST', body }),
     updateAnnouncement: (id, body) => request(`/announcements/${id}`, { method: 'PUT', body }),
+    setAnnouncementPin: (id, pinned) => request(`/announcements/${id}/pin`, { method: 'PUT', body: { pinned } }),
     withdrawAnnouncement: id => request(`/announcements/${id}`, { method: 'DELETE' }),
     discussionTopics: (page, options) => request(`/discussions?${new URLSearchParams({ page, ...options })}`),
     unreadTopicReplies: () => request('/discussions/unread-replies'),

@@ -98,7 +98,8 @@ CREATE TABLE IF NOT EXISTS announcements (
   title         TEXT NOT NULL,
   content       TEXT NOT NULL,
   published_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
-  published_at  TEXT NOT NULL
+  published_at  TEXT NOT NULL,
+  pinned        INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1))
 );
 
 CREATE TABLE IF NOT EXISTS discussion_topics (

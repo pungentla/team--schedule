@@ -8,7 +8,7 @@
 const db = require('./db');
 const { ensureAlias } = require('../repositories/discussionAliasRepo');
 
-const CURRENT_VERSION = 32;
+const CURRENT_VERSION = 33;
 
 function migrate() {
   db.open();
@@ -46,6 +46,10 @@ function migrate() {
             SELECT id, title, content, published_by, published_at FROM announcements_legacy;
             DROP TABLE announcements_legacy;`);
         }
+        if (!db.all('PRAGMA table_info(announcements)').some(column => column.name === 'pinned')) {
+          db.exec('ALTER TABLE announcements ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1))');
+        }
+        db.exec('CREATE UNIQUE INDEX IF NOT EXISTS uq_announcements_pinned ON announcements(pinned) WHERE pinned = 1');
         if (rebuildVotes) {
           db.exec(`INSERT INTO discussion_poll_votes (topic_id, user_id, position)
             SELECT topic_id, user_id, position FROM discussion_poll_votes_legacy;

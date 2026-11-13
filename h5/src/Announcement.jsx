@@ -16,9 +16,14 @@ export function Announcement({ user, initialId = null }) {
   const { run, busy, confirm } = useAction();
   const canPublish = isAdmin(user);
   const announcements = query.data ?? [];
-  const latest = announcements[0];
+  const featured = announcements[0];
   const announcement = announcements.find(item => item.id === reading);
   if (!announcements.length && !canPublish && !query.error) return null;
+
+  function togglePin() {
+    const pinned = !announcement.pinned;
+    return run(() => API.setAnnouncementPin(announcement.id, pinned), pinned ? '公告已置顶' : '已取消置顶', query.refresh);
+  }
 
   async function withdraw() {
     if (!await confirm('撤下这条公告？')) return;
@@ -31,9 +36,9 @@ export function Announcement({ user, initialId = null }) {
   return <Card size="small" className="announcement-card">
     <section aria-label="公告栏">
       <div className="announcement-row">
-        <Tag>公告</Tag>
-        {latest
-          ? <Button type="link" className="announcement-title" onClick={() => setReading(latest.id)}>{latest.title}</Button>
+        <Tag>{featured?.pinned ? '置顶公告' : '公告'}</Tag>
+        {featured
+          ? <Button type="link" className="announcement-title" onClick={() => setReading(featured.id)}>{featured.title}</Button>
           : <span className="muted">{query.error ? '公告加载失败' : query.loading ? '正在加载' : '暂无公告'}</span>}
         {query.error && <Button type="link" onClick={query.refresh}>重试</Button>}
         {canPublish && !query.error && <Button size="small" disabled={query.loading} onClick={() => setEditing({})}>发布公告</Button>}
@@ -48,10 +53,13 @@ export function Announcement({ user, initialId = null }) {
         </li>)}
       </ul>}
     </section>
-    {announcement && <Modal open title={<span className="announcement-heading">{announcement.title}</span>}
+    {announcement && <Modal open title={<span className="announcement-heading">
+      {announcement.pinned ? <Tag color="gold">置顶</Tag> : null}{announcement.title}
+    </span>}
       onCancel={() => !busy && setReading(null)} footer={canPublish ? <div className="inline">
+        <Button onClick={togglePin} disabled={busy || query.loading}>{announcement.pinned ? '取消置顶' : '置顶'}</Button>
         <Button onClick={() => { setEditing(announcement); setReading(null); }} disabled={busy}>编辑</Button>
-        <Button danger onClick={withdraw} loading={busy}>撤下</Button>
+        <Button danger onClick={withdraw} disabled={busy}>撤下</Button>
       </div> : null}>
       <div className="muted">{[announcement.publisherName, timeText(announcement.publishedAt)].filter(Boolean).join(' · ')}</div>
       <p className="announcement-content">{announcement.content}</p>
