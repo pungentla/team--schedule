@@ -2,7 +2,6 @@ import React, { lazy, Suspense, useEffect, useEffectEvent, useRef, useState } fr
 import { createRoot } from 'react-dom/client';
 import Alert from 'antd/es/alert';
 import App from 'antd/es/app';
-import Badge from 'antd/es/badge';
 import Button from 'antd/es/button';
 import Card from 'antd/es/card';
 import ConfigProvider from 'antd/es/config-provider';
@@ -12,15 +11,15 @@ import Input from 'antd/es/input';
 import Modal from 'antd/es/modal';
 import Spin from 'antd/es/spin';
 import zhCN from 'antd/es/locale/zh_CN';
-import BellOutlined from '@ant-design/icons/es/icons/BellOutlined';
 import MessageOutlined from '@ant-design/icons/es/icons/MessageOutlined';
 import 'dayjs/locale/zh-cn';
 import 'antd/dist/reset.css';
-import { API, Heading, Load, ProfileDisplayContext, accountRoles, assignmentLabel, dayjs, isAdmin, required, timeText, useAction, useLoad } from './shared';
+import { API, Heading, Load, ProfileDisplayContext, accountRoles, dayjs, isAdmin, required, timeText, useAction, useLoad } from './shared';
 import { Schedule, readScheduleFilters, saveScheduleFilters } from './Schedule';
 import { Announcement } from './Announcement';
 import { DiscussionPreview } from './DiscussionPreview';
 import { ReminderSettings, logoutDevice, restoreDeviceReminder } from './ReminderSettings';
+import { MessageBell, Messages } from './Messages';
 import { PullToRefresh, usePullRefresh } from './PullToRefresh';
 import './style.css';
 
@@ -30,13 +29,8 @@ const Workflow = lazy(() => import('./Workflow').then(m => ({ default: m.Workflo
 const Swaps = lazy(() => import('./Swaps').then(m => ({ default: m.Swaps })));
 const Enrollment = lazy(() => import('./Enrollment').then(m => ({ default: m.Enrollment })));
 const Discussions = lazy(() => import('./Discussions'));
-const replyNotificationKey = 'new-discussion-reply';
-const discussionNoticeLabels = {
-  topic_comment: '你的话题有新评论',
-  topic_reply: '你的话题有新回复',
-  direct_reply: '有人回复了你',
-  discussion_reply: '参与的话题有新回复',
-};
+const Attendance = lazy(() => import('./Attendance'));
+const WorkbenchAttendance = lazy(() => import('./Attendance').then(module => ({ default: module.WorkbenchAttendance })));
 
 const theme = {
   token: { colorPrimary: '#2e59ae', colorBgLayout: '#f2f5f9', colorText: '#1f2a3c', colorTextSecondary: '#58677e', borderRadius: 10, controlHeight: 42, fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif' },
@@ -105,8 +99,13 @@ function Workspace(props) {
 }
 
 function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
-  const [notificationTarget, setNotificationTarget] = useState(readNotificationTarget);
+  const superAdmin = user.role === 'super_admin';
+  const [notificationTarget, setNotificationTarget] = useState(() => {
+    const target = readNotificationTarget();
+    return superAdmin ? { tab: 'workflow', notice: target.notice } : target;
+  });
   const [tab, setTab] = useState(notificationTarget.tab);
+  const [messagesBackTab, setMessagesBackTab] = useState('schedule');
   const [settingsTab, setSettingsTab] = useState('worktypes');
   const [workflowPage, setWorkflowPage] = useState(null);
   const [discussionTopicId, setDiscussionTopicId] = useState(notificationTarget.topic ?? null);
@@ -122,7 +121,7 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
   const { scope: scheduleScope, byScope } = schedulePreferences;
   const scheduleFilters = byScope[scheduleScope];
   useEffect(() => saveScheduleFilters(user.id, schedulePreferences), [user.id, schedulePreferences]);
-  useEffect(() => { restoreDeviceReminder(user.id).catch(() => {}); }, [user.id]);
+  useEffect(() => { if (!superAdmin) restoreDeviceReminder(user.id).catch(() => {}); }, [user.id, superAdmin]);
   useEffect(() => {
     const url = new URL(window.location.href);
     for (const key of ['reply', 'swap', 'notice', 'enrollment', 'tab', 'systemNotice']) url.searchParams.delete(key);
@@ -137,19 +136,22 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
   const { confirm, busy, run } = useAction();
   const { message } = App.useApp();
   const periodsQuery = useLoad('periods', () => Promise.all([API.listPeriods(), API.currentPeriod()]), true);
-  const unreadQuery = useLoad(user.id, API.unreadTopicReplies, true);
-  const likeNotices = useLoad(user.id, API.unreadTopicLikes, true);
-  const swapInbox = useLoad(user.id, API.swapInbox, true);
-  const systemInbox = useLoad(user.id, API.unreadSystemNotices, true);
+  const personalInbox = superAdmin ? null : user.id;
+  const unreadQuery = useLoad(personalInbox, API.unreadTopicReplies, true);
+  const likeNotices = useLoad(personalInbox, API.unreadTopicLikes, true);
+  const swapInbox = useLoad(personalInbox, API.swapInbox, true);
+  const systemInbox = useLoad(personalInbox, API.unreadSystemNotices, true);
+  const inboxes = { topics: unreadQuery, likes: likeNotices, swaps: swapInbox, system: systemInbox };
   const hotTopicsQuery = useLoad(tab === 'schedule' || tab === 'discussions' ? 'hot-topics' : null,
     () => API.discussionTopics(1, { sort: 'hot', pageSize: 3 }), true);
   usePullRefresh(periodsQuery.refreshPage, ['schedule', 'enrollment', 'workflow'].includes(tab));
   usePullRefresh(hotTopicsQuery.refreshPage, tab === 'schedule' || tab === 'discussions');
   usePullRefresh(swapInbox.refreshPage, tab === 'swaps');
   usePullRefresh(async () => {
-    const results = await Promise.all([unreadQuery.refreshPage(), likeNotices.refreshPage()]);
+    const sources = tab === 'messages' ? Object.values(inboxes) : [unreadQuery, likeNotices];
+    const results = await Promise.all(sources.map(inbox => inbox.refreshPage()));
     return results.every(Boolean);
-  }, tab === 'discussions');
+  }, tab === 'discussions' || tab === 'messages');
   const hotTopicRanks = new Map(hotTopicsQuery.data?.items
     .filter(topic => topic.likeCount + topic.replyCount > 0)
     .map((topic, index) => [topic.id, index + 1]));
@@ -159,6 +161,7 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
     if (notificationTarget.systemNotice) readSystemNotice(notificationTarget.systemNotice);
   }, [notificationTarget.systemNotice]);
   useEffect(() => {
+    if (superAdmin) return;
     const refreshVisible = () => { if (!document.hidden) refreshNotifications(); };
     window.addEventListener('focus', refreshVisible);
     document.addEventListener('visibilitychange', refreshVisible);
@@ -168,28 +171,36 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
       document.removeEventListener('visibilitychange', refreshVisible);
       window.clearInterval(timer);
     };
-  }, []);
+  }, [superAdmin]);
   const unreadTopics = unreadQuery.data ?? [];
   const unreadCounts = new Map(unreadTopics.map(topic => [topic.id, topic.unreadCount]));
   const [periods, current] = periodsQuery.data || [[], null];
   const period = periods.find(p => p.id === scheduleFilters.periodId) || current || periods.find(p => p.status !== 'archived') || periods[0];
-  const tabs = [
+  const tabs = superAdmin ? [['workflow', '安排排班'], ['settings', '基础设置']] : [
     ['schedule', '工作台'], ['discussions', '互动区'], ['enrollment', '我的报名'], ['swaps', '我的换班'],
     ...(isAdmin(user) ? [['workflow', '安排排班']] : []),
   ];
-  const activeNav = tab === 'settings' ? 'workflow' : tab;
-  async function navigate(next) {
+  const activeNav = !superAdmin && tab === 'settings' ? 'workflow' : tab;
+  async function navigate(next, { returning = false } = {}) {
+    if (superAdmin && !tabs.some(([id]) => id === next)) return false;
     if (next === tab) return true;
     if (dirty.current && !await confirm('放弃未保存的需求？')) return false;
     dirty.current = false;
     setNotificationTarget({});
-    if (next === 'workflow' && tab !== 'settings') setWorkflowPage(null);
-    if (next !== 'swaps') setSwapDetail(null);
+    if (next === 'workflow' && tab !== 'settings' && !returning) setWorkflowPage(null);
+    if (next !== 'swaps' && next !== 'messages') setSwapDetail(null);
     setTab(next);
     window.scrollTo(0, 0);
     if (['workflow','enrollment'].includes(next)) periodsQuery.refresh();
     if (next === 'swaps') swapInbox.refresh();
     return true;
+  }
+  async function openMessages() {
+    if (tab === 'messages') return;
+    if (await navigate('messages')) {
+      setMessagesBackTab(tab);
+      Object.values(inboxes).forEach(inbox => inbox.refresh());
+    }
   }
   async function openSettings(section = settingsTab) {
     if (await navigate('settings')) setSettingsTab(section);
@@ -236,10 +247,11 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
       <header className="topbar"><div className="topbar-inner">
         <div className="brand-lockup"><span className="brand">时禾</span><span className="brand-caption">传3:2 栽种有时</span></div>
         <div className="account-actions">
-          <BellNotifications query={unreadQuery} likeNotices={likeNotices} swapInbox={swapInbox} systemInbox={systemInbox}
-            open={openDiscussions} openSwap={openSwap} openSystemNotice={openSystemNotice} />
+          {!superAdmin && <MessageBell inboxes={inboxes} active={tab === 'messages'} open={openMessages} openTopic={openDiscussions} />}
           <Dropdown trigger={['click']} menu={{ items: [
-            { key: 'nickname', label: '设置花名' }, { key: 'reminders', label: '消息提醒' }, { key: 'password', label: '修改密码' },
+            { key: 'nickname', label: '设置花名' },
+            ...(!superAdmin ? [{ key: 'reminders', label: '消息提醒' }] : []),
+            { key: 'password', label: '修改密码' },
             { type: 'divider' }, { key: 'logout', label: '退出登录', danger: true, disabled: busy },
           ], onClick: ({ key }) => {
             if (key === 'nickname') setNicknameOpen(true);
@@ -253,7 +265,7 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
       </div></header>
       {inTopic ? <div className="topic-back-bar">
         <Button type="link" onClick={backToTopics}>← 返回话题列表</Button>
-      </div> : (tab === 'schedule' || tab === 'discussions') && <div className="announcement-area">
+      </div> : (tab === 'schedule' || tab === 'discussions' || (superAdmin && tab === 'workflow')) && <div className="announcement-area">
         <Announcement key={tab} user={user} initialId={notificationTarget.notice} />
       </div>}
     </div>
@@ -261,11 +273,15 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
       {tab === 'schedule' && <DiscussionPreview openDiscussions={openDiscussions} hotTopicsQuery={hotTopicsQuery} hotTopicRanks={hotTopicRanks} />}
       {isAdmin(user) && (tab === 'workflow' || tab === 'settings') && <Alert type="info" showIcon message="仅管理员可见" />}
       <Suspense fallback={<div className="loading"><Spin /></div>}>
+        {tab === 'schedule' && <WorkbenchAttendance user={user} open={() => navigate('attendance')} />}
         {tab === 'schedule' && <Schedule key={scheduleScope} user={user} periods={periods} period={period}
           scope={scheduleScope} changeScope={changeScheduleScope} filters={scheduleFilters} updateFilters={updateScheduleFilters} />}
         {tab === 'enrollment' && <Load query={periodsQuery}>{() => <Enrollment user={user} periods={periods} period={period}
           selected={enrollmentPeriodId} setSelected={setEnrollmentPeriodId} />}</Load>}
         {tab === 'swaps' && <Swaps user={user} detail={swapDetail} setDetail={setSwapDetail} inbox={swapInbox} />}
+        {tab === 'messages' && <Messages inboxes={inboxes} back={() => navigate(messagesBackTab, { returning: true })}
+          openTopic={openDiscussions} openSwap={openSwap} openSystemNotice={openSystemNotice} />}
+        {tab === 'attendance' && <Attendance user={user} back={superAdmin ? undefined : () => navigate('schedule')} />}
         {tab === 'discussions' && <Discussions key={discussionFeedVersion} topicId={discussionTopicId} replyId={discussionReplyId} openVersion={discussionOpenVersion} open={openDiscussions}
           unreadCounts={unreadCounts} refreshUnread={unreadQuery.refresh} refreshLikeNotices={likeNotices.refresh}
           hotTopicRanks={hotTopicRanks} refreshHotTopics={hotTopicsQuery.refresh}
@@ -291,83 +307,6 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
     {password && <Password close={() => setPassword(false)} saved={endSession} />}
     {reminders && <ReminderSettings close={() => setReminders(false)} />}
   </div>;
-}
-
-function BellNotifications({ query, likeNotices, swapInbox, systemInbox, open, openSwap, openSystemNotice }) {
-  const { notification } = App.useApp();
-  const seenThrough = useRef(null);
-  const openTopic = useRef(open);
-  useEffect(() => { openTopic.current = open; }, [open]);
-  useEffect(() => () => notification.destroy(replyNotificationKey), [notification]);
-  useEffect(() => {
-    if (!query.data) return;
-    const latest = query.data[0];
-    const previous = seenThrough.current;
-    seenThrough.current = Math.max(previous ?? 0, latest?.latestReplyId ?? 0);
-    if (previous == null || !latest || latest.latestReplyId <= previous) return;
-    notification.open({ key: replyNotificationKey, message: discussionNoticeLabels[latest.kind] ?? '收到话题回复', duration: 5, placement: 'bottomRight',
-      description: <div className="reply-notification-copy">
-        <strong>{latest.title}</strong><p>{latest.excerpt}</p>
-        <Button type="link" onClick={() => { notification.destroy(replyNotificationKey); openTopic.current(latest.id, latest.latestReplyId); }}>查看回复</Button>
-      </div>,
-    });
-  }, [query.data, notification]);
-  const topics = query.data ?? [];
-  const likes = likeNotices.data ?? [];
-  const swaps = swapInbox.data ?? [];
-  const system = systemInbox.data ?? [];
-  const total = [...topics, ...likes].reduce((sum, topic) => sum + topic.unreadCount, swaps.length + system.length);
-  const label = `消息提醒，${total} 条`;
-  const button = <Button ghost className="reply-notification-button" aria-label={label} title={label}
-    icon={<Badge count={total} size="small" overflowCount={999}><BellOutlined /></Badge>} />;
-  const items = [];
-  if (system.length) items.push({ type: 'group', key: 'system', label: '系统消息', children: system.map(notice => {
-    const isTopic = notice.kind === 'new_topics';
-    const isProxy = notice.kind === 'proxy_enrollment';
-    const title = isTopic ? '互动区有新话题了' : isProxy ? `${notice.actorName || '管理员'}帮你代报名了` : `「${notice.periodName}」正在报名`;
-    const action = isTopic ? '查看话题' : isProxy ? '查看报名' : '参与报名';
-    return { key: `system:${notice.id}`, label: <div className="reply-notification-copy">
-      <div className="reply-notification-item"><span>{title}</span></div>
-      <p className="muted">{isProxy && `${notice.periodName} · `}{action}</p>
-    </div> };
-  }) });
-  if (topics.length) items.push({ type: 'group', key: 'topics', label: '话题互动', children: topics.map(topic => ({
-    key: `topic:${topic.id}`, label: <div className="reply-notification-copy">
-      <div className="reply-notification-item"><span>{topic.title}</span><small className="muted">{topic.unreadCount} 条未读</small></div>
-      <p className="muted">{discussionNoticeLabels[topic.kind] ?? '话题有新回复'}</p>
-      <p className="muted">{topic.excerpt}</p>
-    </div>,
-  })) });
-  if (likes.length) items.push({ type: 'group', key: 'likes', label: '话题点赞', children: likes.map(topic => ({
-    key: `like:${topic.id}`, label: <div className="reply-notification-copy">
-      <div className="reply-notification-item"><span>{topic.title}</span><small className="muted">{topic.unreadCount} 个新赞</small></div>
-      <p className="muted">你的话题收到了点赞</p>
-    </div>,
-  })) });
-  if (swaps.length) items.push({ type: 'group', key: 'swaps', label: '换班申请', children: swaps.map(swap => ({
-    key: `swap:${swap.id}`, label: <div className="reply-notification-copy">
-      <div className="reply-notification-item"><span>{swap.requesterName}发起的换班</span><small className="muted">待确认</small></div>
-      {swap.fromAssign && <p className="muted">{assignmentLabel(swap.fromAssign)}</p>}
-    </div>,
-  })) });
-  const inboxes = [query, likeNotices, swapInbox, systemInbox];
-  if (inboxes.some(inbox => inbox.error)) items.push({ key: 'retry', label: '部分提醒加载失败，点击重试' });
-  if (!items.length) items.push({ key: 'empty', label: inboxes.some(inbox => inbox.loading) ? '正在加载' : '暂无消息提醒', disabled: true });
-  return <Dropdown trigger={['click']} onOpenChange={visible => { if (visible) notification.destroy(replyNotificationKey); }}
-    menu={{ items, className: 'reply-notification-menu',
-    onClick: ({ key }) => {
-      if (key === 'retry') { inboxes.forEach(inbox => inbox.refresh()); return; }
-      const [type, id] = key.split(':');
-      if (type === 'system') {
-        const notice = system.find(item => item.id === Number(id));
-        if (notice) return openSystemNotice(notice);
-        return;
-      }
-      if (type === 'swap') return openSwap(Number(id));
-      if (type === 'like') return open(Number(id));
-      const topic = topics.find(item => item.id === Number(id));
-      if (topic) open(topic.id, topic.latestReplyId);
-    } }}>{button}</Dropdown>;
 }
 
 function Nickname({ user, close, saved }) {

@@ -8,7 +8,7 @@
 const db = require('./db');
 const { ensureAlias } = require('../repositories/discussionAliasRepo');
 
-const CURRENT_VERSION = 30;
+const CURRENT_VERSION = 32;
 
 function migrate() {
   db.open();
@@ -28,6 +28,9 @@ function migrate() {
         const rebuildVotes = db.all('PRAGMA table_info(discussion_poll_votes)').some(column => column.name === 'position' && !column.pk);
         if (rebuildVotes) db.exec('ALTER TABLE discussion_poll_votes RENAME TO discussion_poll_votes_legacy');
         db.exec(db.readSchemaSql());
+        if (!db.all('PRAGMA table_info(attendance_members)').some(column => column.name === 'checked_in_by')) {
+          db.exec('ALTER TABLE attendance_members ADD COLUMN checked_in_by INTEGER REFERENCES users(id) ON DELETE SET NULL');
+        }
         if (fromVersion < 29) migratePushPreferences();
         const userColumns = new Set(db.all('PRAGMA table_xinfo(users)').map(column => column.name));
         for (const [column, definition] of [
@@ -182,6 +185,8 @@ function migrateLegacySchema() {
 /** 删除全部业务数据（保留表结构），用于 reset */
 function truncateAll() {
   const tables = [
+    'attendance_members',
+    'attendance_events',
     'push_opt_outs',
     'system_notices',
     'swap_participants',

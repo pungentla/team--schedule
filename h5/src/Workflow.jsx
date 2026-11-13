@@ -64,13 +64,13 @@ export function Workflow({ user, periods, page, setPage, refreshPeriods, openSet
       </div>
       {user.role === 'super_admin' && <Button onClick={() => setTrash(true)}>周期回收站</Button>}
     </Card>
-    <Card>
+    {user.role !== 'super_admin' && <Card>
       <div className="row-between">
         <Heading>基础设置</Heading>
         <Button onClick={() => openSettings()}>进入设置</Button>
       </div>
       <p className="muted">管理工作类型、班次和人员账号</p>
-    </Card>
+    </Card>}
     <Card title="排班周期">
       {periods.length ? <div className="stack">{periods.map(period => (
         <button type="button" className="choice period-list-item" key={period.id}
@@ -198,7 +198,7 @@ function PeriodDetail({ user, period, step, changeStep, back, refreshPeriods, op
         description={`需求 ${preparation.publishedTotalNeeded ?? preparation.totalNeeded} 人次 · 匹配需求 ${preparation.participants.length} 人`} />
     </Card>
     {content}
-    {proxy && !readOnly && <ProxyEnrollment period={current} close={() => setProxy(false)} saved={() => { setProxy(false); refresh(); }} />}
+    {proxy && !readOnly && <ProxyEnrollment currentUserId={user.id} period={current} close={() => setProxy(false)} saved={() => { setProxy(false); refresh(); }} />}
   </>;
 }
 
@@ -507,7 +507,7 @@ function DraftSchedule({ period, prep, user, readOnly, refresh, go, openSettings
       }}</Load>
     </Card>
     {hasDraft && stage === 1 && <Records metrics={draft.metrics} />}
-    {adjusting && !readOnly && <Adjustments mode="draft" data={draft} close={() => setAdjusting(false)} saved={setDraftOverride} />}
+    {adjusting && !readOnly && <Adjustments mode="draft" currentUserId={user.id} data={draft} close={() => setAdjusting(false)} saved={setDraftOverride} />}
   </>;
 }
 
@@ -594,7 +594,7 @@ function PublishedSchedule({ period, user, openDraft, refresh }) {
         onAdjustWork={canAdjust && !query.loading ? setAdjusting : undefined} />
     </div> : <Blank>本周期暂无已发布排班</Blank>}</Card>
     <Records metrics={published.metrics} swaps={swaps} revision={published.run?.revision} />
-    {adjusting && canAdjust && <Adjustments mode="published" data={published} target={adjusting} close={() => setAdjusting(null)} saved={afterAdjustment} />}
+    {adjusting && canAdjust && <Adjustments mode="published" currentUserId={user.id} data={published} target={adjusting} close={() => setAdjusting(null)} saved={afterAdjustment} />}
   </>}</Load>;
 }
 

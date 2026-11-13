@@ -8,7 +8,11 @@ Page({
 
   async load() {
     const [items, shifts, users] = await Promise.all([request('/api/work-types'), request('/api/shifts'), request('/api/admin/users')]);
-    this.setData({ items, shifts: shifts.filter((s) => s.active), employees: users.filter((u) => u.status === 'active').map((u) => ({...u, label: `${u.displayName || u.name}（${u.employeeNo}）`})) });
+    const currentUserId = getApp().globalData.user?.id;
+    const employees = users.filter(u => u.status === 'active').map(u => ({
+      ...u, label: `${u.displayName || u.name}${u.id === currentUserId ? '（我）' : ''}（${u.employeeNo}）`,
+    }));
+    this.setData({ items, shifts: shifts.filter(s => s.active), employees });
   },
 
   openCreate() {

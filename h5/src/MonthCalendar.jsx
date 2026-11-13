@@ -1,10 +1,11 @@
 import React from 'react';
 import Button from 'antd/es/button';
-import { dayjs, iso, monthOf } from './shared';
+import { dayjs, iso, monthOf, today } from './shared';
 
 export function MonthCalendar({ month, startDate, endDate, move, selected, pick, blocked, dayInfo }) {
   const first = dayjs(month + '-01');
   const offset = (first.day() + 6) % 7;
+  const currentDate = today();
   return <><div className="calendar-heading">
     <Button disabled={month <= monthOf(startDate)} onClick={() => move(first.subtract(1, 'month').format('YYYY-MM'))}>上个月</Button>
     <strong>{first.format('YYYY 年 M 月')}</strong>
@@ -17,8 +18,10 @@ export function MonthCalendar({ month, startDate, endDate, move, selected, pick,
       const date = iso(value);
       const disabled = blocked(value);
       const info = dayInfo(date);
-      return <Button key={date} className="calendar-date" type={date === selected ? 'primary' : 'default'} disabled={disabled}
-        aria-label={info ? `${date}，${info.label}` : date} aria-pressed={date === selected} onClick={() => pick(date)}>
+      return <Button key={date} className={info?.className ? `calendar-date ${info.className}` : 'calendar-date'}
+        type={date === selected ? 'primary' : 'default'} disabled={disabled}
+        aria-label={info ? `${date}，${info.label}` : date} aria-current={date === currentDate ? 'date' : undefined}
+        aria-pressed={date === selected} onClick={() => pick(date)}>
         <span>{i + 1}</span>{info?.badge}
       </Button>;
     })}

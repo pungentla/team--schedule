@@ -130,11 +130,13 @@ export function Schedule({ user, periods, period, scope, changeScope, filters, u
     <Card><Heading help="recent">工作台</Heading>
       <Segmented block value={scope} onChange={changeScope} options={scopeOptions} />
       <Form layout="vertical" className="filters">
-        {scope !== 'work' && <Field label="查看"><Select aria-label="查看" value={view} onChange={value => updateFilters({ view: value })} options={viewOptions} /></Field>}
-        {scope === 'work' && <Field label="工作类型"><Select aria-label="工作类型" loading={works.loading} value={workId} onChange={value => updateFilters({ work: value })} options={choices.map(w => option(w.id, w.name))} /></Field>}
-        {view === 'recent' ? <>
-          <Field label="时间范围"><Select aria-label="时间范围" value={range} onChange={value => updateFilters({ range: value })} options={recentRangeOptions} /></Field>
-          {range === 'custom' && <Form.Item label="日期范围" htmlFor="schedule-range-start">
+        <div className={view === 'recent' ? 'schedule-filter-row' : undefined}>
+          {scope !== 'work' && <Field label="查看"><Select aria-label="查看" value={view} onChange={value => updateFilters({ view: value })} options={viewOptions} /></Field>}
+          {scope === 'work' && <Field label="工作类型"><Select aria-label="工作类型" loading={works.loading} value={workId} onChange={value => updateFilters({ work: value })} options={choices.map(w => option(w.id, w.name))} /></Field>}
+          {view === 'recent' && <Field label="时间范围"><Select aria-label="时间范围" value={range} onChange={value => updateFilters({ range: value })} options={recentRangeOptions} /></Field>}
+        </div>
+        {view === 'recent' ? (
+          range === 'custom' && <Form.Item label="日期范围" htmlFor="schedule-range-start">
             <div className="schedule-range-row">
               <ConfigProvider theme={rangePickerTheme}>
                 <DatePicker.RangePicker
@@ -149,15 +151,15 @@ export function Schedule({ user, periods, period, scope, changeScope, filters, u
               <Button type="primary" disabled={!custom || !validCustomDates(...custom)}
                 onClick={() => updateFilters({ dates: custom.map(iso) })}>查看安排</Button>
             </div>
-          </Form.Item>}
-        </> : <Field label="排班周期"><Select aria-label="排班周期" value={period?.id} options={periodOptions(periods)} onChange={value => updateFilters({ periodId: value })} placeholder="暂无排班周期" /></Field>}
+          </Form.Item>
+        ) : <Field label="排班周期"><Select aria-label="排班周期" value={period?.id} options={periodOptions(periods)} onChange={value => updateFilters({ periodId: value })} placeholder="暂无排班周期" /></Field>}
         <Field label="仅查看"><Checkbox.Group className="schedule-weekdays" role="group" aria-label="仅查看星期"
           value={selectedWeekdays} onChange={value => updateFilters({ weekdays: value })}>
           <Checkbox skipGroup checked={allWeekdaysSelected} indeterminate={selectedWeekdays.length > 0 && !allWeekdaysSelected}
             onChange={event => updateFilters({ weekdays: event.target.checked ? weekdayOrder : [] })}>全选</Checkbox>
           {weekdayOrder.map(day => <Checkbox key={day} value={day}>{weekdays[day]}</Checkbox>)}
         </Checkbox.Group></Field>
-        {canFilterPerson && <Field label="人员"><Select aria-label="人员" showSearch optionFilterProp="label" value={person} onChange={value => updateFilters({ person: value })} options={[option('all', '所有人员'), ...people.map(p => option(p.id, personLabel(p)))]} /></Field>}
+        {canFilterPerson && <Field label="人员"><Select aria-label="人员" showSearch optionFilterProp="label" value={person} onChange={value => updateFilters({ person: value })} options={[option('all', '所有人员'), ...people.map(p => option(p.id, personLabel(p, user.id)))]} /></Field>}
       </Form>
       {view === 'recent' && recent.data && !waitingForWorks && <div className="muted">{recent.data.startDate} 至 {recent.data.endDate} · {list.length} 项</div>}
       {view !== 'recent' && period && <div className="muted">{period.startDate} 至 {period.endDate} · {schedule.data?.run ? `生效版本 #${schedule.data.run.id}` : '尚未发布'}</div>}

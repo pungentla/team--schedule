@@ -44,10 +44,12 @@ Page({
       } catch (e) {
         // 补信息失败不影响主流程，用 assignment 自带字段兜底
       }
+      const currentUserId = getApp().globalData.user?.id;
       this.setData({
         fromAssignment,
         candidates: data.candidates.map((c) => ({
           ...c,
+          isMe: c.userId === currentUserId,
           problemText: (c.problems || []).map((p) => p.label).join('、'),
         })),
         loading: false,

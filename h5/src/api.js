@@ -133,6 +133,13 @@ export const API = (() => {
     deleteTopicReply: (topicId, replyId) => request(`/discussions/${topicId}/replies/${replyId}`, { method: 'DELETE' }),
 
     currentPeriod: () => request('/periods/current'),
+    attendanceEvents: () => request('/attendance'),
+    createAttendance: body => request('/attendance', { method: 'POST', body }),
+    attendanceEvent: id => request(`/attendance/${id}`),
+    updateAttendanceMembers: (id, body) => request(`/attendance/${id}/members`, { method: 'PATCH', body }),
+    checkIn: id => request(`/attendance/${id}/check-in`, { method: 'PUT' }),
+    proxyCheckIn: (id, memberIds) => request(`/attendance/${id}/proxy-check-in`, { method: 'PUT', body: { memberIds } }),
+    personAttendance: (id, days) => request(`/attendance/people/${id}?days=${days}`),
     listPeriods: () => request('/periods'),
     workTypes: () => request('/work-types'),
     updateWorkType: (id, body) => request(`/work-types/${id}`, { method: 'PUT', body }),

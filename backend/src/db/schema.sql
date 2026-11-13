@@ -31,6 +31,25 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX IF NOT EXISTS idx_users_status ON users(status);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 
+CREATE TABLE IF NOT EXISTS attendance_events (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  title       TEXT NOT NULL,
+  starts_at   TEXT NOT NULL,
+  ends_at     TEXT NOT NULL CHECK (ends_at > starts_at),
+  created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS attendance_members (
+  event_id      INTEGER NOT NULL REFERENCES attendance_events(id) ON DELETE CASCADE,
+  user_id       INTEGER NOT NULL REFERENCES users(id),
+  checked_in_at TEXT,
+  checked_in_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  PRIMARY KEY (event_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_attendance_member_user ON attendance_members(user_id, event_id);
+
 -- 邀请码：注册时需要
 CREATE TABLE IF NOT EXISTS invites (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,

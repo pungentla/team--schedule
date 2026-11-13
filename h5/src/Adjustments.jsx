@@ -9,13 +9,14 @@ import Space from 'antd/es/space';
 import { API, Blank, Field, Load, dateText, dayjs, option, personLabel, required, roleLabels, roleOptions, today, useAction, useLoad } from './shared';
 import { problemsText, SwapForm } from './Swaps';
 
-export function Adjustments({ mode, data, target, close, saved }) {
+export function Adjustments({ mode, data, target, currentUserId, close, saved }) {
   return <Modal open title={mode === 'draft' ? '手工调配草稿' : '直接调整已发布排班'} onCancel={close} footer={null}>
-    {mode === 'draft' ? <DraftEditor data={data} saved={saved} /> : <PublishedEditor data={data} target={target} saved={saved} />}
+    {mode === 'draft' ? <DraftEditor data={data} currentUserId={currentUserId} saved={saved} />
+      : <PublishedEditor data={data} target={target} currentUserId={currentUserId} saved={saved} />}
   </Modal>;
 }
 
-function PublishedEditor({ data, target, saved }) {
+function PublishedEditor({ data, target, currentUserId, saved }) {
   const day = data.matrix.find(item => item.workDate === target?.workDate);
   const shift = day?.shifts.find(item => item.shiftId === target?.shiftId);
   const cell = shift?.workTypes.find(item => item.workTypeId === target?.workTypeId);
@@ -42,20 +43,20 @@ function PublishedEditor({ data, target, saved }) {
     <Alert message="提交后立即生效，无需员工确认。" />
     {cell && <strong>{dateText(target.workDate)} · {shift.shiftName} · {cell.workTypeName}</strong>}
     <Segmented block aria-label="手动调班方式" value={action} onChange={setAction} options={options} />
-    {action === 'swap' && <SwapForm assignments={assignments} initialAssignmentId={cell && assignments.length === 1 ? assignments[0].id : undefined} admin saved={saved} />}
-    {action === 'fill' && cell && <FillPublishedWork data={data} target={target} cell={cell} saved={saved} />}
+    {action === 'swap' && <SwapForm assignments={assignments} currentUserId={currentUserId} initialAssignmentId={cell && assignments.length === 1 ? assignments[0].id : undefined} admin saved={saved} />}
+    {action === 'fill' && cell && <FillPublishedWork data={data} target={target} cell={cell} currentUserId={currentUserId} saved={saved} />}
     {action === 'add' && <Load query={settings}>{([requirements, shifts]) =>
-      <AddPublishedWork data={data} requirements={requirements} activeShifts={shifts.filter(shift => shift.active)} preferredDate={target?.workDate} saved={saved} />
+      <AddPublishedWork data={data} currentUserId={currentUserId} requirements={requirements} activeShifts={shifts.filter(shift => shift.active)} preferredDate={target?.workDate} saved={saved} />
     }</Load>}
     {action === 'remove' && <RemovePublishedWork data={data} target={target} saved={saved} />}
   </div>;
 }
 
-function FillPublishedWork({ data, target, cell, saved }) {
+function FillPublishedWork({ data, target, cell, currentUserId, saved }) {
   const { run, busy } = useAction();
   const roles = !cell.fillAllEnrolled && cell.roleGaps.length >= cell.gap ? cell.roleGaps : ['primary', 'deputy'];
   const options = data.employees.filter(user => !cell.assigned.some(person => person.userId === user.id))
-    .map(user => option(user.id, personLabel(user)));
+    .map(user => option(user.id, personLabel(user, currentUserId)));
   function submit({ userId, dutyRole }) {
     return run(() => API.adjustPublishedWork(data.run.id, {
       ...target, action: 'fill', revision: data.run.revision, people: [{ userId, dutyRole: cell.requiresRoles ? dutyRole : 'member' }],
@@ -68,7 +69,7 @@ function FillPublishedWork({ data, target, cell, saved }) {
   </Form>;
 }
 
-function AddPublishedWork({ data, requirements, activeShifts, preferredDate, saved }) {
+function AddPublishedWork({ data, currentUserId, requirements, activeShifts, preferredDate, saved }) {
   const [form] = Form.useForm();
   const { run, busy } = useAction();
   const dates = requirements.dates.map(day => day.workDate);
@@ -80,7 +81,7 @@ function AddPublishedWork({ data, requirements, activeShifts, preferredDate, sav
   const shifts = requirements.dates.find(day => day.workDate === workDate)?.shifts.filter(shift => activeShifts.some(active => active.id === shift.shiftId)) || [];
   const works = shiftId ? requirements.workTypes.filter(work => work.weekdays.includes(dayjs(workDate).day()) && !existing.some(cell => cell.workTypeId === work.id)) : [];
   const work = works.find(item => item.id === workTypeId);
-  const peopleOptions = data.employees.map(user => option(user.id, personLabel(user)));
+  const peopleOptions = data.employees.map(user => option(user.id, personLabel(user, currentUserId)));
   function submit(values) {
     if (!work) return;
     const people = work.requiresRoles
@@ -135,7 +136,7 @@ function RemovePublishedWork({ data, target, saved }) {
   </Form>;
 }
 
-function DraftEditor({ data, saved }) {
+function DraftEditor({ data, currentUserId, saved }) {
   const days = data.matrix.filter(d => d.shifts.some(s => s.workTypes.length));
   const [date, setDate] = useState(data.gaps?.fixedConflicts?.[0]?.workDate || days[0]?.workDate);
   const [cellId, setCellId] = useState();
@@ -165,7 +166,7 @@ function DraftEditor({ data, saved }) {
         <Button onClick={() => change({ workDate: date, shiftId: cell.shiftId, workTypeId: cell.workTypeId, dutyRole: cell.requiresRoles ? role : 'member' })}>＋ 补充人员</Button>
       </>}
       {target && <Load query={query}>{result => <>
-        <Field label="新人员"><Select aria-label="新人员" showSearch optionFilterProp="label" value={person} onChange={setPerson} options={result.candidates.map(u => ({ ...option(u.userId, personLabel(u) + (u.canAssign ? '' : ' · ' + problemsText(u.problems))), disabled: !u.canAssign }))} /></Field>
+        <Field label="新人员"><Select aria-label="新人员" showSearch optionFilterProp="label" value={person} onChange={setPerson} options={result.candidates.map(u => ({ ...option(u.userId, personLabel(u, currentUserId) + (u.canAssign ? '' : ' · ' + problemsText(u.problems))), disabled: !u.canAssign }))} /></Field>
         <Button type="primary" htmlType="submit" disabled={!person} loading={busy}>确认修改草稿</Button>
       </>}</Load>}
     </div>}

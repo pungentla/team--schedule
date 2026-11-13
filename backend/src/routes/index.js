@@ -19,6 +19,7 @@ const adminRoutes = require('./admin');
 const announcementRoutes = require('./announcements');
 const discussionRoutes = require('./discussions');
 const reminderRoutes = require('./reminders');
+const attendanceRoutes = require('./attendance');
 
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 
@@ -62,6 +63,7 @@ router.use('/stats', statsRoutes);
 router.use('/announcements', announcementRoutes);
 router.use('/discussions', discussionRoutes);
 router.use('/reminders', reminderRoutes);
+router.use('/attendance', attendanceRoutes);
 router.use('/admin', requireAuth, requireAdmin, adminRoutes);
 
 module.exports = router;

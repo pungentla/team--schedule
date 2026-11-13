@@ -18,7 +18,11 @@ export const accountRoles = { employee: '员工', admin: '管理员', super_admi
 export const swapLabels = { pending: '待确认', approved: '已生效', rejected: '已拒绝', cancelled: '已撤回', expired: '已过期' };
 export const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 export const option = (value, label) => ({ value, label });
-export const personLabel = p => `${p.name}（${p.employeeNo}）`;
+export const personName = (person, currentUserId) => {
+  const id = person.userId ?? person.id;
+  return person.name + (id != null && id === currentUserId ? '（我）' : '');
+};
+export const personLabel = (person, currentUserId) => `${personName(person, currentUserId)}（${person.employeeNo}）`;
 export const discussionName = (entry, anonymous = entry.anonymous) => anonymous
   ? entry.anonymousName || '匿名成员' : entry.authorName || '成员';
 export const periodOptions = periods => periods.map(p => option(p.id, `${p.name}（${periodLabels[p.status]}）`));
@@ -112,8 +116,8 @@ export function useAction() {
       return false;
     } finally { setBusy(false); }
   }
-  function confirm(title, content, danger = false) {
-    return new Promise(resolve => modal.confirm({ title, content, okText: '确认', cancelText: '取消', okButtonProps: { danger }, onOk: () => resolve(true), onCancel: () => resolve(false) }));
+  function confirm(title, content, danger = false, okText = '确认') {
+    return new Promise(resolve => modal.confirm({ title, content, okText, cancelText: '取消', okButtonProps: { danger }, onOk: () => resolve(true), onCancel: () => resolve(false) }));
   }
   return { run, busy, confirm };
 }

@@ -25,8 +25,8 @@ export function Settings({ user, tab, setTab, back, onSessionChanged }) {
     <div className="row-between"><Heading>基础设置</Heading><Button onClick={query.refresh}>刷新</Button></div>
     <Load query={query}>{([works, shifts, users]) => <Tabs activeKey={tab} onChange={setTab} items={[
       { key: 'worktypes', label: '工作类型', children: <><div className="inline muted">设置工作日和默认人数 <Help name="worktypes" /></div><Collapse accordion destroyOnHidden items={[
-        { key: 'new', label: '＋ 新增工作类型', children: <WorkForm users={users} shifts={shifts} saved={query.refresh} /> },
-        ...works.map(w => ({ key: w.id, label: <>{w.name} · {w.active ? '启用' : '停用'} {w.fillAllEnrolled && <Tag>按报名安排</Tag>}{w.requiresRoles && <Tag color="blue">主 + 副</Tag>}{w.dutyPairs?.length > 0 && <Tag>{w.dutyPairs.length} 种搭配</Tag>}</>, children: <WorkForm work={w} users={users} shifts={shifts} saved={query.refresh} /> })),
+        { key: 'new', label: '＋ 新增工作类型', children: <WorkForm currentUserId={user.id} users={users} shifts={shifts} saved={query.refresh} /> },
+        ...works.map(w => ({ key: w.id, label: <>{w.name} · {w.active ? '启用' : '停用'} {w.fillAllEnrolled && <Tag>按报名安排</Tag>}{w.requiresRoles && <Tag color="blue">主 + 副</Tag>}{w.dutyPairs?.length > 0 && <Tag>{w.dutyPairs.length} 种搭配</Tag>}</>, children: <WorkForm currentUserId={user.id} work={w} users={users} shifts={shifts} saved={query.refresh} /> })),
       ]} /></> },
       { key: 'shifts', label: '班次', children: <><div className="inline muted">设置班次时间 <Help name="shifts" /></div><Collapse accordion destroyOnHidden items={[
         { key: 'new', label: '＋ 新增班次', children: <ShiftForm seq={Math.max(0, ...shifts.map(s => s.seq)) + 1} saved={query.refresh} /> },
@@ -42,12 +42,12 @@ export function Settings({ user, tab, setTab, back, onSessionChanged }) {
   </Card>;
 }
 
-function WorkForm({ work, users, shifts, saved }) {
+function WorkForm({ work, users, currentUserId, shifts, saved }) {
   const [form] = Form.useForm();
   const roles = Form.useWatch('requiresRoles', form) ?? !!work?.requiresRoles;
   const fillAll = Form.useWatch('fillAllEnrolled', form) ?? !!work?.fillAllEnrolled;
   const { run, busy } = useAction();
-  const people = users.map(u => ({ ...option(u.id, personLabel({ ...u, name: u.displayName ?? u.name }) + (u.status === 'active' ? '' : ' · 停用')), disabled: u.status !== 'active' }));
+  const people = users.map(u => ({ ...option(u.id, personLabel({ ...u, name: u.displayName ?? u.name }, currentUserId) + (u.status === 'active' ? '' : ' · 停用')), disabled: u.status !== 'active' }));
   const shiftOptions = shifts.map(s => ({ ...option(s.id, shiftText(s) + (s.active ? '' : ' · 停用')), disabled: !s.active }));
   const deputiesByPrimary = new Map();
   for (const { primaryUserId, deputyUserId } of work?.dutyPairs || []) {

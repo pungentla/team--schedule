@@ -8,11 +8,11 @@ import Modal from 'antd/es/modal';
 import Select from 'antd/es/select';
 import Space from 'antd/es/space';
 import Tag from 'antd/es/tag';
-import { API, Blank, Field, Heading, Load, assignmentLabel, option, personLabel, swapLabels, useAction, useLoad, usePageLoad } from './shared';
+import { API, Blank, Field, Heading, Load, assignmentLabel, option, personLabel, personName, swapLabels, useAction, useLoad, usePageLoad } from './shared';
 
 export const problemsText = items => (items || []).map(p => p.label || p.message || p.code).join('；');
 
-export function SwapForm({ assignments, admin, saved, initialAssignmentId }) {
+export function SwapForm({ assignments, currentUserId, admin, saved, initialAssignmentId }) {
   const [from, setFrom] = useState(initialAssignmentId);
   const [type, setType] = useState('transfer');
   const [person, setPerson] = useState();
@@ -33,9 +33,9 @@ export function SwapForm({ assignments, admin, saved, initialAssignmentId }) {
   }
   if (!assignments.length) return <Blank>暂无可换班的已发布班次</Blank>;
   return <Form layout="vertical" disabled={busy} onFinish={submit}>
-    <Field label={admin ? '需要调整的排班' : '我的班次'}><Select aria-label={admin ? '需要调整的排班' : '我的班次'} showSearch optionFilterProp="label" value={from} onChange={id => change(setFrom, id)} placeholder="选择班次" options={assignments.map(a => option(a.id, `${admin ? a.name : a.periodName} · ${assignmentLabel(a)}`))} /></Field>
+    <Field label={admin ? '需要调整的排班' : '我的班次'}><Select aria-label={admin ? '需要调整的排班' : '我的班次'} showSearch optionFilterProp="label" value={from} onChange={id => change(setFrom, id)} placeholder="选择班次" options={assignments.map(a => option(a.id, `${admin ? personName(a, currentUserId) : a.periodName} · ${assignmentLabel(a)}`))} /></Field>
     <Field label="换班方式"><Select aria-label="换班方式" value={type} onChange={v => change(setType, v)} options={[option('transfer', '转班'), option('exchange', '互换')]} /></Field>
-    {from && <Load query={query}>{data => data.candidates.length ? <Field label={exchange ? '互换同事' : '接班同事'}><Select aria-label={exchange ? '互换同事' : '接班同事'} showSearch optionFilterProp="label" value={person} onChange={id => { setPerson(id); setTarget(undefined); }} placeholder="选择同事" options={data.candidates.map(c => ({ ...option(c.userId, personLabel(c) + (exchange ? (!c.theirAssignments.length ? ' · 无可交换班次' : '') : c.canTake ? '' : ' · ' + problemsText(c.problems))), disabled: exchange ? !c.theirAssignments.length : !c.canTake }))} /></Field> : <Blank>暂无可选择的同事</Blank>}</Load>}
+    {from && <Load query={query}>{data => data.candidates.length ? <Field label={exchange ? '互换同事' : '接班同事'}><Select aria-label={exchange ? '互换同事' : '接班同事'} showSearch optionFilterProp="label" value={person} onChange={id => { setPerson(id); setTarget(undefined); }} placeholder="选择同事" options={data.candidates.map(c => ({ ...option(c.userId, personLabel(c, currentUserId) + (exchange ? (!c.theirAssignments.length ? ' · 无可交换班次' : '') : c.canTake ? '' : ' · ' + problemsText(c.problems))), disabled: exchange ? !c.theirAssignments.length : !c.canTake }))} /></Field> : <Blank>暂无可选择的同事</Blank>}</Load>}
     {exchange && candidate && <Field label="对方的班次"><Select aria-label="对方的班次" value={target} onChange={setTarget} placeholder="选择互换班次" options={candidate.theirAssignments.map(a => option(a.id, assignmentLabel(a)))} /></Field>}
     <Field label={admin ? '调配说明' : '给同事的留言'}><Input.TextArea aria-label={admin ? '调配说明' : '给同事的留言'} rows={2} maxLength={1000} value={message} onChange={e => setMessage(e.target.value)} /></Field>
     <Button type="primary" htmlType="submit" loading={busy} disabled={!candidate || (exchange && !targetAssignment)}>{admin ? '确认调整，立即生效' : '发起申请'}</Button>
@@ -47,7 +47,7 @@ export function Swaps({ user, detail, setDetail, inbox }) {
   const requests = usePageLoad('requests', API.mySwaps);
   const refresh = () => { assignments.refresh(); requests.refresh(); inbox.refresh(); };
   return <>
-    <Card><Heading help="swaps">发起换班</Heading><Load query={assignments}>{list => <SwapForm assignments={list.filter(a => a.periodStatus === 'published')} saved={result => { refresh(); setDetail(result.swap.id); }} />}</Load></Card>
+    <Card><Heading help="swaps">发起换班</Heading><Load query={assignments}>{list => <SwapForm currentUserId={user.id} assignments={list.filter(a => a.periodStatus === 'published')} saved={result => { refresh(); setDetail(result.swap.id); }} />}</Load></Card>
     {[[inbox, '待我确认', '没有待你确认的申请'], [requests, '我发起的申请', '还没有发起过换班']].map(([query, title, empty]) =>
       <Load key={title} query={query}>{list => <Card title={title}>
       {list.length ? list.map(s => <div className="choice" key={s.id}>

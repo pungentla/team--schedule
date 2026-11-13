@@ -277,12 +277,12 @@ function EnrollmentForm({ context, enrollment, onSaved, proxyUser }) {
   </div>;
 }
 
-export function ProxyEnrollment({ period, close, saved }) {
+export function ProxyEnrollment({ period, currentUserId, close, saved }) {
   const [person, setPerson] = useState();
   const users = useLoad('users', API.adminUsers);
   const data = useLoad(person, () => API.adminEnrollment(period.id, person));
   return <Modal title={<>代报名 <Help name="proxy" /></>} open onCancel={close} footer={null}>
-    <Load query={users}>{items => <Form layout="vertical"><Field label="人员"><Select aria-label="人员" showSearch optionFilterProp="label" placeholder="选择人员" options={items.filter(u => u.status === 'active').map(u => option(u.id, personLabel(u)))} value={person} onChange={setPerson} /></Field></Form>}</Load>
+    <Load query={users}>{items => <Form layout="vertical"><Field label="人员"><Select aria-label="人员" showSearch optionFilterProp="label" placeholder="选择人员" options={items.filter(u => u.status === 'active').map(u => option(u.id, personLabel(u, currentUserId)))} value={person} onChange={setPerson} /></Field></Form>}</Load>
     {person && <Load query={data}>{({ context, enrollment }) => <EnrollmentForm key={person} context={context} enrollment={enrollment} proxyUser={person} onSaved={saved} />}</Load>}
   </Modal>;
 }

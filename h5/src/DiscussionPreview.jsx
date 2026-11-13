@@ -21,7 +21,7 @@ export function DiscussionPreview({ openDiscussions, hotTopicsQuery, hotTopicRan
       <div className="inline topic-preview-heading">
         <Heading>互动区</Heading>
         <Segmented size="small" value={sort} onChange={setSort} options={orders} />
-        <Button className="topic-preview-more" type="link" onClick={() => openDiscussions()}>更多话题 ›</Button>
+        <Button className="card-more-link" type="link" onClick={() => openDiscussions()}>更多话题 ›</Button>
       </div>
       <Load query={query}>{({ items }) => items.length ? <ul className="topic-preview-list">
         {items.map(topic => <li key={topic.id}>

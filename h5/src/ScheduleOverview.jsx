@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import Card from 'antd/es/card';
-import { Heading, dayjs, group, iso, shiftText } from './shared';
+import Collapse from 'antd/es/collapse';
+import { dayjs, group, iso, shiftText } from './shared';
 
 function trendBuckets(assignments, startDate, endDate, weekdays) {
   const start = dayjs(startDate);
@@ -74,12 +74,15 @@ export function ScheduleOverview({ assignments, startDate, endDate, scope, weekd
     ['排班天数', distinct('workDate')],
     scope === 'mine' ? ['涉及工作', distinct('workTypeId')] : ['参与人数', distinct('userId')],
   ];
-  return <Card className="schedule-overview">
-    <Heading>排班概览</Heading>
-    <dl className="schedule-stats">{stats.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
-    {!!assignments.length && <div className="schedule-charts">
-      <ScheduleTrend key={`${startDate}:${endDate}:${weekdays.join(',')}`} assignments={assignments} startDate={startDate} endDate={endDate} weekdays={weekdays} />
-      <ScheduleBreakdown assignments={assignments} byShift={scope === 'work'} />
-    </div>}
-  </Card>;
+  return <Collapse className="schedule-overview" items={[{
+    key: 'overview',
+    label: '排班概览',
+    children: <>
+      <dl className="schedule-stats">{stats.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+      {!!assignments.length && <div className="schedule-charts">
+        <ScheduleTrend key={`${startDate}:${endDate}:${weekdays.join(',')}`} assignments={assignments} startDate={startDate} endDate={endDate} weekdays={weekdays} />
+        <ScheduleBreakdown assignments={assignments} byShift={scope === 'work'} />
+      </div>}
+    </>,
+  }]} />;
 }
