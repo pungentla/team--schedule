@@ -19,7 +19,6 @@ function createApp() {
     app.set('trust proxy', config.trustProxy === true ? 1 : config.trustProxy);
   }
 
-  app.use(express.json({ limit: '2mb' }));
   app.use(requestId);
 
   // 基础安全响应头（无需 helmet 依赖）
@@ -36,12 +35,20 @@ function createApp() {
     const started = Date.now();
     res.on('finish', () => {
       const ms = Date.now() - started;
-      if (!req.originalUrl.startsWith('/api/health')) {
-        console.log(`${req.method} ${req.originalUrl} ${res.statusCode} ${ms}ms [#${req.requestId}]`);
+      if (req.path !== '/api/health') {
+        console.log(`${req.method} ${req.path} ${res.statusCode} ${ms}ms [#${req.requestId}]`);
       }
     });
     next();
   });
+
+  app.use((req, res, next) => {
+    if (config.requireHttps && !req.secure && req.path !== '/api/health') {
+      return res.status(426).json({ error: { code: 'HTTPS_REQUIRED', message: '请使用 HTTPS 安全连接', requestId: req.requestId } });
+    }
+    next();
+  });
+  app.use(express.json({ limit: '2mb' }));
 
   // 允许小程序开发者工具 / H5 跨域访问
   app.use((req, res, next) => {
@@ -99,7 +106,7 @@ function createApp() {
 
   app.use((req, res) => {
     res.status(404).json({
-      error: { code: 'NOT_FOUND', message: `接口不存在: ${req.method} ${req.originalUrl}`, requestId: req.requestId },
+      error: { code: 'NOT_FOUND', message: `接口不存在: ${req.method} ${req.path}`, requestId: req.requestId },
     });
   });
 

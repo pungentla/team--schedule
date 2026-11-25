@@ -9,7 +9,7 @@ const crypto = require('node:crypto');
 
 const SCRYPT_N = 16384;
 const SCRYPT_R = 8;
-const SCRYPT_P = 1;
+const SCRYPT_P = 5;
 const KEY_LEN = 64;
 
 function scryptAsync(password, salt, { N, r, p, keylen }) {
@@ -60,6 +60,11 @@ function verifyPasswordSync(password, stored) {
   return crypto.timingSafeEqual(derived, expected);
 }
 
+function passwordNeedsRehash(stored) {
+  const [, n, r, p] = stored.split('$');
+  return Number(n) * Number(r) * Number(p) < SCRYPT_N * SCRYPT_R * SCRYPT_P;
+}
+
 /** 生成随机 token（明文返回给客户端，仅哈希入库） */
 function generateToken(bytes = 32) {
   return crypto.randomBytes(bytes).toString('base64url');
@@ -89,6 +94,7 @@ function shortId(bytes = 8) {
 module.exports = {
   hashPasswordSync,
   verifyPasswordSync,
+  passwordNeedsRehash,
   generateToken,
   hashToken,
   generateInviteCode,

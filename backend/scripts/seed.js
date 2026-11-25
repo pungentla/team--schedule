@@ -52,6 +52,9 @@ function seededRandom(seed) {
 }
 
 function main() {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('生产环境禁止创建或重置演示数据，请通过账号管理配置正式账号');
+  }
   const reset = process.argv.includes('--reset');
   migrate();
   if (reset) {

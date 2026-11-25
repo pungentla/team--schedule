@@ -208,10 +208,7 @@ try{
 if [ "$USER_COUNT" = "0" ]; then
   warn "数据库为空，未灌入任何账号"
   echo ""
-  echo "  两种选择："
-  echo "    A. 灌演示数据（含 admin/123456 与 emp001~020）："
-  echo "       ${COMPOSE[*]} exec backend node scripts/seed.js"
-  echo "    B. 生产模式（不灌演示数据，需手动建管理员）：见 docs/production-setup.md"
+  echo "  请创建正式超级管理员：见 docs/production-setup.md 的「建账号」"
 else
   info "数据库已有 $USER_COUNT 个账号"
 fi

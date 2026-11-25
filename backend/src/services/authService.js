@@ -8,7 +8,7 @@ const { requireString } = require('../utils/validate');
 const userRepo = require('../repositories/userRepo');
 const auditRepo = require('../repositories/auditRepo');
 const { config } = require('../config');
-const { hashPasswordSync, verifyPasswordSync, generateToken, hashToken } = require('../utils/security');
+const { hashPasswordSync, verifyPasswordSync, passwordNeedsRehash, generateToken, hashToken } = require('../utils/security');
 const { badRequest, unauthorized, conflict, forbidden } = require('../utils/errors');
 const { nowIso } = require('../utils/date');
 
@@ -75,6 +75,9 @@ function login({ employeeNo, password }, ctx = {}) {
   }
   if (user.status !== 'active') throw forbidden('账号已被停用，请联系管理员');
 
+  if (passwordNeedsRehash(user.password_hash)) {
+    userRepo.updateUser(user.id, { passwordHash: hashPasswordSync(String(password)) });
+  }
   userRepo.deleteExpiredSessions();
   const session = issueSession(user.id);
 

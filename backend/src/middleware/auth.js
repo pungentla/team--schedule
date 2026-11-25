@@ -10,8 +10,6 @@ const { nowIso } = require('../utils/date');
 function extractToken(req) {
   const header = req.get('Authorization') || '';
   if (header.startsWith('Bearer ')) return header.slice(7).trim();
-  // 兼容小程序端偶尔用 query 传 token（如下载场景）
-  if (typeof req.query.token === 'string' && req.query.token) return req.query.token;
   return null;
 }
 

@@ -159,23 +159,22 @@ CERT_EMAIL=admin@yourcompany.com
 
 看到 `部署完成` 后，从电脑或手机浏览器打开 **`http://服务器IP`**，确认公网可达；健康检查为 `http://服务器IP/health`，API 为 `http://服务器IP/api`。HTTP 模式不会跳转 HTTPS，也不需要证书。
 
-HTTP 会明文传输账号和登录令牌，请在可信网络使用；公网敏感使用建议启用 HTTPS。首次部署需要按下一节创建账号才能登录。
+生产 API 默认强制 HTTPS，HTTP 下账号操作会返回 `HTTPS_REQUIRED`。公网部署请配置有效证书，并在 Nginx 中将 HTTP 跳转到 HTTPS，代理请求需传递 `X-Forwarded-Proto`。首次部署需要按下一节创建账号才能登录。
 
 从旧配置升级时，即使已填写 `DOMAIN`，未设置 `DEPLOY_SCHEME` 也默认使用 HTTP；希望继续使用 HTTPS 的环境请明确设置 `DEPLOY_SCHEME=https`。直接执行 Compose 时也要带 `--env-file .env.production`，确保访问方式一致。
 
 ### 3.5 建账号
 
-**二选一：**
+生产环境只创建正式账号，演示初始化脚本会拒绝在 `NODE_ENV=production` 下运行。使用 Bash 执行以下命令，密码由隐藏输入读取，经标准输入传递给容器。
 
 ```bash
-# 选项 A：灌演示数据（含 admin/123456、emp001~020/123456、邀请码 TEAM2025）
-docker compose -f docker-compose.prod.yml --env-file .env.production exec backend node scripts/seed.js
-
-# 选项 B：生产模式，只建一个超级管理员，之后在账号管理中创建管理员和员工，也可用邀请码注册员工
-docker compose -f docker-compose.prod.yml --env-file .env.production exec backend node -e "
+read -r -s -p '超级管理员密码（至少 12 位）: ' admin_password
+printf '\n'
+printf '%s' "$admin_password" | docker compose -f docker-compose.prod.yml --env-file .env.production exec -T backend node -e "
 const userRepo = require('./src/repositories/userRepo');
 const { hashPasswordSync } = require('./src/utils/security');
-const pwd = process.argv[1];
+const pwd = require('node:fs').readFileSync(0, 'utf8');
+if (pwd.length < 12) throw new Error('密码至少 12 位');
 userRepo.insertUser({
   employeeNo: 'admin',
   name: '超级管理员',
@@ -183,11 +182,12 @@ userRepo.insertUser({
   role: 'super_admin',
   phone: null,
 });
-console.log('管理员已创建，密码:', pwd);
-" '你的强密码'
+console.log('管理员已创建');
+"
+unset admin_password
 ```
 
-> 生产环境**别用 123456**。选项 B 的密码自己定，建议 12 位以上。
+之后在账号管理中创建管理员和员工，也可用邀请码注册员工。密码不应提交到 Git 或写进命令参数、日志。
 
 ---
 

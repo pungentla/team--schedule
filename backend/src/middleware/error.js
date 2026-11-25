@@ -37,7 +37,7 @@ function errorHandler(err, req, res, next) {
     });
   }
 
-  console.error(`[error] ${req.requestId} ${req.method} ${req.originalUrl}`, err);
+  console.error(`[error] ${req.requestId} ${req.method} ${req.path}`, err);
   return res.status(500).json({
     error: {
       code: 'INTERNAL_ERROR',

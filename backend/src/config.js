@@ -29,6 +29,7 @@ const config = {
 
   // 运行环境
   nodeEnv: process.env.NODE_ENV || 'development',
+  requireHttps: intEnv('REQUIRE_HTTPS', process.env.NODE_ENV === 'production' ? 1 : 0) === 1,
   // 部署在 Nginx 等反向代理后时置为 1，才能拿到真实客户端 IP（限流依赖）
   trustProxy: intEnv('TRUST_PROXY', 0) === 1 ? 1 : false,
 
