@@ -8,7 +8,7 @@
 const db = require('./db');
 const { ensureAlias } = require('../repositories/discussionAliasRepo');
 
-const CURRENT_VERSION = 33;
+const CURRENT_VERSION = 36;
 
 function migrate() {
   db.open();
@@ -28,10 +28,22 @@ function migrate() {
         const rebuildVotes = db.all('PRAGMA table_info(discussion_poll_votes)').some(column => column.name === 'position' && !column.pk);
         if (rebuildVotes) db.exec('ALTER TABLE discussion_poll_votes RENAME TO discussion_poll_votes_legacy');
         db.exec(db.readSchemaSql());
+        if (!db.all('PRAGMA table_info(todos)').some(column => column.name === 'archived_at')) {
+          db.exec('ALTER TABLE todos ADD COLUMN archived_at TEXT');
+        }
+        if (!db.all('PRAGMA table_info(todo_items)').some(column => column.name === 'assignee_id')) {
+          db.exec('ALTER TABLE todo_items ADD COLUMN assignee_id INTEGER REFERENCES users(id)');
+        }
         if (!db.all('PRAGMA table_info(attendance_members)').some(column => column.name === 'checked_in_by')) {
           db.exec('ALTER TABLE attendance_members ADD COLUMN checked_in_by INTEGER REFERENCES users(id) ON DELETE SET NULL');
         }
         if (fromVersion < 29) migratePushPreferences();
+        if (!db.pluck("SELECT sql FROM sqlite_master WHERE name='push_opt_outs'").includes("'todo'")) {
+          db.exec(`ALTER TABLE push_opt_outs RENAME TO push_opt_outs_legacy;
+            ${db.readSchemaSql().match(/CREATE TABLE IF NOT EXISTS push_opt_outs \([\s\S]*?\);/)[0]}
+            INSERT INTO push_opt_outs SELECT * FROM push_opt_outs_legacy;
+            DROP TABLE push_opt_outs_legacy;`);
+        }
         const userColumns = new Set(db.all('PRAGMA table_xinfo(users)').map(column => column.name));
         for (const [column, definition] of [
           ['nickname', 'TEXT'],
@@ -189,6 +201,10 @@ function migrateLegacySchema() {
 /** 删除全部业务数据（保留表结构），用于 reset */
 function truncateAll() {
   const tables = [
+    'todo_notices',
+    'todo_reminders',
+    'todo_items',
+    'todos',
     'attendance_members',
     'attendance_events',
     'push_opt_outs',

@@ -31,6 +31,60 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX IF NOT EXISTS idx_users_status ON users(status);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 
+CREATE TABLE IF NOT EXISTS todos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  created_by INTEGER NOT NULL REFERENCES users(id),
+  assignee_id INTEGER NOT NULL REFERENCES users(id),
+  visibility TEXT NOT NULL DEFAULT 'public' CHECK (visibility IN ('public', 'private')),
+  priority TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('normal', 'urgent')),
+  due_at TEXT,
+  tags_json TEXT NOT NULL DEFAULT '[]',
+  repeat_kind TEXT NOT NULL DEFAULT 'none' CHECK (repeat_kind IN ('none', 'weekly', 'monthly')),
+  repeat_day INTEGER,
+  repeat_group_id INTEGER REFERENCES todos(id) ON DELETE SET NULL,
+  next_todo_id INTEGER REFERENCES todos(id) ON DELETE SET NULL,
+  completed_at TEXT,
+  archived_at TEXT,
+  completion_note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  CHECK (visibility = 'public' OR assignee_id = created_by)
+);
+CREATE INDEX IF NOT EXISTS idx_todos_assignee ON todos(assignee_id, completed_at, due_at);
+CREATE INDEX IF NOT EXISTS idx_todos_creator ON todos(created_by, completed_at, due_at);
+CREATE INDEX IF NOT EXISTS idx_todos_repeat ON todos(repeat_group_id);
+
+CREATE TABLE IF NOT EXISTS todo_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  todo_id INTEGER NOT NULL REFERENCES todos(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  assignee_id INTEGER REFERENCES users(id),
+  done INTEGER NOT NULL DEFAULT 0 CHECK (done IN (0, 1)),
+  position INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_todo_items_parent ON todo_items(todo_id, position);
+
+CREATE TABLE IF NOT EXISTS todo_reminders (
+  todo_id INTEGER NOT NULL REFERENCES todos(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  remind_at TEXT NOT NULL,
+  notified_at TEXT,
+  PRIMARY KEY (todo_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_todo_reminders_due ON todo_reminders(remind_at) WHERE notified_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS todo_notices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  todo_id INTEGER NOT NULL REFERENCES todos(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('assigned', 'reminder')),
+  created_at TEXT NOT NULL,
+  read_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_todo_notices_user ON todo_notices(user_id, read_at);
+
 CREATE TABLE IF NOT EXISTS attendance_events (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   title       TEXT NOT NULL,
@@ -260,7 +314,7 @@ CREATE INDEX IF NOT EXISTS idx_system_notices_topic_time ON system_notices(creat
 CREATE TABLE IF NOT EXISTS push_opt_outs (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   kind    TEXT NOT NULL CHECK (kind IN ('enrollment_open', 'proxy_enrollment', 'new_topics', 'direct_reply',
-    'topic_replies', 'topic_likes', 'swap', 'announcement', 'next_day_schedule')),
+    'topic_replies', 'topic_likes', 'swap', 'announcement', 'next_day_schedule', 'todo')),
   PRIMARY KEY (user_id, kind)
 );
 

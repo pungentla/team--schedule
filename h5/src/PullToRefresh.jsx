@@ -55,7 +55,8 @@ export function PullToRefresh({ children, canRefresh }) {
       const target = event.target;
       if (!(target instanceof Element) || target.closest('input, textarea, select, [contenteditable], .workspace-top, .bottom-nav')) return;
       for (let parent = target; parent && parent !== element; parent = parent.parentElement) {
-        if (parent.scrollTop > 0 || (parent.scrollHeight > parent.clientHeight && /^(auto|scroll)$/.test(getComputedStyle(parent).overflowY))) return;
+        if (parent.scrollTop > 0 || (parent.scrollHeight > parent.clientHeight && /^(auto|scroll)$/.test(getComputedStyle(parent).overflowY)
+          && !parent.hasAttribute('data-pull-refresh-scroll'))) return;
       }
       const touch = event.touches[0];
       const top = element.querySelector('.workspace-top')?.getBoundingClientRect().bottom ?? 0;

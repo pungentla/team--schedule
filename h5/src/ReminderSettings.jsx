@@ -20,6 +20,7 @@ const pushGroups = [
     ['new_topics', '互动区新话题'],
   ]],
   ['公告', [['announcement', '新公告']]],
+  ['待办', [['todo', '待办分配与定时提醒']]],
 ];
 
 async function currentDeviceSubscription() {

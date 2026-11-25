@@ -31,6 +31,8 @@ const Enrollment = lazy(() => import('./Enrollment').then(m => ({ default: m.Enr
 const Discussions = lazy(() => import('./Discussions'));
 const Attendance = lazy(() => import('./Attendance'));
 const WorkbenchAttendance = lazy(() => import('./Attendance').then(module => ({ default: module.WorkbenchAttendance })));
+const Todos = lazy(() => import('./Todos'));
+const WorkbenchTodos = lazy(() => import('./Todos').then(module => ({ default: module.WorkbenchTodos })));
 
 const theme = {
   token: { colorPrimary: '#2e59ae', colorBgLayout: '#f2f5f9', colorText: '#1f2a3c', colorTextSecondary: '#58677e', borderRadius: 10, controlHeight: 42, fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif' },
@@ -83,6 +85,8 @@ function readNotificationTarget() {
   const notice = Number(params.get('notice'));
   const enrollment = Number(params.get('enrollment'));
   const systemNotice = Number(params.get('systemNotice'));
+  const todo = Number(params.get('todo'));
+  if (Number.isSafeInteger(todo) && todo > 0) return { tab: 'todos', todo };
   const systemTarget = { systemNotice: Number.isSafeInteger(systemNotice) && systemNotice > 0 ? systemNotice : null };
   if (Number.isSafeInteger(enrollment) && enrollment > 0) return { ...systemTarget, tab: 'enrollment', enrollment };
   if (params.get('tab') === 'discussions') return { ...systemTarget, tab: 'discussions' };
@@ -102,7 +106,7 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
   const superAdmin = user.role === 'super_admin';
   const [notificationTarget, setNotificationTarget] = useState(() => {
     const target = readNotificationTarget();
-    return superAdmin ? { tab: 'workflow', notice: target.notice } : target;
+    return superAdmin && target.tab !== 'todos' ? { tab: 'workflow', notice: target.notice } : target;
   });
   const [tab, setTab] = useState(notificationTarget.tab);
   const [messagesBackTab, setMessagesBackTab] = useState('schedule');
@@ -114,6 +118,7 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
   const [discussionFeedVersion, setDiscussionFeedVersion] = useState(0);
   const [enrollmentPeriodId, setEnrollmentPeriodId] = useState(notificationTarget.enrollment);
   const [swapDetail, setSwapDetail] = useState(notificationTarget.swap ?? null);
+  const [todoDetailId, setTodoDetailId] = useState(notificationTarget.todo ?? null);
   const [password, setPassword] = useState(false);
   const [nicknameOpen, setNicknameOpen] = useState(false);
   const [reminders, setReminders] = useState(false);
@@ -124,11 +129,12 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
   useEffect(() => { if (!superAdmin) restoreDeviceReminder(user.id).catch(() => {}); }, [user.id, superAdmin]);
   useEffect(() => {
     const url = new URL(window.location.href);
-    for (const key of ['reply', 'swap', 'notice', 'enrollment', 'tab', 'systemNotice']) url.searchParams.delete(key);
+    for (const key of ['reply', 'swap', 'notice', 'enrollment', 'tab', 'systemNotice', 'todo']) url.searchParams.delete(key);
+    if (tab === 'todos' && todoDetailId) url.searchParams.set('todo', todoDetailId);
     if (tab === 'discussions' && discussionTopicId) url.searchParams.set('topic', discussionTopicId);
     else url.searchParams.delete('topic');
     if (url.href !== window.location.href) window.history.replaceState(null, '', url);
-  }, [tab, discussionTopicId]);
+  }, [tab, discussionTopicId, todoDetailId]);
   const changeScheduleScope = scope => setSchedulePreferences(previous => ({ ...previous, scope }));
   const updateScheduleFilters = changes => setSchedulePreferences(({ scope, byScope }) => ({
     scope, byScope: { ...byScope, [scope]: { ...byScope[scope], ...changes } },
@@ -141,7 +147,8 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
   const likeNotices = useLoad(personalInbox, API.unreadTopicLikes, true);
   const swapInbox = useLoad(personalInbox, API.swapInbox, true);
   const systemInbox = useLoad(personalInbox, API.unreadSystemNotices, true);
-  const inboxes = { topics: unreadQuery, likes: likeNotices, swaps: swapInbox, system: systemInbox };
+  const todoInbox = useLoad(user.id, API.unreadTodos, true);
+  const inboxes = { topics: unreadQuery, likes: likeNotices, swaps: swapInbox, system: systemInbox, todos: todoInbox };
   const hotTopicsQuery = useLoad(tab === 'schedule' || tab === 'discussions' ? 'hot-topics' : null,
     () => API.discussionTopics(1, { sort: 'hot', pageSize: 3 }), true);
   usePullRefresh(periodsQuery.refreshPage, ['schedule', 'enrollment', 'workflow'].includes(tab));
@@ -155,7 +162,7 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
   const hotTopicRanks = new Map(hotTopicsQuery.data?.items
     .filter(topic => topic.likeCount + topic.replyCount > 0)
     .map((topic, index) => [topic.id, index + 1]));
-  const refreshNotifications = useEffectEvent(() => { unreadQuery.refresh(); likeNotices.refresh(); swapInbox.refresh(); systemInbox.refresh(); });
+  const refreshNotifications = useEffectEvent(() => { unreadQuery.refresh(); likeNotices.refresh(); swapInbox.refresh(); systemInbox.refresh(); todoInbox.refresh(); });
   const readSystemNotice = useEffectEvent(id => API.markSystemNoticeRead(id).then(systemInbox.refresh, e => message.error(e.message)));
   useEffect(() => {
     if (notificationTarget.systemNotice) readSystemNotice(notificationTarget.systemNotice);
@@ -180,9 +187,9 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
     ['schedule', '工作台'], ['discussions', '互动区'], ['enrollment', '我的报名'], ['swaps', '我的换班'],
     ...(isAdmin(user) ? [['workflow', '安排排班']] : []),
   ];
-  const activeNav = !superAdmin && tab === 'settings' ? 'workflow' : tab;
+  const activeNav = tab === 'todos' ? (superAdmin ? 'workflow' : 'schedule') : !superAdmin && tab === 'settings' ? 'workflow' : tab;
   async function navigate(next, { returning = false } = {}) {
-    if (superAdmin && !tabs.some(([id]) => id === next)) return false;
+    if (superAdmin && next !== 'todos' && !tabs.some(([id]) => id === next)) return false;
     if (next === tab) return true;
     if (dirty.current && !await confirm('放弃未保存的需求？')) return false;
     dirty.current = false;
@@ -220,6 +227,9 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
   async function openSwap(id) {
     if (await navigate('swaps')) setSwapDetail(id);
   }
+  async function openTodos(id = null) {
+    if (await navigate('todos')) setTodoDetailId(id);
+  }
   async function openSystemNotice(notice) {
     if (notice.kind === 'new_topics') {
       if (!await navigate('discussions')) return;
@@ -250,11 +260,13 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
           {!superAdmin && <MessageBell inboxes={inboxes} active={tab === 'messages'} open={openMessages} openTopic={openDiscussions} />}
           <Dropdown trigger={['click']} menu={{ items: [
             { key: 'nickname', label: '设置花名' },
+            ...(superAdmin ? [{ key: 'todos', label: '待办管理' }] : []),
             ...(!superAdmin ? [{ key: 'reminders', label: '消息提醒' }] : []),
             { key: 'password', label: '修改密码' },
             { type: 'divider' }, { key: 'logout', label: '退出登录', danger: true, disabled: busy },
           ], onClick: ({ key }) => {
             if (key === 'nickname') setNicknameOpen(true);
+            if (key === 'todos') void openTodos();
             if (key === 'reminders') setReminders(true);
             if (key === 'password') setPassword(true);
             if (key === 'logout') void logout();
@@ -274,13 +286,16 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
       {isAdmin(user) && (tab === 'workflow' || tab === 'settings') && <Alert type="info" showIcon message="仅管理员可见" />}
       <Suspense fallback={<div className="loading"><Spin /></div>}>
         {tab === 'schedule' && <WorkbenchAttendance user={user} open={() => navigate('attendance')} />}
+        {tab === 'schedule' && <WorkbenchTodos open={openTodos} />}
         {tab === 'schedule' && <Schedule key={scheduleScope} user={user} periods={periods} period={period}
           scope={scheduleScope} changeScope={changeScheduleScope} filters={scheduleFilters} updateFilters={updateScheduleFilters} />}
         {tab === 'enrollment' && <Load query={periodsQuery}>{() => <Enrollment user={user} periods={periods} period={period}
           selected={enrollmentPeriodId} setSelected={setEnrollmentPeriodId} />}</Load>}
         {tab === 'swaps' && <Swaps user={user} detail={swapDetail} setDetail={setSwapDetail} inbox={swapInbox} />}
         {tab === 'messages' && <Messages inboxes={inboxes} back={() => navigate(messagesBackTab, { returning: true })}
-          openTopic={openDiscussions} openSwap={openSwap} openSystemNotice={openSystemNotice} />}
+          openTopic={openDiscussions} openSwap={openSwap} openSystemNotice={openSystemNotice} openTodo={openTodos} />}
+        {tab === 'todos' && <Todos user={user} detailId={todoDetailId} open={openTodos}
+          back={() => navigate(superAdmin ? 'workflow' : 'schedule')} refreshInbox={todoInbox.refresh} />}
         {tab === 'attendance' && <Attendance user={user} back={superAdmin ? undefined : () => navigate('schedule')} />}
         {tab === 'discussions' && <Discussions key={discussionFeedVersion} topicId={discussionTopicId} replyId={discussionReplyId} openVersion={discussionOpenVersion} open={openDiscussions}
           unreadCounts={unreadCounts} refreshUnread={unreadQuery.refresh} refreshLikeNotices={likeNotices.refresh}

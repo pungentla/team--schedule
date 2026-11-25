@@ -64,6 +64,7 @@ router.use('/announcements', announcementRoutes);
 router.use('/discussions', discussionRoutes);
 router.use('/reminders', reminderRoutes);
 router.use('/attendance', attendanceRoutes);
+router.use('/todos', require('./todos'));
 router.use('/admin', requireAuth, requireAdmin, adminRoutes);
 
 module.exports = router;

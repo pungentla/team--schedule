@@ -11,7 +11,7 @@ const vapidDetails = config.webPush;
 const publicKey = vapidDetails.subject && vapidDetails.publicKey && vapidDetails.privateKey
   ? vapidDetails.publicKey : null;
 const PUSH_KINDS = ['enrollment_open', 'proxy_enrollment', 'new_topics', 'direct_reply',
-  'topic_replies', 'topic_likes', 'swap', 'announcement', 'next_day_schedule'];
+  'topic_replies', 'topic_likes', 'swap', 'announcement', 'next_day_schedule', 'todo'];
 
 function getPreferences(userId) {
   const disabled = new Set(db.all('SELECT kind FROM push_opt_outs WHERE user_id=?', userId).map(row => row.kind));
@@ -144,11 +144,10 @@ async function sendScheduleReminders(workDate, stopped = () => false) {
 }
 
 function startScheduleReminders() {
-  if (!publicKey) return () => {};
   let busy = false;
   let stopped = false;
   async function tick() {
-    if (busy || nowTime() < '18:00:00') return;
+    if (!publicKey || busy || nowTime() < '18:00:00') return;
     busy = true;
     try { await sendScheduleReminders(addDays(today(), 1), () => stopped); }
     catch (error) { console.error('[reminders] dispatch failed:', error.message); }
@@ -159,7 +158,10 @@ function startScheduleReminders() {
   async function tickEvents() {
     if (sendingEvents) return;
     sendingEvents = true;
-    try { await sendQueuedPushEvents(); }
+    try {
+      require('./todoService').processDueTodos();
+      if (publicKey) await sendQueuedPushEvents();
+    }
     catch (error) { console.error('[reminders] event dispatch failed:', error.message); }
     finally { sendingEvents = false; }
   }

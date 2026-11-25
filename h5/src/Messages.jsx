@@ -40,7 +40,7 @@ export function MessageBell({ inboxes, active, open, openTopic }) {
   }, [active, topics, notification]);
 
   const total = [...(topics ?? []), ...(inboxes.likes.data ?? [])]
-    .reduce((sum, topic) => sum + topic.unreadCount, (inboxes.swaps.data?.length ?? 0) + (inboxes.system.data?.length ?? 0));
+    .reduce((sum, topic) => sum + topic.unreadCount, (inboxes.swaps.data?.length ?? 0) + (inboxes.system.data?.length ?? 0) + (inboxes.todos.data?.length ?? 0));
   const label = `消息提醒，${total} 条`;
   return <Button ghost className="reply-notification-button" aria-label={label} title={label} aria-current={active ? 'page' : undefined}
     onClick={open} icon={<Badge count={total} size="small" overflowCount={999}><BellOutlined /></Badge>} />;
@@ -57,13 +57,13 @@ function MessageRow({ title, meta, description, excerpt, open }) {
   </button></li>;
 }
 
-export function Messages({ inboxes, back, openTopic, openSwap, openSystemNotice }) {
+export function Messages({ inboxes, back, openTopic, openSwap, openSystemNotice, openTodo }) {
   const heading = useRef(null);
   useEffect(() => { heading.current?.focus({ preventScroll: true }); }, []);
   const sources = Object.values(inboxes);
   const errors = sources.filter(inbox => inbox.error);
   const loading = sources.some(inbox => inbox.loading);
-  const { system, topics, likes, swaps } = inboxes;
+  const { system, topics, likes, swaps, todos } = inboxes;
   const groups = [
     ['系统消息', system.data, notice => {
       const isTopic = notice.kind === 'new_topics';
@@ -80,6 +80,9 @@ export function Messages({ inboxes, back, openTopic, openSwap, openSystemNotice 
       description="你的话题收到了点赞" open={() => openTopic(topic.id)} />],
     ['换班申请', swaps.data, swap => <MessageRow key={swap.id} title={`${swap.requesterName}发起的换班`} meta="待确认"
       description={swap.fromAssign && assignmentLabel(swap.fromAssign)} open={() => openSwap(swap.id)} />],
+    ['待办提醒', todos.data, notice => <MessageRow key={notice.id} title={notice.title}
+      description={notice.kind === 'assigned' ? `${notice.creatorName}给你分配了待办` : '待办提醒时间已到'}
+      open={() => openTodo(notice.todoId)} />],
   ].filter(([, entries]) => entries?.length);
 
   return <>
