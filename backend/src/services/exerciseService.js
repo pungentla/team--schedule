@@ -3,7 +3,7 @@ const { createHash } = require('node:crypto');
 const db = require('../db/db');
 const harvest = require('./harvestService');
 const catalog = require('../content/exercise-sports.json');
-const { addDays, isDateString, weekday } = require('../utils/date');
+const { addDays, diffDays, isDateString, weekday } = require('../utils/date');
 const { requireString, requireInt, requireEnum, requireBoolean, requireTime, requireArray } = require('../utils/validate');
 const { badRequest, notFound, forbidden, conflict } = require('../utils/errors');
 const { parseImage } = require('../utils/images');
@@ -156,4 +156,43 @@ function processDueReminders(now = new Date()) {
     return rows.length;
   });
 }
-module.exports = { metadata, saveSettings, list, create, remove, images, like, ranking, processDueReminders };
+const bodySelect = 'SELECT id,work_date AS date,weight,body_fat AS bodyFat,created_at AS createdAt,updated_at AS updatedAt FROM exercise_body_records';
+function bodyRecords(user, query = {}, now = new Date()) {
+  harvest.participant(user);
+  const { today } = dates(now);
+  const from = query.from ?? addDays(today, -89), to = query.to ?? today;
+  if (!isDateString(from) || !isDateString(to) || from < '1900-01-01' || to > today || from > to || diffDays(from, to) > 365) {
+    throw badRequest('请选择有效的日期范围，单次最多查看 366 天，不能超过今天');
+  }
+  return { from, to,
+    firstDate: db.pluck('SELECT MIN(work_date) FROM exercise_body_records WHERE user_id=?', user.id) || null,
+    items: db.all(`${bodySelect} WHERE user_id=? AND work_date BETWEEN ? AND ? ORDER BY work_date`, user.id, from, to),
+  };
+}
+function bodyValue(value, field, max) {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0.1 || value > max || Math.abs(value * 10 - Math.round(value * 10)) > 1e-8) {
+    throw badRequest(`${field}请输入 0.1 至 ${max} 之间的数字，最多一位小数`);
+  }
+  return value;
+}
+function saveBodyRecord(user, date, body, now = new Date()) {
+  harvest.participant(user);
+  if (!isDateString(date) || date < '1900-01-01' || date > dates(now).today) throw badRequest('请选择有效的记录日期，不能超过今天');
+  if (body.visibility != null && body.visibility !== 'private') throw badRequest('身体记录仅自己可见');
+  const weight = bodyValue(body.weight, '体重', 1000), bodyFat = bodyValue(body.bodyFat, '体脂率', 99.9);
+  if (weight === null && bodyFat === null) throw badRequest('请至少填写体重或体脂率中的一项');
+  return db.tx(() => {
+    db.run(`INSERT INTO exercise_body_records(user_id,work_date,weight,body_fat,created_at,updated_at) VALUES(?,?,?,?,?,?)
+      ON CONFLICT(user_id,work_date) DO UPDATE SET weight=excluded.weight,body_fat=excluded.body_fat,updated_at=excluded.updated_at`, user.id, date, weight, bodyFat, now.toISOString(), now.toISOString());
+    return db.get(`${bodySelect} WHERE user_id=? AND work_date=?`, user.id, date);
+  });
+}
+function removeBodyRecord(user, rawId) {
+  harvest.participant(user);
+  const id = requireInt(rawId, '记录', { min: 1 });
+  const result = db.run('DELETE FROM exercise_body_records WHERE id=? AND user_id=?', id, user.id);
+  if (!result.changes) throw notFound('身体记录不存在');
+  return { deleted: true };
+}
+module.exports = { bodyRecords, saveBodyRecord, removeBodyRecord, metadata, saveSettings, list, create, remove, images, like, ranking, processDueReminders };

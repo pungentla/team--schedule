@@ -31,3 +31,22 @@
 .exercise-rank.rank-3 { background:#fff3e9; border-color:#eccdb5; }
 .exercise .exercise-calendar-done:not(.ant-btn-primary) { background:#eaf5ee; border-color:#acd4bc; color:#287453; }
 @media(max-width:480px) { .exercise-verse { padding:12px; gap:8px; } .exercise-verse > span { display:none; } .exercise-form-grid { column-gap:12px; } .exercise-record { padding:12px; } .exercise-record > .row-between:last-child { flex-wrap:wrap; } .exercise-podium { gap:8px; } .exercise-footprints { gap:5px; } }
+
+.body-record-editor { background: #faf7fd; border-color: #e5dcef; scroll-margin-top: calc(var(--workspace-top-height, 58px) + 64px); }
+.body-record-editor .ant-form { margin-top: 16px; }
+.body-record-hint { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; line-height: 1.7; }
+.body-range { display: flex; flex-direction: column; gap: 8px; }
+.body-trends { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,320px),1fr)); gap: 18px; }
+.body-trend { border: 1px solid #e4e9f0; border-radius: 14px; padding: 16px; color: #387f73; min-width: 0; }
+.body-trend-bodyFat { color: #8964a7; }
+.body-trend h3 { margin: 0; color: #1f2a3c; }
+.body-trend .row-between > strong { font-size: 22px; }
+.body-trend .row-between > strong > small { font-size: 13px; font-weight: 400; }
+.body-trend-summary { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin: 12px 0; }
+.body-trend svg { display: block; width: 100%; overflow: visible; }
+.body-trend svg text { fill: #69778b; font-size: 14px; }
+.body-trend svg [role=button] { cursor: pointer; outline: none; }
+.body-trend svg [role=button]:focus circle:last-child { stroke: #1f2a3c; stroke-width: 3px; }
+.body-chart-selection { background: #f5f7fa; color: #58677e; padding: 8px 12px; border-radius: 8px; font-size: 13px; }
+.body-record-values { display: flex; flex-wrap: wrap; gap: 10px 24px; color: #64748b; }
+.body-record-values b { color: #1f2a3c; font-weight: 500; }

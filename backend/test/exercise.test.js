@@ -100,3 +100,78 @@ test('v43迁移保留旧消息、偏好与索引，新增运动表幂等且外�
   assert.equal(notices.listUnread(users[0].id)[0].kind, 'new_topics'); assert.equal(reminders.getPreferences(users[0].id).direct_reply, false); assert.equal(reminders.getPreferences(users[0].id).exercise, true);
   assert.equal(db.get("SELECT tbl_name FROM sqlite_master WHERE name='idx_system_notices_user'").tbl_name, 'system_notices'); record(); assert.deepEqual(migrate(), { fromVersion: CURRENT_VERSION, toVersion: CURRENT_VERSION }); assert.deepEqual(db.all('PRAGMA foreign_key_check'), []); assert.equal(db.pluck('PRAGMA quick_check'), 'ok');
 });
+test('身体记录可单独填写体重或体脂，同一天更新原记录，保留创建时间', () => {
+  const first = exercise.saveBodyRecord(users[0], '2026-11-25', { weight: 65.5 }, now);
+  assert.equal(first.weight, 65.5); assert.equal(first.bodyFat, null);
+  const updated = exercise.saveBodyRecord(users[0], '2026-11-25', { weight: 64.8, bodyFat: 22.3 }, new Date('2026-11-26T11:00:00Z'));
+  assert.equal(updated.id, first.id); assert.equal(updated.createdAt, first.createdAt); assert.notEqual(updated.updatedAt, first.updatedAt);
+  assert.equal(db.pluck('SELECT COUNT(*) FROM exercise_body_records'), 1);
+  const fatOnly = exercise.saveBodyRecord(users[0], '2026-11-26', { bodyFat: 22.1 }, now);
+  assert.equal(fatOnly.weight, null); assert.equal(fatOnly.bodyFat, 22.1);
+  assert.deepEqual(exercise.bodyRecords(users[0], {}, now).items.map(r => r.date), ['2026-11-25', '2026-11-26']);
+});
+test('身体记录拒绝无效数值、精度、空值、未来日期和公开设置，不覆盖有效记录', () => {
+  const saved = exercise.saveBodyRecord(users[0], '2026-11-26', { weight: 65 }, now);
+  for (const body of [{}, { weight: null, bodyFat: '' }, { weight: 0 }, { weight: -1 }, { weight: 1000.1 }, { weight: 60.55 }, { weight: '65' }, { weight: NaN }, { weight: Infinity }, { bodyFat: 100 }, { bodyFat: -1 }, { bodyFat: 23.45 }, { weight: 65, visibility: 'public' }]) {
+    assert.throws(() => exercise.saveBodyRecord(users[0], '2026-11-26', body, now), e => e.status === 400);
+  }
+  for (const date of ['2026-11-27', '2026-02-30', 'bad', '1899-12-31']) assert.throws(() => exercise.saveBodyRecord(users[0], date, { weight: 65 }, now), e => e.status === 400);
+  assert.equal(exercise.bodyRecords(users[0], {}, now).items[0].weight, saved.weight);
+  assert.equal(db.pluck('SELECT COUNT(*) FROM exercise_body_records'), 1);
+});
+test('身体记录按登录账号隔离，管理员不能查他人，也不进入运动动态和排行榜', () => {
+  const owner = exercise.saveBodyRecord(users[0], '2026-11-26', { weight: 66.6, bodyFat: 23.4 }, now);
+  for (const user of [users[1], users[2]]) {
+    const result = exercise.bodyRecords(user, { userId: users[0].id, scope: 'public' }, now);
+    assert.deepEqual(result.items, []); assert.equal(result.firstDate, null);
+    assert.throws(() => exercise.removeBodyRecord(user, owner.id), e => e.status === 404);
+  }
+  exercise.saveBodyRecord(users[1], '2026-11-26', { weight: 77.7, userId: users[0].id }, now);
+  assert.equal(exercise.bodyRecords(users[0], {}, now).items[0].weight, 66.6);
+  assert.equal(exercise.bodyRecords(users[1], {}, now).items[0].weight, 77.7);
+  assert.equal(exercise.list(users[1], { scope: 'public' }, now).total, 0);
+  assert.equal(exercise.ranking(users[0], now).items.length, 0);
+  assert.equal(exercise.metadata(users[0], now).todayCount, 0);
+  assert.equal(harvest.balance(users[0].id), 0);
+  assert.equal(db.pluck('SELECT COUNT(*) FROM system_notices'), 0);
+});
+test('身体记录支持历史范围查询，按日期升序，范围不超过366天', () => {
+  for (const date of ['2026-11-25', '2001-01-02', '2026-11-26']) exercise.saveBodyRecord(users[0], date, { weight: 65 }, now);
+  const recent = exercise.bodyRecords(users[0], {}, now);
+  assert.equal(recent.items.length, 2); assert.equal(recent.firstDate, '2001-01-02');
+  assert.equal(exercise.bodyRecords(users[0], { from: '2001-01-01', to: '2001-12-31' }, now).items[0].date, '2001-01-02');
+  assert.equal(exercise.bodyRecords(users[0], { from: '2026-11-25', to: '2026-11-25' }, now).items.length, 1);
+  for (const query of [{ from: '2025-01-01' }, { from: '2026-11-27' }, { to: '2026-11-27' }, { from: 'bad' }, { from: '2026-02-30' }, { from: '1899-01-01' }, { from: '2026-11-26', to: '2026-11-25' }]) assert.throws(() => exercise.bodyRecords(users[0], query, now), e => e.status === 400);
+});
+test('身体记录HTTP接口鉴权并防越权读取、删除和伪造归属', async () => {
+  const date = exercise.metadata(users[0]).today;
+  for (const [path, method] of [['/body-records', 'GET'], [`/body-records/${date}`, 'PUT'], ['/body-records/1', 'DELETE']]) assert.equal((await request(path, { user: null, method, ...(method === 'PUT' ? { body: { weight: 65 } } : {}) })).status, 401);
+  assert.equal((await request('/body-records', { user: 3 })).status, 403);
+  const saved = await request(`/body-records/${date}`, { method: 'PUT', body: { weight: 65, bodyFat: 22.5, userId: users[1].id } }); assert.equal(saved.status, 200);
+  assert.equal((await request(`/body-records?userId=${users[0].id}`, { user: 1 })).data.items.length, 0);
+  assert.equal((await request(`/body-records?userId=${users[1].id}`)).data.items.length, 1);
+  assert.equal((await request(`/body-records/${saved.data.id}`, { method: 'DELETE', user: 1 })).status, 404);
+  assert.equal((await request(`/body-records/${date}`, { method: 'PUT', body: { weight: 65, visibility: 'public' } })).status, 400);
+  assert.equal((await request(`/body-records/${saved.data.id}`, { method: 'DELETE' })).status, 200);
+  assert.equal((await request('/body-records')).data.items.length, 0);
+  assert.equal((await request(`/body-records/${saved.data.id}`, { method: 'DELETE' })).status, 404);
+});
+test('身体记录日期以北京时间为准，删除和重录不改变运动奖励', () => {
+  exercise.saveBodyRecord(users[0], '2026-11-27', { weight: 65.5 }, new Date('2026-11-26T16:00:00Z'));
+  assert.throws(() => exercise.saveBodyRecord(users[0], '2026-11-27', { weight: 65.5 }, new Date('2026-11-26T15:59:59Z')), e => e.status === 400);
+  const made = exercise.saveBodyRecord(users[0], '2026-11-26', { weight: 65.6 }, now);
+  exercise.removeBodyRecord(users[0], made.id);
+  exercise.saveBodyRecord(users[0], '2026-11-26', { bodyFat: 22.2 }, now);
+  assert.equal(harvest.balance(users[0].id), 0); assert.equal(exercise.metadata(users[0], now).todayCount, 0);
+});
+test('v44升级新增身体记录表，保留运动记录、禾穗与推送偏好', () => {
+  record(); reminders.setPreference(users[0].id, 'exercise', false);
+  const previous = db.all("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name<>'exercise_body_records'").map(({ name }) => [name, db.pluck(`SELECT COUNT(*) FROM "${name}"`)]);
+  db.exec('DROP TABLE exercise_body_records; PRAGMA user_version=44');
+  assert.deepEqual(migrate(), { fromVersion: 44, toVersion: CURRENT_VERSION });
+  for (const [name, count] of previous) assert.equal(db.pluck(`SELECT COUNT(*) FROM "${name}"`), count, name);
+  assert.equal(exercise.list(users[0], {}, now).total, 1); assert.equal(harvest.balance(users[0].id), 2); assert.equal(reminders.getPreferences(users[0].id).exercise, false);
+  exercise.saveBodyRecord(users[0], '2026-11-26', { weight: 65 }, now);
+  assert.deepEqual(migrate(), { fromVersion: CURRENT_VERSION, toVersion: CURRENT_VERSION });
+  assert.deepEqual(db.all('PRAGMA foreign_key_check'), []); assert.equal(db.pluck('PRAGMA quick_check'), 'ok');
+});

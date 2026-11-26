@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test'), assert = require('node:assert/strict');
 const db = require('../src/db/db');
-const { migrate, truncateAll } = require('../src/db/migrate');
+const { migrate, truncateAll, CURRENT_VERSION } = require('../src/db/migrate');
 const { insertUser } = require('../src/repositories/userRepo');
 const learning = require('../src/services/learningService'), harvest = require('../src/services/harvestService');
 const party = require('../src/services/partyService'), records = require('../src/services/gameRecordService');
@@ -193,7 +193,7 @@ test('各联机游戏按阵营或个人胜负奖励，你画我猜的成绩奖�
 test('v38升级创建学习与收获表，不改用户和历史游戏，不给历史记录补发', () => {
   const before = db.pluck('SELECT COUNT(*) FROM users');
   db.exec('DROP TABLE playground_progress; DROP TABLE playground_lessons; DROP TABLE playground_harvest; PRAGMA user_version=38;');
-  assert.deepEqual(migrate(),{fromVersion:38,toVersion:44});
+  assert.deepEqual(migrate(),{fromVersion:38,toVersion:CURRENT_VERSION});
   assert.equal(db.pluck('SELECT COUNT(*) FROM users'),before);
   assert.equal(db.get('PRAGMA quick_check').quick_check,'ok'); assert.equal(db.all('PRAGMA foreign_key_check').length,0);
   assert.equal(harvest.list(users[0]).balance,0);
@@ -222,7 +222,7 @@ test('v41成绩按十分之一迁移一次，保留进行中进度、通关和�
     db.run('UPDATE playground_lessons SET state_json=? WHERE id=?',JSON.stringify(state),lesson.id);
   }
   db.exec('UPDATE playground_progress SET best_score=best_score*10,last_score=last_score*10,max_score=max_score*10; PRAGMA user_version=41;');
-  assert.deepEqual(migrate(),{fromVersion:41,toVersion:44});
+  assert.deepEqual(migrate(),{fromVersion:41,toVersion:CURRENT_VERSION});
   for (const lesson of saved) assert.deepEqual(db.get('SELECT * FROM playground_lessons WHERE id=?',lesson.id),lesson);
   const progress=learning.metadata(users[0]).levels.quiz[0];
   assert.deepEqual([progress.bestScore,progress.lastScore,progress.maximum,progress.attempts,progress.cleared],[70,60,80,2,true]);
@@ -230,7 +230,7 @@ test('v41成绩按十分之一迁移一次，保留进行中进度、通关和�
   assert.equal(learning.get(completed.id,users[0]).reward.amount,9);
   assert.equal(harvest.balance(users[0].id),balance);
   assert.equal(db.pluck('SELECT state_json FROM playground_rooms WHERE id=?',room.id),roomState);
-  assert.deepEqual(migrate(),{fromVersion:44,toVersion:44});
+  assert.deepEqual(migrate(),{fromVersion:CURRENT_VERSION,toVersion:CURRENT_VERSION});
   assert.equal(learning.get(active.id,users[0]).score,10); assert.equal(learning.get(active.id,users[0]).index,1);
   const continued = solve(learning.get(active.id,users[0]));
   assert.equal(continued.score,80); assert.equal(continued.reward.amount,13);

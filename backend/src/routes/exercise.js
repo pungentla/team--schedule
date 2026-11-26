@@ -1,6 +1,9 @@
 'use strict';
 const router = require('express').Router();
 const exercise = require('../services/exerciseService');
+router.get('/body-records', (req, res) => res.json({ data: exercise.bodyRecords(req.user, req.query) }));
+router.put('/body-records/:date', (req, res) => res.json({ data: exercise.saveBodyRecord(req.user, req.params.date, req.body) }));
+router.delete('/body-records/:id', (req, res) => res.json({ data: exercise.removeBodyRecord(req.user, req.params.id) }));
 router.get('/meta', (req, res) => res.json({ data: exercise.metadata(req.user) }));
 router.put('/settings', (req, res) => res.json({ data: exercise.saveSettings(req.user, req.body) }));
 router.get('/records', (req, res) => res.json({ data: exercise.list(req.user, req.query) }));

@@ -8,7 +8,7 @@
 const db = require('./db');
 const { ensureAlias } = require('../repositories/discussionAliasRepo');
 
-const CURRENT_VERSION = 44;
+const CURRENT_VERSION = 45;
 
 function migrate() {
   db.open();
@@ -233,6 +233,7 @@ function migrateLegacySchema() {
 /** 删除全部业务数据（保留表结构），用于 reset */
 function truncateAll() {
   const tables = [
+    'exercise_body_records',
     'exercise_likes',
     'exercise_images',
     'exercise_records',

@@ -27,6 +27,7 @@ import { API, PageBack, Blank, Heading, Load, dateText, dayjs, iso, monthOf, per
 import { MonthCalendar } from '../MonthCalendar';
 import { encodeImage } from '../images';
 import { RewardReceipt } from './Harvest';
+import BodyRecords from './BodyRecords';
 import { randomInt } from './random.mjs';
 import './exercise.css';
 
@@ -54,8 +55,8 @@ export default function Exercise({ user, back }) {
         <div className="exercise-footprints">{Array.from({ length: 7 }, (_, i) => { const date = iso(dayjs(meta.weekStart).add(i, 'day')), checked = meta.weekDays.includes(date); return <div key={date} className={checked ? 'done' : ''} aria-current={date === meta.today ? 'date' : undefined}><small>周{'一二三四五六日'[i]}</small><span aria-label={`${date}${checked ? '已打卡' : '未打卡'}`}>{checked ? '✓' : dayjs(date).date()}</span></div>; })}</div>
       </div>}</Load>
     </Card>
-    <Segmented block aria-label="运动打卡栏目" value={tab} onChange={setTab} options={[{ value: 'today', label: '今日打卡' }, { value: 'mine', label: '我的记录' }, { value: 'public', label: '同行动态' }]} />
-    <Load query={query}>{meta => <>{tab === 'today' ? <CheckIn meta={meta} refresh={refresh} /> : <Records key={tab} user={user} meta={meta} scope={tab} revision={revision} refresh={refresh} />}
+    <Segmented block aria-label="运动打卡栏目" value={tab} onChange={setTab} options={[{ value: 'today', label: '今日打卡' }, { value: 'mine', label: '我的记录' }, { value: 'body', label: '身体记录' }, { value: 'public', label: '同行动态' }]} />
+    <Load query={query}>{meta => <>{tab === 'today' ? <CheckIn meta={meta} refresh={refresh} /> : tab === 'body' ? <BodyRecords today={meta.today} /> : <Records key={tab} user={user} meta={meta} scope={tab} revision={revision} refresh={refresh} />}
       {editing && <Settings meta={meta} close={() => setEditing(false)} saved={() => { setEditing(false); refresh(); }} />}</>}</Load>
   </div>;
 }

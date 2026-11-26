@@ -657,3 +657,15 @@ CREATE TABLE IF NOT EXISTS exercise_likes (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   PRIMARY KEY (record_id,user_id)
 );
+
+CREATE TABLE IF NOT EXISTS exercise_body_records (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  work_date TEXT NOT NULL,
+  weight REAL CHECK (weight BETWEEN 0.1 AND 1000),
+  body_fat REAL CHECK (body_fat BETWEEN 0.1 AND 99.9),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  CHECK (weight IS NOT NULL OR body_fat IS NOT NULL),
+  UNIQUE (user_id,work_date)
+);
