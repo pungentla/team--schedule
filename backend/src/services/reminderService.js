@@ -11,7 +11,7 @@ const vapidDetails = config.webPush;
 const publicKey = vapidDetails.subject && vapidDetails.publicKey && vapidDetails.privateKey
   ? vapidDetails.publicKey : null;
 const PUSH_KINDS = ['enrollment_open', 'proxy_enrollment', 'new_topics', 'direct_reply',
-  'topic_replies', 'topic_likes', 'swap', 'announcement', 'next_day_schedule', 'todo'];
+  'topic_replies', 'topic_likes', 'swap', 'announcement', 'next_day_schedule', 'todo', 'exercise'];
 
 function getPreferences(userId) {
   const disabled = new Set(db.all('SELECT kind FROM push_opt_outs WHERE user_id=?', userId).map(row => row.kind));
@@ -160,6 +160,7 @@ function startScheduleReminders() {
     sendingEvents = true;
     try {
       require('./todoService').processDueTodos();
+      require('./exerciseService').processDueReminders();
       if (publicKey) await sendQueuedPushEvents();
     }
     catch (error) { console.error('[reminders] event dispatch failed:', error.message); }

@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useEffect, useEffectEvent, useRef, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import Alert from 'antd/es/alert';
 import App from 'antd/es/app';
@@ -94,6 +94,7 @@ function readNotificationTarget() {
   const todo = Number(params.get('todo'));
   if (Number.isSafeInteger(todo) && todo > 0) return { tab: 'todos', todo };
   const systemTarget = { systemNotice: Number.isSafeInteger(systemNotice) && systemNotice > 0 ? systemNotice : null };
+  if (params.get('exercise') === '1') return { ...systemTarget, tab: 'playground', exercise: true };
   if (Number.isSafeInteger(enrollment) && enrollment > 0) return { ...systemTarget, tab: 'enrollment', enrollment };
   if (params.get('tab') === 'discussions') return { ...systemTarget, tab: 'discussions' };
   if (Number.isSafeInteger(topic) && topic > 0) return { tab: 'discussions', topic, reply: Number.isSafeInteger(reply) && reply > 0 ? reply : null };
@@ -115,6 +116,7 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
     return superAdmin && target.tab !== 'todos' ? { ...target, tab: 'workflow' } : target;
   });
   const [tab, setTab] = useState(notificationTarget.tab);
+  const [exerciseOpenVersion, setExerciseOpenVersion] = useState(notificationTarget.exercise ? 1 : 0);
   const personalTab = useRef(notificationTarget.tab === 'swaps' ? 'swaps' : 'enrollment');
   const [messagesBackTab, setMessagesBackTab] = useState('schedule');
   const [settingsTab, setSettingsTab] = useState('worktypes');
@@ -137,7 +139,7 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
   useEffect(() => { if (!superAdmin) restoreDeviceReminder(user.id).catch(() => {}); }, [user.id, superAdmin]);
   useEffect(() => {
     const url = new URL(window.location.href);
-    for (const key of ['reply', 'swap', 'notice', 'enrollment', 'tab', 'systemNotice', 'todo','scheduleDate','schedulePeriod']) url.searchParams.delete(key);
+    for (const key of ['reply', 'swap', 'notice', 'enrollment', 'tab', 'systemNotice', 'todo','exercise','scheduleDate','schedulePeriod']) url.searchParams.delete(key);
     if(sharedSchedule) {url.searchParams.set('scheduleDate',sharedSchedule.date);if(sharedSchedule.periodId)url.searchParams.set('schedulePeriod',sharedSchedule.periodId);}
     if (tab === 'todos' && todoDetailId) url.searchParams.set('todo', todoDetailId);
     if (tab === 'discussions' && discussionTopicId) url.searchParams.set('topic', discussionTopicId);
@@ -243,7 +245,11 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
     if (await navigate('todos')) setTodoDetailId(id);
   }
   async function openSystemNotice(notice) {
-    if (notice.kind === 'new_topics') {
+    if (notice.kind === 'exercise') {
+      if (!await navigate('playground')) return;
+      setExerciseOpenVersion(version => version + 1);
+      window.scrollTo(0, 0);
+    } else if (notice.kind === 'new_topics') {
       if (!await navigate('discussions')) return;
       backToTopics();
       setDiscussionFeedVersion(version => version + 1);
@@ -263,9 +269,18 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
   function sessionChanged() {
     endSession(); message.success('请使用更新后的账号重新登录');
   }
+  const workspaceTop = useRef(null);
+  const [headerHeight, setHeaderHeight] = useState(0);
+  useLayoutEffect(() => {
+    const measure = () => setHeaderHeight(workspaceTop.current.getBoundingClientRect().height);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(workspaceTop.current);
+    return () => observer.disconnect();
+  }, []);
   const inTopic = tab === 'discussions' && discussionTopicId != null;
-  return <div className="workspace">
-    <div className="workspace-top">
+  return <div className="workspace" style={{ '--workspace-top-height': `${headerHeight}px` }}>
+    <div ref={workspaceTop} className="workspace-top">
       <header className="topbar"><div className="topbar-inner">
         <div className="brand-lockup"><span className="brand">时禾</span><span className="brand-caption">传3:2 栽种有时</span></div>
         <div className="account-actions">
@@ -301,7 +316,7 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
           <Segmented block aria-label="我的排班分类" value={tab} onChange={navigate}
             options={[{ value: 'enrollment', label: '我的报名' }, { value: 'swaps', label: '我的换班' }]} />
         </Card>}
-        {tab === 'playground' && <Playground user={user} openTopic={openDiscussions} />}
+        {tab === 'playground' && <Playground user={user} openTopic={openDiscussions} exerciseOpenVersion={exerciseOpenVersion} />}
         {tab === 'schedule' && <WorkbenchAttendance user={user} open={() => navigate('attendance')} />}
         {tab === 'schedule' && <WorkbenchTodos open={openTodos} />}
         {tab === 'schedule' && <Schedule key={scheduleScope} user={user} periods={periods} period={period}

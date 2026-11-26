@@ -3,7 +3,7 @@ const db = require('../db/db');
 const { forbidden } = require('../utils/errors');
 const { requireInt, requireEnum } = require('../utils/validate');
 const rewardDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' });
-const names = { avalon: '守望之旅', undercover: '同词异心', uno: '彩约对局', sketch: '你画我猜', quiz: '圣经闯关', identity: '我是谁', timeline: '故事时间线', verse: '经文拼图', match: '人物关系连连看', map: '圣经地图寻踪' };
+const names = { exercise: '运动打卡', avalon: '守望之旅', undercover: '同词异心', uno: '彩约对局', sketch: '你画我猜', quiz: '圣经闯关', identity: '我是谁', timeline: '故事时间线', verse: '经文拼图', match: '人物关系连连看', map: '圣经地图寻踪' };
 function participant(user) { if (user.role === 'super_admin') throw forbidden('请使用成员或管理员账号参与游乐场'); }
 function balance(userId) { return db.pluck(`SELECT (SELECT COALESCE(SUM(amount),0) FROM playground_harvest WHERE user_id=?1) - (SELECT COALESCE(SUM(cost),0) FROM playground_wishes WHERE user_id=?1)`, userId); }
 function receipt(userId, sourceKey, noRewardReason = '本局没有禾穗奖励') {
@@ -35,6 +35,13 @@ function lesson(id, userId, game, results, levelId, levelNumber, completedAt) {
   if (completed) return { amount: 0, reason: '本关今天已完成，今日首次完成才奖励禾穗；本次成绩已记录。', balance: balance(userId) };
   const score = results.reduce((sum, result) => sum + result.score, 0), extra = Math.floor(score / 10), perfect = score === results.length * 10;
   return credit(userId, `lesson:${id}`, game, 2 + extra + (perfect ? 3 : 0), `第 ${levelNumber} 关 · 完成本关 +2 · 本局表现 +${extra}${perfect ? ' · 满分 +3' : ''}`);
+}
+function exercise(userId, day, currentDay) {
+  const key = `exercise:${day}`;
+  if (day !== currentDay || db.get('SELECT 1 FROM playground_harvest WHERE user_id=? AND source_key=?', userId, key)) {
+    return { amount: 0, reason: day !== currentDay ? '补记不奖励禾穗' : '今天已领取打卡奖励', balance: balance(userId) };
+  }
+  return credit(userId, key, 'exercise', 2, '今日首次运动打卡 +2');
 }
 function list(user, query = {}) {
   participant(user);
@@ -68,4 +75,4 @@ function leaderboard(user, query = {}) {
     items: db.all(`${ranked} SELECT * FROM ranked ORDER BY rank LIMIT ? OFFSET ?`, 20, (page - 1) * 20),
   };
 }
-module.exports = { participant, balance, receipt, party, lesson, list, leaderboard };
+module.exports = { participant, balance, receipt, party, lesson, exercise, list, leaderboard };

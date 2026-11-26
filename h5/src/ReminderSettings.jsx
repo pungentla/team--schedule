@@ -21,6 +21,7 @@ const pushGroups = [
   ]],
   ['公告', [['announcement', '新公告']]],
   ['待办', [['todo', '待办分配与定时提醒']]],
+  ['运动', [['exercise', '运动打卡提醒']]],
 ];
 
 async function currentDeviceSubscription() {

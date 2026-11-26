@@ -131,7 +131,8 @@ test('开放报名与代报名生成对应周期的提醒，代报名仅通知�
 
   submit();
   const [proxy] = systemNotices.listUnread(first);
-  assert.deepEqual({ ...proxy }, { id: proxy.id, kind: 'proxy_enrollment', periodId, periodName: '下周排班', actorName: '值班管理员' });
+  assert.deepEqual({ ...proxy }, { id: proxy.id, kind: 'proxy_enrollment', periodId, periodName: '下周排班', actorName: '值班管理员', createdAt: proxy.createdAt });
+  assert.equal(typeof proxy.createdAt, 'number');
   assert.deepEqual(systemNotices.listUnread(second), []);
   systemNotices.markRead(second, proxy.id);
   assert.equal(systemNotices.listUnread(first).length, 1);

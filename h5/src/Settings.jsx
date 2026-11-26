@@ -12,7 +12,7 @@ import Select from 'antd/es/select';
 import Tabs from 'antd/es/tabs';
 import Tag from 'antd/es/tag';
 import TimePicker from 'antd/es/time-picker';
-import { API, Heading, Help, Load, accountRoles, dayjs, option, personLabel, required, roleOptions, shiftText, useAction, usePageLoad, weekdays } from './shared';
+import { API, PageBack, Heading, Help, Load, accountRoles, dayjs, option, personLabel, required, roleOptions, shiftText, useAction, usePageLoad, weekdays } from './shared';
 
 const days = [1, 2, 3, 4, 5, 6, 0];
 const newCode = prefix => prefix + '_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
@@ -20,8 +20,7 @@ const inputPassword = [{ required: true, min: 6, max: 128, message: '密码需�
 
 export function Settings({ user, tab, setTab, back, onSessionChanged }) {
   const query = usePageLoad('settings', () => Promise.all([API.workTypes(), API.shifts(), API.adminUsers()]));
-  return <Card>
-    <Button type="link" className="period-back" onClick={back}>← 返回安排排班</Button>
+  return <><PageBack onClick={back}>返回安排排班</PageBack><Card>
     <div className="row-between"><Heading>基础设置</Heading><Button onClick={query.refresh}>刷新</Button></div>
     <Load query={query}>{([works, shifts, users]) => <Tabs activeKey={tab} onChange={setTab} items={[
       { key: 'worktypes', label: '工作类型', children: <><div className="inline muted">设置工作日和默认人数 <Help name="worktypes" /></div><Collapse accordion destroyOnHidden items={[
@@ -39,7 +38,7 @@ export function Settings({ user, tab, setTab, back, onSessionChanged }) {
             ? <AccountForm account={u} user={user} saved={u.id === user.id ? onSessionChanged : query.refresh} /> : <span className="muted">此账号由超级管理员管理。</span> })),
       ]} /></> },
     ]} />}</Load>
-  </Card>;
+  </Card></>;
 }
 
 function WorkForm({ work, users, currentUserId, shifts, saved }) {

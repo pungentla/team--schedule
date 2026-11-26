@@ -21,46 +21,14 @@ import { TopicShare } from './TopicShare';
 import { API, Blank, Heading, Load, ProfileDisplayContext, discussionName, option, timeText, useAction, useLoad, usePageLoad } from './shared';
 import { usePullRefresh } from './PullToRefresh';
 
+import { encodeImage as encodeTopicImage } from './images';
+
 const categories = { chat: '闲聊', feedback: '吐槽', share: '文章分享', poll: '投票', wish: '许愿' };
 const categoryTabs = [{ key: 'all', label: '全部' }, ...Object.entries(categories).map(([key, label]) => ({ key, label }))];
 const topicOrders = [option('recent', '最新'), option('hot', '最热')];
 const pollModeLabels = { single: '单选', multiple: '多选' };
 const colors = { chat: 'blue', feedback: 'orange', share: 'green', poll: 'purple', wish: 'gold' };
 const filled = message => ({ required: true, whitespace: true, message });
-const maxImageBytes = 480 * 1024;
-const acceptedImages = ['image/jpeg', 'image/png', 'image/webp'];
-
-async function encodeTopicImage(file) {
-  if (!acceptedImages.includes(file.type)) throw new Error('图片仅支持 JPG、PNG 或 WebP');
-  if (file.size > 20 * 1024 * 1024) throw new Error('原图不能超过 20 MB');
-  let image = file;
-  if (image.size > maxImageBytes) {
-    const bitmap = await createImageBitmap(file);
-    try {
-      const canvas = document.createElement('canvas');
-      const context = canvas.getContext('2d', { alpha: false });
-      for (const limit of [1600, 1200, 900, 675]) {
-        const scale = Math.min(1, limit / Math.max(bitmap.width, bitmap.height));
-        canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-        canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-        context.fillStyle = 'white';
-        context.fillRect(0, 0, canvas.width, canvas.height);
-        context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-        image = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8));
-        if (image && image.size <= maxImageBytes) break;
-      }
-    } finally {
-      bitmap.close();
-    }
-    if (!image || image.size > maxImageBytes) throw new Error('图片过大，请换一张较小的图片');
-  }
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result.split(',')[1]);
-    reader.onerror = () => reject(new Error('无法读取图片，请重新选择'));
-    reader.readAsDataURL(image);
-  });
-}
 
 export default function Discussions({ topicId, replyId, openVersion, back, open, unreadCounts, refreshUnread, refreshLikeNotices, hotTopicRanks, refreshHotTopics }) {
   const [category, setCategory] = useState('all');

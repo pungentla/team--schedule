@@ -1,0 +1,12 @@
+'use strict';
+const router = require('express').Router();
+const exercise = require('../services/exerciseService');
+router.get('/meta', (req, res) => res.json({ data: exercise.metadata(req.user) }));
+router.put('/settings', (req, res) => res.json({ data: exercise.saveSettings(req.user, req.body) }));
+router.get('/records', (req, res) => res.json({ data: exercise.list(req.user, req.query) }));
+router.post('/records', (req, res) => { const data = exercise.create(req.user, req.body); res.status(data.replayed ? 200 : 201).json({ data }); });
+router.delete('/records/:id', (req, res) => res.json({ data: exercise.remove(req.user, req.params.id) }));
+router.get('/records/:id/images', (req, res) => res.json({ data: exercise.images(req.user, req.params.id) }));
+router.put('/records/:id/like', (req, res) => res.json({ data: exercise.like(req.user, req.params.id, req.body) }));
+router.get('/ranking', (req, res) => res.json({ data: exercise.ranking(req.user) }));
+module.exports = router;

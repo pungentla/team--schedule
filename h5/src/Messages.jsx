@@ -7,7 +7,7 @@ import Card from 'antd/es/card';
 import Spin from 'antd/es/spin';
 import BellOutlined from '@ant-design/icons/es/icons/BellOutlined';
 import RightOutlined from '@ant-design/icons/es/icons/RightOutlined';
-import { Blank, assignmentLabel } from './shared';
+import { Blank, assignmentLabel, timeText } from './shared';
 
 const replyNotificationKey = 'new-discussion-reply';
 const discussionNoticeLabels = {
@@ -66,12 +66,13 @@ export function Messages({ inboxes, back, openTopic, openSwap, openSystemNotice,
   const { system, topics, likes, swaps, todos } = inboxes;
   const groups = [
     ['系统消息', system.data, notice => {
+      const isExercise = notice.kind === 'exercise';
       const isTopic = notice.kind === 'new_topics';
       const isProxy = notice.kind === 'proxy_enrollment';
-      const title = isTopic ? '互动区有新话题了' : isProxy ? `${notice.actorName || '管理员'}帮你代报名了` : `「${notice.periodName}」正在报名`;
-      const action = isTopic ? '查看话题' : isProxy ? '查看报名' : '参与报名';
+      const title = isExercise ? '今天动一动了吗？' : isTopic ? '互动区有新话题了' : isProxy ? `${notice.actorName || '管理员'}帮你代报名了` : `「${notice.periodName}」正在报名`;
+      const action = isExercise ? '查看运动打卡' : isTopic ? '查看话题' : isProxy ? '查看报名' : '参与报名';
       return <MessageRow key={notice.id} title={title}
-        description={isProxy ? `${notice.periodName} · ${action}` : action} open={() => openSystemNotice(notice)} />;
+        description={isExercise ? `${timeText(notice.createdAt)} · ${action}` : isProxy ? `${notice.periodName} · ${action}` : action} open={() => openSystemNotice(notice)} />;
     }],
     ['话题互动', topics.data, topic => <MessageRow key={topic.id} title={topic.title} meta={`${topic.unreadCount} 条未读`}
       description={discussionNoticeLabels[topic.kind] ?? '话题有新回复'} excerpt={topic.excerpt}
@@ -86,7 +87,7 @@ export function Messages({ inboxes, back, openTopic, openSwap, openSystemNotice,
   ].filter(([, entries]) => entries?.length);
 
   return <>
-    <div className="message-page-heading">
+    <div className="message-page-heading page-back-bar">
       <Button type="link" onClick={back}>← 返回</Button>
       <h1 ref={heading} tabIndex={-1}>消息提醒</h1>
     </div>

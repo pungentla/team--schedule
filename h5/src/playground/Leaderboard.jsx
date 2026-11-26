@@ -3,9 +3,8 @@ import Button from 'antd/es/button';
 import Card from 'antd/es/card';
 import Pagination from 'antd/es/pagination';
 import Segmented from 'antd/es/segmented';
-import ArrowLeftOutlined from '@ant-design/icons/es/icons/ArrowLeftOutlined';
 import TrophyOutlined from '@ant-design/icons/es/icons/TrophyOutlined';
-import { API, Blank, Heading, Load, personName, usePageLoad } from '../shared';
+import { API, PageBack, Blank, Heading, Load, personName, usePageLoad } from '../shared';
 
 export default function Leaderboard({ user, back }) {
   const [sort, setSort] = useState('balance'), [page, setPage] = useState(1);
@@ -13,7 +12,7 @@ export default function Leaderboard({ user, back }) {
   const wishes = sort === 'wishes', unit = wishes ? '次许愿' : '禾穗';
   const score = person => wishes ? person.wishCount : person.balance;
   return <div className="stack playground-leaderboard">
-    <Button className="playground-back" type="text" icon={<ArrowLeftOutlined />} onClick={back}>返回游乐场</Button>
+    <PageBack onClick={back}>返回游乐场</PageBack>
     <Card className="leaderboard-heading"><Heading><TrophyOutlined /> 游乐场排行榜</Heading><p className="muted">一起积攒收获，让心愿慢慢发芽。</p><Segmented block aria-label="排行榜类型" value={sort} onChange={value => { setSort(value); setPage(1); }} options={[{ value: 'balance', label: '🌾 禾穗榜' }, { value: 'wishes', label: '🌠 许愿榜' }]} /><p className="leaderboard-rule muted">{wishes ? '按累计许愿次数排名，删除话题仍保留次数。' : '按当前禾穗余额排名，许愿消耗后余额会减少。'}</p></Card>
     <Load query={query}>{data => <>
       {data.me && <div className="leaderboard-mine"><div><span>我的排名</span><strong>第 {data.me.rank} 名</strong></div><div><b>{score(data.me)}</b><span>{unit}</span></div></div>}

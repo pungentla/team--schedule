@@ -14,7 +14,7 @@ import Space from 'antd/es/space';
 import Statistic from 'antd/es/statistic';
 import Steps from 'antd/es/steps';
 import Tag from 'antd/es/tag';
-import { API, Blank, Field, Heading, Load, assignmentLabel, dateText, dayjs, iso, monthOf, option, periodLabels, required, shiftText, swapLabels, timeText, today, useAction, useLoad, usePageLoad } from './shared';
+import { API, PageBack, Blank, Field, Heading, Load, assignmentLabel, dateText, dayjs, iso, monthOf, option, periodLabels, required, shiftText, swapLabels, timeText, today, useAction, useLoad, usePageLoad } from './shared';
 import { usePullRefresh } from './PullToRefresh';
 import { ScheduleDetails, CalendarBoard } from './Schedule';
 import { Adjustments } from './Adjustments';
@@ -38,7 +38,7 @@ export function Workflow({ user, periods, page, setPage, refreshPeriods, openSet
     window.scrollTo(0, 0);
   }
   const back = () => open(null);
-  if (page?.type === 'calendar') return <><Button onClick={back}>返回安排排班</Button><CalendarBoard user={user}/></>;
+  if (page?.type === 'calendar') return <><PageBack onClick={back}>返回安排排班</PageBack><CalendarBoard user={user}/></>;
 
   if (page?.type === 'create') {
     return <Card>
@@ -134,10 +134,10 @@ function PeriodDetail({ user, period, step, changeStep, back, refreshPeriods, op
     await go('people');
   }
 
-  const backButton = <Button type="link" className="period-back" onClick={async () => {
+  const backButton = <PageBack onClick={async () => {
     if (await leave()) back();
-  }}>← 返回排班列表</Button>;
-  if (!prep.data || prep.error) return <Card>{backButton}<Load query={prep} /></Card>;
+  }}>返回排班列表</PageBack>;
+  if (!prep.data || prep.error) return <>{backButton}<Card><Load query={prep} /></Card></>;
 
   const preparation = prep.data;
   const current = preparation.period;
@@ -181,8 +181,8 @@ function PeriodDetail({ user, period, step, changeStep, back, refreshPeriods, op
   }
 
   return <>
+    {backButton}
     <Card>
-      {backButton}
       <div className="row-between">
         <Heading>{current.name}</Heading>
         <Space wrap>

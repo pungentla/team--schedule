@@ -6,7 +6,7 @@ import Pagination from 'antd/es/pagination';
 import Select from 'antd/es/select';
 import Space from 'antd/es/space';
 import Tag from 'antd/es/tag';
-import { API, Blank, Heading, Load, personName, timeText, useAction, usePageLoad } from '../shared';
+import { API, PageBack, Blank, Heading, Load, personName, timeText, useAction, usePageLoad } from '../shared';
 import { RewardReceipt } from './Harvest';
 const games = { avalon: '圣经版阿瓦隆', undercover: '圣经版谁是卧底', uno: '圣经版 UNO', sketch: '圣经你画我猜' };
 function outcome(record) {
@@ -18,7 +18,7 @@ function outcome(record) {
 export default function GameRecords({ user, back, initialGame = 'all' }) {
   const [game, setGame] = useState(initialGame), [page, setPage] = useState(1), [id, setId] = useState(null);
   const query = usePageLoad(`${game}-${page}`, () => API.gameRecords({ game, page }));
-  return <div className="stack"><Button className="playground-back" type="text" onClick={back}>← 返回游乐场</Button><Card><Heading>游戏记录</Heading><div className="stack"><p className="muted">仅展示你参与的对局，完成和提前结束的记录都会保留。</p><Select aria-label="筛选游戏记录" value={game} onChange={value => { setGame(value); setPage(1); }} options={[{ value: 'all', label: '全部游戏' }, ...Object.entries(games).map(([value, label]) => ({ value, label }))]} /></div></Card>
+  return <div className="stack"><PageBack onClick={back}>返回游乐场</PageBack><Card><Heading>游戏记录</Heading><div className="stack"><p className="muted">仅展示你参与的对局，完成和提前结束的记录都会保留。</p><Select aria-label="筛选游戏记录" value={game} onChange={value => { setGame(value); setPage(1); }} options={[{ value: 'all', label: '全部游戏' }, ...Object.entries(games).map(([value, label]) => ({ value, label }))]} /></div></Card>
     <Load query={query}>{data => <>{data.items.length ? data.items.map(record => <Card key={record.id}><button type="button" className="todo-summary" onClick={() => setId(record.id)}>
       <div className="row-between"><strong>{games[record.game]}</strong><Tag color={record.status === 'completed' ? 'green' : 'default'}>{outcome(record)}</Tag></div><span className="muted">{timeText(record.finishedAt)} · {record.players.length} 人</span><span>{record.players.map(p => personName(p, user.id)).join('、')}</span><span className="game-record-open">查看详情 ›</span>
     </button></Card>) : <Card><Blank>还没有游戏记录，和朋友开一局吧</Blank></Card>}<Pagination current={page} total={data.total} pageSize={20} showSizeChanger={false} hideOnSinglePage onChange={setPage} /></>}</Load>

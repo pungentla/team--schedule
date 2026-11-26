@@ -12,13 +12,13 @@ import Select from 'antd/es/select';
 import Segmented from 'antd/es/segmented';
 import Space from 'antd/es/space';
 import Tag from 'antd/es/tag';
-import ArrowLeftOutlined from '@ant-design/icons/es/icons/ArrowLeftOutlined';
 import ReloadOutlined from '@ant-design/icons/es/icons/ReloadOutlined';
 import TrophyOutlined from '@ant-design/icons/es/icons/TrophyOutlined';
-import { API, Heading, Load, personName, useLoad, usePageLoad } from './shared';
+import { API, PageBack, Heading, Load, personName, useLoad, usePageLoad } from './shared';
 import PartyGame from './playground/PartyGame';
 import GameRecords from './playground/GameRecords';
 import Harvest from './playground/Harvest';
+import Exercise from './playground/Exercise';
 import Leaderboard from './playground/Leaderboard';
 import { levelProgress } from './playground/learning.mjs';
 import BibleLearning, { learningGames } from './playground/BibleLearning';
@@ -26,6 +26,7 @@ import { draw, makeGroups, parseNames, randomInt } from './playground/random.mjs
 
 const multiplayer = ['avalon', 'undercover', 'uno', 'sketch'];
 const tools = [
+  { id: 'exercise', icon: '🏃', name: '运动打卡', copy: '一起动起来 · 记录每一次坚持', color: 'green' },
   ...learningGames,
   { id: 'sketch', icon: '🎨', name: '圣经你画我猜', copy: '画里有故事 · 2–10 人联机猜词', color: 'orange' },
   { id: 'avalon', icon: '🕯️', name: '圣经版阿瓦隆', copy: '守望之旅 · 5–10 人联机推理', color: 'gold' },
@@ -37,13 +38,15 @@ const tools = [
   { id: 'dice', icon: '🎲', name: '掷骰子', copy: '一到六点，快乐加倍', color: 'green' },
   { id: 'coin', icon: '🪙', name: '抛硬币', copy: '正面还是反面？', color: 'orange' },
 ];
-export default function Playground({ user, openTopic }) {
-  const [selected, setSelected] = useState(null);
+export default function Playground({ user, openTopic, exerciseOpenVersion = 0 }) {
+  const [selected, setSelected] = useState(exerciseOpenVersion ? 'exercise' : null);
+  useEffect(() => { if (exerciseOpenVersion) setSelected('exercise'); }, [exerciseOpenVersion]);
   const [category, setCategory] = useState('all');
   const header = useRef(null);
   const [stickyTop, setStickyTop] = useState(0);
   const [recordsGame, setRecordsGame] = useState('all');
   const learning = usePageLoad(selected == null ? `playground-progress-${user.id}` : null, API.learningMeta);
+  const movement = usePageLoad(selected == null ? `exercise-home-${user.id}` : null, API.exerciseMeta);
   function openRecords(game = 'all') { setRecordsGame(game); setSelected('records'); }
   useEffect(() => { window.scrollTo(0, 0); }, [selected]);
   useLayoutEffect(() => {
@@ -56,11 +59,12 @@ export default function Playground({ user, openTopic }) {
     return () => observer.disconnect();
   }, [selected]);
   const tool = tools.find(item => item.id === selected);
+  if (selected === 'exercise') return <Exercise key={exerciseOpenVersion} user={user} back={() => setSelected(null)} />;
   if (selected === 'records') return <GameRecords user={user} initialGame={recordsGame} back={() => setSelected(null)} />;
   if (selected === 'leaderboard') return <Leaderboard user={user} back={() => setSelected(null)} />;
   return <div className="stack playground">
     {tool ? <>
-      <Button type="text" className="playground-back" icon={<ArrowLeftOutlined />} onClick={() => setSelected(null)}>返回游乐场</Button>
+      <PageBack onClick={() => setSelected(null)}>返回游乐场</PageBack>
       {learningGames.some(item => item.id === selected) ? <BibleLearning key={selected} game={selected} user={user} /> : multiplayer.includes(selected) ? <PartyGame key={selected} game={selected} user={user} openGame={setSelected} openRecords={openRecords} /> : <Card>
         <Heading>{tool.icon} {tool.name}</Heading><p className="muted playground-tool-copy">{tool.copy}</p>
         {selected === 'draw' && <Draw user={user} />}{selected === 'wheel' && <Wheel user={user} />}{selected === 'groups' && <Groups user={user} />}
@@ -74,6 +78,7 @@ export default function Playground({ user, openTopic }) {
       {learning.error && <Alert type="warning" showIcon message="闯关进度暂时无法获取" action={<Button size="small" onClick={learning.refresh}>重试</Button>} />}
       <div className="playground-grid">{tools.filter(item => category === 'all' || (category === 'learn' ? learningGames.some(g => g.id === item.id) || item.id === 'sketch' : category === 'online' ? multiplayer.includes(item.id) : !learningGames.some(g => g.id === item.id) && !multiplayer.includes(item.id))).map(item => <button type="button" key={item.id} className={`playground-tile playground-${item.color}`} onClick={() => setSelected(item.id)}>
         <span className="playground-tile-icon" aria-hidden="true">{item.icon}</span><strong>{item.name}</strong><span>{item.copy}</span>
+        {item.id === 'exercise' && <small className="playground-level-progress">{movement.data ? `${movement.data.todayCount ? '今日已打卡 ✓' : '今日待打卡'} · 本周 ${movement.data.weekDays.length} / ${movement.data.settings.weeklyGoal} 天` : movement.error ? '进度暂不可用，点击查看' : '进度加载中…'}</small>}
         {multiplayer.includes(item.id) ? <Tag color="gold">多人联机</Tag> : learningGames.some(g => g.id === item.id) && <Tag color="green">单人学习</Tag>}
         {learningGames.some(g => g.id === item.id) && <LearningProgress levels={learning.data?.levels[item.id]} loading={learning.loading} />}
       </button>)}</div>

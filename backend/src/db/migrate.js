@@ -8,7 +8,7 @@
 const db = require('./db');
 const { ensureAlias } = require('../repositories/discussionAliasRepo');
 
-const CURRENT_VERSION = 43;
+const CURRENT_VERSION = 44;
 
 function migrate() {
   db.open();
@@ -61,11 +61,20 @@ function migrate() {
           db.exec('ALTER TABLE attendance_members ADD COLUMN checked_in_by INTEGER REFERENCES users(id) ON DELETE SET NULL');
         }
         if (fromVersion < 29) migratePushPreferences();
-        if (!db.pluck("SELECT sql FROM sqlite_master WHERE name='push_opt_outs'").includes("'todo'")) {
+        if (!db.pluck("SELECT sql FROM sqlite_master WHERE name='push_opt_outs'").includes("'exercise'")) {
           db.exec(`ALTER TABLE push_opt_outs RENAME TO push_opt_outs_legacy;
             ${db.readSchemaSql().match(/CREATE TABLE IF NOT EXISTS push_opt_outs \([\s\S]*?\);/)[0]}
             INSERT INTO push_opt_outs SELECT * FROM push_opt_outs_legacy;
             DROP TABLE push_opt_outs_legacy;`);
+        }
+        if (!db.pluck("SELECT sql FROM sqlite_master WHERE name='system_notices'").includes("'exercise'")) {
+          const sequence = db.pluck("SELECT seq FROM sqlite_sequence WHERE name='system_notices'") || 0;
+          db.exec(`ALTER TABLE system_notices RENAME TO system_notices_legacy;
+            ${db.readSchemaSql().match(/CREATE TABLE IF NOT EXISTS system_notices \([\s\S]*?\);/)[0]}
+            INSERT INTO system_notices SELECT * FROM system_notices_legacy;
+            DROP TABLE system_notices_legacy;`);
+          db.run("UPDATE sqlite_sequence SET seq=MAX(seq,?) WHERE name='system_notices'", sequence);
+          db.exec(db.readSchemaSql());
         }
         const userColumns = new Set(db.all('PRAGMA table_xinfo(users)').map(column => column.name));
         for (const [column, definition] of [
@@ -224,6 +233,10 @@ function migrateLegacySchema() {
 /** 删除全部业务数据（保留表结构），用于 reset */
 function truncateAll() {
   const tables = [
+    'exercise_likes',
+    'exercise_images',
+    'exercise_records',
+    'exercise_settings',
     'calendar_people',
     'calendar_works',
     'playground_wishes',

@@ -59,7 +59,7 @@ test('许愿入口鉴权，普通发帖不能伪造许愿类型或来源标签�
 test('v39升级保留已有账户、收获、话题和回复，新建兑换表但不消费已有禾穗', () => {
   earn(0,20);const id=db.run("INSERT INTO discussion_topics(author_id,category,title,content,created_at) VALUES(?,'chat','原有话题','正文','now')",users[0].id).lastInsertRowid;
   db.run('INSERT INTO discussion_replies(topic_id,author_id,content,created_at) VALUES(?,?,?,?)',id,users[1].id,'原回复','now');
-  db.exec('DROP TABLE playground_wishes; PRAGMA user_version=39;');assert.deepEqual(migrate(),{fromVersion:39,toVersion:43});
+  db.exec('DROP TABLE playground_wishes; PRAGMA user_version=39;');assert.deepEqual(migrate(),{fromVersion:39,toVersion:44});
   assert.equal(harvest.balance(users[0].id),20);assert.equal(db.pluck('SELECT COUNT(*) FROM users'),3);assert.equal(db.pluck('SELECT COUNT(*) FROM discussion_replies WHERE topic_id=?',id),1);assert.equal(db.all('PRAGMA foreign_key_check').length,0);assert.equal(db.get('PRAGMA quick_check').quick_check,'ok');
 });
 test('v40升级保留10禾穗旧消费、话题关联和请求去重，新兑换收取30禾穗', () => {
@@ -69,12 +69,12 @@ test('v40升级保留10禾穗旧消费、话题关联和请求去重，新兑换
   const legacy=db.readSchemaSql().match(/CREATE TABLE IF NOT EXISTS playground_wishes \([\s\S]*?\);/)[0].replace('DEFAULT 30 CHECK (cost IN (10, 30))','DEFAULT 10 CHECK (cost = 10)');
   db.exec('DROP TABLE playground_wishes');db.exec(legacy);
   const requestKey=randomUUID();db.run('INSERT INTO playground_wishes(id,user_id,request_key,title,content,cost,topic_id,created_at) VALUES(?,?,?,?,?,10,?,?)',randomUUID(),users[0].id,requestKey,'旧愿望','旧说明',topicId,new Date().toISOString());
-  db.exec('PRAGMA user_version=40');assert.deepEqual(migrate(),{fromVersion:40,toVersion:43});
+  db.exec('PRAGMA user_version=40');assert.deepEqual(migrate(),{fromVersion:40,toVersion:44});
   assert.equal(harvest.balance(users[0].id),40);assert.equal(db.pluck('SELECT COUNT(*) FROM discussion_replies WHERE topic_id=?',topicId),1);
   const old=wishes.create(users[0],{requestKey,presetId:'custom',title:'旧愿望',content:'旧说明'});
   assert.equal(old.cost,10);assert.equal(old.balance,40);assert.equal(old.topicId,Number(topicId));assert.equal(old.replayed,true);
   const current=wishes.create(users[0],{requestKey:randomUUID(),presetId:'hello'});assert.equal(current.cost,30);assert.equal(current.balance,10);
   assert.equal(db.get("SELECT tbl_name FROM sqlite_master WHERE name='idx_playground_wishes_user'").tbl_name,'playground_wishes');
   assert.equal(db.all('PRAGMA foreign_key_check').length,0);assert.equal(db.get('PRAGMA quick_check').quick_check,'ok');
-  assert.deepEqual(migrate(),{fromVersion:43,toVersion:43});
+  assert.deepEqual(migrate(),{fromVersion:44,toVersion:44});
 });

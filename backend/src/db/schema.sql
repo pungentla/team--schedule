@@ -302,7 +302,7 @@ CREATE INDEX IF NOT EXISTS idx_periods_status ON periods(status, start_date);
 CREATE TABLE IF NOT EXISTS system_notices (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  kind        TEXT NOT NULL CHECK (kind IN ('enrollment_open', 'proxy_enrollment', 'new_topics')),
+  kind        TEXT NOT NULL CHECK (kind IN ('enrollment_open', 'proxy_enrollment', 'new_topics', 'exercise')),
   period_id   INTEGER REFERENCES periods(id) ON DELETE CASCADE,
   actor_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
   created_at  INTEGER NOT NULL,
@@ -314,7 +314,7 @@ CREATE INDEX IF NOT EXISTS idx_system_notices_topic_time ON system_notices(creat
 CREATE TABLE IF NOT EXISTS push_opt_outs (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   kind    TEXT NOT NULL CHECK (kind IN ('enrollment_open', 'proxy_enrollment', 'new_topics', 'direct_reply',
-    'topic_replies', 'topic_likes', 'swap', 'announcement', 'next_day_schedule', 'todo')),
+    'topic_replies', 'topic_likes', 'swap', 'announcement', 'next_day_schedule', 'todo', 'exercise')),
   PRIMARY KEY (user_id, kind)
 );
 
@@ -619,3 +619,41 @@ CREATE TABLE IF NOT EXISTS calendar_people (
   PRIMARY KEY(work_id,user_id)
 );
 CREATE INDEX IF NOT EXISTS idx_calendar_people_user ON calendar_people(user_id,work_id);
+
+CREATE TABLE IF NOT EXISTS exercise_settings (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  weekly_goal INTEGER NOT NULL DEFAULT 3 CHECK (weekly_goal BETWEEN 1 AND 7),
+  reminder_enabled INTEGER NOT NULL DEFAULT 0 CHECK (reminder_enabled IN (0,1)),
+  reminder_time TEXT NOT NULL DEFAULT '20:30',
+  reminded_date TEXT
+);
+CREATE TABLE IF NOT EXISTS exercise_records (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  category TEXT NOT NULL,
+  sport_name TEXT NOT NULL,
+  is_custom INTEGER NOT NULL DEFAULT 0 CHECK (is_custom IN (0,1)),
+  work_date TEXT NOT NULL,
+  minutes INTEGER NOT NULL CHECK (minutes BETWEEN 1 AND 1440),
+  note TEXT NOT NULL DEFAULT '',
+  visibility TEXT NOT NULL DEFAULT 'public' CHECK (visibility IN ('public','private')),
+  request_key TEXT NOT NULL,
+  request_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  deleted_at TEXT,
+  UNIQUE (user_id,request_key)
+);
+CREATE INDEX IF NOT EXISTS idx_exercise_user_date ON exercise_records(user_id,work_date,id DESC) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_exercise_public ON exercise_records(id DESC) WHERE visibility='public' AND deleted_at IS NULL;
+CREATE TABLE IF NOT EXISTS exercise_images (
+  record_id INTEGER NOT NULL REFERENCES exercise_records(id) ON DELETE CASCADE,
+  position INTEGER NOT NULL CHECK (position BETWEEN 1 AND 3),
+  mime_type TEXT NOT NULL,
+  content BLOB NOT NULL,
+  PRIMARY KEY (record_id,position)
+);
+CREATE TABLE IF NOT EXISTS exercise_likes (
+  record_id INTEGER NOT NULL REFERENCES exercise_records(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  PRIMARY KEY (record_id,user_id)
+);

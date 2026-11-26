@@ -132,6 +132,9 @@ export function Help({ name }) {
   if (!title) return null;
   return <Popover trigger="click" content={<div className="help-copy">{copy}</div>} title={title}><Button className="help-icon" type="text" shape="circle" aria-label={title + "说明"}>ⓘ</Button></Popover>;
 }
+export function PageBack({ children, onClick }) {
+  return <div className="page-back-bar"><Button type="link" onClick={onClick}>← {children}</Button></div>;
+}
 export const Heading = ({ children, help }) => <h2 className="section-title">{children}{help && <Help name={help} />}</h2>;
 export const Field = ({ label, children }) => <Form.Item label={label}>{children}</Form.Item>;
 export const DutyTag = ({ role }) => role && role !== 'member' ? <Tag color="blue">{roleLabels[role]}</Tag> : null;

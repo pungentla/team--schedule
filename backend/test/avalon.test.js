@@ -45,7 +45,7 @@ function mission(room, fails = 0) {
 }
 
 test('房间权限、容量、准备、每个账号一个房间与迁移幂等', () => {
-  assert.equal(CURRENT_VERSION, 43); migrate();
+  assert.equal(CURRENT_VERSION, 44); migrate();
   const room = game.create(users[0]);
   assert.match(room.code, /^\d{6}$/);
   assert.throws(() => game.create(users[0]), e => e.code === 'ALREADY_IN_ROOM');

@@ -59,7 +59,7 @@ button, input { font: inherit; }
 .workspace:has(.todos-page) { height: 100dvh; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .content:has(> .todos-page) { flex: 1; min-height: 0; overflow: hidden; }
 .todos-page { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 12px; }
-.todos-page > .period-back.ant-btn { flex: none; align-self: flex-start; margin-bottom: 0; }
+.todos-page > .page-back-bar { margin-bottom: 0; }
 .todo-list-controls { flex: none; }
 .todo-list-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; padding: 6px 6px 8px; margin: -6px -6px 0; }
 .todo-list-scroll > * { flex-shrink: 0; }
@@ -159,7 +159,8 @@ button, input { font: inherit; }
 }
 .bottom-nav [aria-current=page] { background: #eaf0fc; color: #214c9c; font-weight: 700; }
 .personal-schedule-tabs .ant-segmented { width: 100%; }
-.playground-back.ant-btn { align-self: flex-start; padding-inline: 4px; }
+.page-back-bar { position: sticky; top: var(--workspace-top-height, 58px); z-index: 9; flex: none; align-self: stretch; background: #f2f5f9; padding: 4px 0; }
+.page-back-bar > .ant-btn { padding-inline: 4px; }
 .playground-controls { position: sticky; z-index: 9; background: #f2f5f9; padding-bottom: 8px; }
 .playground-welcome.ant-card { background: linear-gradient(120deg, #edf1ff, #fff7e7); border-color: #e2e7f4; }
 .playground-welcome .ant-card-body { padding: 16px 20px; }

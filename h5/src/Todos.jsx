@@ -17,7 +17,7 @@ import Tag from 'antd/es/tag';
 import CheckSquareOutlined from '@ant-design/icons/es/icons/CheckSquareOutlined';
 import PlusOutlined from '@ant-design/icons/es/icons/PlusOutlined';
 import CloseOutlined from '@ant-design/icons/es/icons/CloseOutlined';
-import { API, Blank, Heading, Load, dayjs, isAdmin, option, personLabel, required, timeText, useAction, useLoad, usePageLoad } from './shared';
+import { API, PageBack, Blank, Heading, Load, dayjs, isAdmin, option, personLabel, required, timeText, useAction, useLoad, usePageLoad } from './shared';
 
 const repeatLabels = { none: '不重复', weekly: '每周重复', monthly: '每月重复' };
 const overdue = todo => !todo.completedAt && !todo.archivedAt && todo.dueAt && Date.parse(todo.dueAt) < Date.now();
@@ -76,7 +76,7 @@ export default function Todos({ user, detailId, open, back, refreshInbox }) {
     list.current?.scrollTo({ top: 0 });
   }
   return <div className="todos-page">
-    <Button type="link" className="period-back" onClick={back}>← 返回{user.role === 'super_admin' ? '安排排班' : '工作台'}</Button>
+    <PageBack onClick={back}>返回{user.role === 'super_admin' ? '安排排班' : '工作台'}</PageBack>
     <Card className="todo-list-controls"><div className="row-between">
       <Heading>待办事项</Heading>
       <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreating(true)}>新建待办</Button>

@@ -44,7 +44,7 @@ function newTopic(actorId) {
 }
 
 function listUnread(userId) {
-  return db.all(`SELECT n.id, n.kind, n.period_id AS periodId, p.name AS periodName, u.display_name AS actorName
+  return db.all(`SELECT n.id, n.kind, n.created_at AS createdAt, n.period_id AS periodId, p.name AS periodName, u.display_name AS actorName
     FROM system_notices n LEFT JOIN periods p ON p.id=n.period_id LEFT JOIN users u ON u.id=n.actor_id
     WHERE n.user_id=? AND n.read_at IS NULL AND p.deleted_at IS NULL
       AND (n.kind<>'enrollment_open' OR (p.status='enrolling' AND NOT EXISTS (

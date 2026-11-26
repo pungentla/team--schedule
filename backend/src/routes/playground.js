@@ -6,6 +6,7 @@ const learning = require('../services/learningService');
 const wishes = require('../services/wishService');
 const router = express.Router();
 router.use(requireAuth, (req, res, next) => { harvest.participant(req.user); res.set('Cache-Control', 'no-store'); next(); });
+router.use('/exercise', require('./exercise'));
 router.get('/wishes', (req, res) => res.json({ data: wishes.metadata(req.user) }));
 router.post('/wishes', (req, res) => { const wish = wishes.create(req.user, req.body); res.status(wish.replayed ? 200 : 201).json({ data: wish }); });
 router.get('/harvest', (req, res) => res.json({ data: harvest.list(req.user, req.query) }));
