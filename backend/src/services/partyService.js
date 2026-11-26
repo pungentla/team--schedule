@@ -5,6 +5,7 @@ const { badRequest, forbidden, notFound, conflict } = require('../utils/errors')
 const { requireArray, requireInt, requireBoolean, requireString, requireEnum } = require('../utils/validate');
 const undercover = require('./undercoverService');
 const uno = require('./unoService');
+const sketch = require('./sketchService');
 const { archive } = require('./gameRecordService');
 
 const GOOD_COUNTS = { 5: 3, 6: 4, 7: 4, 8: 5, 9: 6, 10: 6 };
@@ -54,10 +55,17 @@ function shuffle(items) {
 }
 
 function present(room, user) {
+  const view = presentGame(room, user);
+  const s = JSON.parse(room.state_json);
+  if (view.phase === 'finished' && s.recordId) view.reward = require('./harvestService').receipt(user.id, `party:${s.recordId}`);
+  return view;
+}
+function presentGame(room, user) {
   const s = JSON.parse(room.state_json);
   const list = players(room.id);
   if (s.game === 'undercover') return undercover.present(room, s, list, user);
   if (s.game === 'uno') return uno.present(room, s, list, user);
+  if (s.game === 'sketch') return sketch.present(room, s, list, user);
   const me = list.find(p => p.id === user.id);
   const role = s.roles?.[user.id];
   let knowledge = [];
@@ -83,7 +91,7 @@ function current(user) {
 }
 function create(user, game = 'avalon') {
   participant(user);
-  requireEnum(game, '游戏', ['avalon', 'undercover', 'uno']);
+  requireEnum(game, '游戏', ['avalon', 'undercover', 'uno', 'sketch']);
   return db.tx(() => {
     if (current(user)) throw conflict('ALREADY_IN_ROOM', '你已在一个房间中，请先退出');
     let code;
@@ -117,7 +125,7 @@ function join(value, user) {
 function act(id, body, user) {
   return db.tx(() => {
     const room = row(id, user), s = JSON.parse(room.state_json), list = players(id), ids = list.map(p => p.id);
-    const action = requireEnum(body.action, '操作', ['ready', 'start', 'acknowledge', 'team', 'vote', 'mission', 'advance', 'accuse', 'restart', 'leave', 'speak', 'votePlayer', 'playCard', 'draw', 'pass']);
+    const action = requireEnum(body.action, '操作', ['ready', 'start', 'acknowledge', 'team', 'vote', 'mission', 'advance', 'accuse', 'restart', 'leave', 'speak', 'votePlayer', 'playCard', 'draw', 'pass', 'stroke', 'clearCanvas', 'undoStroke', 'describeDrawing', 'guessDrawing']);
     const host = room.host_id === user.id;
     if (action === 'leave') {
       if (host) {
@@ -146,6 +154,8 @@ function act(id, body, user) {
       undercover.act(s, action, body, user, list, host);
     } else if (s.game === 'uno') {
       uno.act(s, action, body, user, list, host);
+    } else if (s.game === 'sketch') {
+      sketch.act(s, action, body, user, list, host);
     } else if (action === 'start') {
       if (!host) throw forbidden('只有房主可以开始游戏');
       if (s.phase !== 'waiting') throw stale();

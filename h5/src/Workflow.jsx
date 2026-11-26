@@ -16,7 +16,7 @@ import Steps from 'antd/es/steps';
 import Tag from 'antd/es/tag';
 import { API, Blank, Field, Heading, Load, assignmentLabel, dateText, dayjs, iso, monthOf, option, periodLabels, required, shiftText, swapLabels, timeText, today, useAction, useLoad, usePageLoad } from './shared';
 import { usePullRefresh } from './PullToRefresh';
-import { ScheduleDetails } from './Schedule';
+import { ScheduleDetails, CalendarBoard } from './Schedule';
 import { Adjustments } from './Adjustments';
 import { ProxyEnrollment } from './Enrollment';
 import { MonthCalendar } from './MonthCalendar';
@@ -38,6 +38,7 @@ export function Workflow({ user, periods, page, setPage, refreshPeriods, openSet
     window.scrollTo(0, 0);
   }
   const back = () => open(null);
+  if (page?.type === 'calendar') return <><Button onClick={back}>返回安排排班</Button><CalendarBoard user={user}/></>;
 
   if (page?.type === 'create') {
     return <Card>
@@ -64,6 +65,7 @@ export function Workflow({ user, periods, page, setPage, refreshPeriods, openSet
       </div>
       {user.role === 'super_admin' && <Button onClick={() => setTrash(true)}>周期回收站</Button>}
     </Card>
+    <Card><div className="row-between"><Heading>日历排班</Heading><Button onClick={()=>open({type:'calendar'})}>打开日历看板</Button></div><p className="muted">无需创建周期，直接安排过去或将来的工作。</p></Card>
     {user.role !== 'super_admin' && <Card>
       <div className="row-between">
         <Heading>基础设置</Heading>

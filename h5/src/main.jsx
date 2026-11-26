@@ -17,7 +17,8 @@ import RocketOutlined from '@ant-design/icons/es/icons/RocketOutlined';
 import 'dayjs/locale/zh-cn';
 import 'antd/dist/reset.css';
 import { API, Heading, Load, ProfileDisplayContext, accountRoles, dayjs, isAdmin, required, timeText, useAction, useLoad } from './shared';
-import { Schedule, readScheduleFilters, saveScheduleFilters } from './Schedule';
+import { Schedule, SharedScheduleDay, readScheduleFilters, saveScheduleFilters } from './Schedule';
+import { readScheduleLink } from './scheduleSharing.mjs';
 import { Announcement } from './Announcement';
 import { DiscussionPreview } from './DiscussionPreview';
 import { ReminderSettings, logoutDevice, restoreDeviceReminder } from './ReminderSettings';
@@ -81,6 +82,8 @@ function Login({ loggedIn }) {
 }
 
 function readNotificationTarget() {
+  const schedule = readScheduleLink(window.location.search);
+  if (schedule) return { tab:'schedule', schedule };
   const params = new URLSearchParams(window.location.search);
   const topic = Number(params.get('topic'));
   const reply = Number(params.get('reply'));
@@ -109,7 +112,7 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
   const superAdmin = user.role === 'super_admin';
   const [notificationTarget, setNotificationTarget] = useState(() => {
     const target = readNotificationTarget();
-    return superAdmin && target.tab !== 'todos' ? { tab: 'workflow', notice: target.notice } : target;
+    return superAdmin && target.tab !== 'todos' ? { ...target, tab: 'workflow' } : target;
   });
   const [tab, setTab] = useState(notificationTarget.tab);
   const personalTab = useRef(notificationTarget.tab === 'swaps' ? 'swaps' : 'enrollment');
@@ -123,6 +126,7 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
   const [enrollmentPeriodId, setEnrollmentPeriodId] = useState(notificationTarget.enrollment);
   const [swapDetail, setSwapDetail] = useState(notificationTarget.swap ?? null);
   const [todoDetailId, setTodoDetailId] = useState(notificationTarget.todo ?? null);
+  const [sharedSchedule, setSharedSchedule] = useState(notificationTarget.schedule ?? null);
   const [password, setPassword] = useState(false);
   const [nicknameOpen, setNicknameOpen] = useState(false);
   const [reminders, setReminders] = useState(false);
@@ -133,12 +137,13 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
   useEffect(() => { if (!superAdmin) restoreDeviceReminder(user.id).catch(() => {}); }, [user.id, superAdmin]);
   useEffect(() => {
     const url = new URL(window.location.href);
-    for (const key of ['reply', 'swap', 'notice', 'enrollment', 'tab', 'systemNotice', 'todo']) url.searchParams.delete(key);
+    for (const key of ['reply', 'swap', 'notice', 'enrollment', 'tab', 'systemNotice', 'todo','scheduleDate','schedulePeriod']) url.searchParams.delete(key);
+    if(sharedSchedule) {url.searchParams.set('scheduleDate',sharedSchedule.date);if(sharedSchedule.periodId)url.searchParams.set('schedulePeriod',sharedSchedule.periodId);}
     if (tab === 'todos' && todoDetailId) url.searchParams.set('todo', todoDetailId);
     if (tab === 'discussions' && discussionTopicId) url.searchParams.set('topic', discussionTopicId);
     else url.searchParams.delete('topic');
     if (url.href !== window.location.href) window.history.replaceState(null, '', url);
-  }, [tab, discussionTopicId, todoDetailId]);
+  }, [tab, discussionTopicId, todoDetailId, sharedSchedule]);
   const changeScheduleScope = scope => setSchedulePreferences(previous => ({ ...previous, scope }));
   const updateScheduleFilters = changes => setSchedulePreferences(({ scope, byScope }) => ({
     scope, byScope: { ...byScope, [scope]: { ...byScope[scope], ...changes } },
@@ -296,7 +301,7 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
           <Segmented block aria-label="我的排班分类" value={tab} onChange={navigate}
             options={[{ value: 'enrollment', label: '我的报名' }, { value: 'swaps', label: '我的换班' }]} />
         </Card>}
-        {tab === 'playground' && <Playground user={user} />}
+        {tab === 'playground' && <Playground user={user} openTopic={openDiscussions} />}
         {tab === 'schedule' && <WorkbenchAttendance user={user} open={() => navigate('attendance')} />}
         {tab === 'schedule' && <WorkbenchTodos open={openTodos} />}
         {tab === 'schedule' && <Schedule key={scheduleScope} user={user} periods={periods} period={period}
@@ -332,6 +337,7 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
       setNicknameOpen(false);
     }} />}
     {password && <Password close={() => setPassword(false)} saved={endSession} />}
+    {sharedSchedule && <SharedScheduleDay target={sharedSchedule} user={user} close={()=>setSharedSchedule(null)}/>}
     {reminders && <ReminderSettings close={() => setReminders(false)} />}
   </div>;
 }

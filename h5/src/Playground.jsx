@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import App from 'antd/es/app';
 import Button from 'antd/es/button';
 import Card from 'antd/es/card';
@@ -7,6 +7,7 @@ import Input from 'antd/es/input';
 import InputNumber from 'antd/es/input-number';
 import Modal from 'antd/es/modal';
 import Select from 'antd/es/select';
+import Segmented from 'antd/es/segmented';
 import Space from 'antd/es/space';
 import Tag from 'antd/es/tag';
 import ArrowLeftOutlined from '@ant-design/icons/es/icons/ArrowLeftOutlined';
@@ -14,9 +15,14 @@ import ReloadOutlined from '@ant-design/icons/es/icons/ReloadOutlined';
 import { API, Heading, Load, personName, useLoad } from './shared';
 import PartyGame from './playground/PartyGame';
 import GameRecords from './playground/GameRecords';
+import Harvest from './playground/Harvest';
+import BibleLearning, { learningGames } from './playground/BibleLearning';
 import { draw, makeGroups, parseNames, randomInt } from './playground/random.mjs';
 
+const multiplayer = ['avalon', 'undercover', 'uno', 'sketch'];
 const tools = [
+  ...learningGames,
+  { id: 'sketch', icon: '🎨', name: '圣经你画我猜', copy: '画里有故事 · 2–10 人联机猜词', color: 'orange' },
   { id: 'avalon', icon: '🕯️', name: '圣经版阿瓦隆', copy: '守望之旅 · 5–10 人联机推理', color: 'gold' },
   { id: 'undercover', icon: '🕊️', name: '圣经版谁是卧底', copy: '同词异心 · 4–10 人联机猜词', color: 'cyan' },
   { id: 'uno', icon: '🌈', name: '圣经版 UNO', copy: '彩约对局 · 2–10 人联机出牌', color: 'purple' },
@@ -26,28 +32,43 @@ const tools = [
   { id: 'dice', icon: '🎲', name: '掷骰子', copy: '一到六点，快乐加倍', color: 'green' },
   { id: 'coin', icon: '🪙', name: '抛硬币', copy: '正面还是反面？', color: 'orange' },
 ];
-export default function Playground({ user }) {
+export default function Playground({ user, openTopic }) {
   const [selected, setSelected] = useState(null);
+  const [category, setCategory] = useState('all');
+  const header = useRef(null);
+  const [stickyTop, setStickyTop] = useState(0);
   const [recordsGame, setRecordsGame] = useState('all');
   function openRecords(game = 'all') { setRecordsGame(game); setSelected('records'); }
   useEffect(() => { window.scrollTo(0, 0); }, [selected]);
+  useLayoutEffect(() => {
+    if (selected !== null) return;
+    const workspaceTop = header.current.closest('.workspace').querySelector('.workspace-top');
+    const measure = () => setStickyTop(workspaceTop.getBoundingClientRect().height);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(workspaceTop);
+    return () => observer.disconnect();
+  }, [selected]);
   const tool = tools.find(item => item.id === selected);
   if (selected === 'records') return <GameRecords user={user} initialGame={recordsGame} back={() => setSelected(null)} />;
   return <div className="stack playground">
     {tool ? <>
       <Button type="text" className="playground-back" icon={<ArrowLeftOutlined />} onClick={() => setSelected(null)}>返回游乐场</Button>
-      {['avalon', 'undercover', 'uno'].includes(selected) ? <PartyGame key={selected} game={selected} user={user} openGame={setSelected} openRecords={openRecords} /> : <Card>
+      {learningGames.some(item => item.id === selected) ? <BibleLearning key={selected} game={selected} user={user} /> : multiplayer.includes(selected) ? <PartyGame key={selected} game={selected} user={user} openGame={setSelected} openRecords={openRecords} /> : <Card>
         <Heading>{tool.icon} {tool.name}</Heading><p className="muted playground-tool-copy">{tool.copy}</p>
         {selected === 'draw' && <Draw user={user} />}{selected === 'wheel' && <Wheel user={user} />}{selected === 'groups' && <Groups user={user} />}
         {(selected === 'dice' || selected === 'coin') && <QuickRandom key={selected} coin={selected === 'coin'} />}
       </Card>}
     </> : <>
-      <Card className="playground-welcome"><span className="playground-eyebrow">一起放松一下</span><div className="row-between"><h1>游乐场 <span aria-hidden="true">✦</span></h1><Button onClick={() => openRecords()}>游戏记录</Button></div><p>聚会的小帮手，也是忙碌间的一点小乐趣。</p></Card>
-      <div className="playground-grid">{tools.map(item => <button type="button" key={item.id} className={`playground-tile playground-${item.color}`} onClick={() => setSelected(item.id)}>
+      <div ref={header} className="stack playground-controls" style={{ top: stickyTop }}>
+        <Card className="playground-welcome"><div className="row-between"><h1>游乐场 <span aria-hidden="true">✦</span></h1><Button onClick={() => openRecords()}>游戏记录</Button></div><p>聚会的小帮手，也是忙碌间的一点小乐趣。</p><Harvest user={user} openTopic={openTopic} /></Card>
+        <Segmented className="playground-categories" block aria-label="游乐场分类" value={category} onChange={setCategory} options={[{ value: 'all', label: '全部' }, { value: 'learn', label: '圣经学习' }, { value: 'online', label: '联机游戏' }, { value: 'tools', label: '小工具' }]} />
+      </div>
+      <div className="playground-grid">{tools.filter(item => category === 'all' || (category === 'learn' ? learningGames.some(g => g.id === item.id) || item.id === 'sketch' : category === 'online' ? multiplayer.includes(item.id) : !learningGames.some(g => g.id === item.id) && !multiplayer.includes(item.id))).map(item => <button type="button" key={item.id} className={`playground-tile playground-${item.color}`} onClick={() => setSelected(item.id)}>
         <span className="playground-tile-icon" aria-hidden="true">{item.icon}</span><strong>{item.name}</strong><span>{item.copy}</span>
-        {['avalon', 'undercover', 'uno'].includes(item.id) && <Tag color="gold">多人联机</Tag>}
+        {multiplayer.includes(item.id) ? <Tag color="gold">多人联机</Tag> : learningGames.some(g => g.id === item.id) && <Tag color="green">单人学习</Tag>}
       </button>)}</div>
-      <p className="muted playground-footnote">抽签等小工具在当前设备运行；联机游戏使用各自的时禾账号加入。</p>
+      <p className="muted playground-footnote">学习进度与禾穗跟随账号保存；小工具在本机运行，联机游戏使用各自账号加入。</p>
     </>}
   </div>;
 }

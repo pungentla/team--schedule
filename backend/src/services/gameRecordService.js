@@ -16,13 +16,15 @@ function archive(room, s, players) {
     ...(game === 'avalon' ? { missions: s.missions, history: s.history } : {}),
     ...(game === 'undercover' ? { clues: s.clues, history: s.history } : {}),
     ...(game === 'uno' ? { events: s.events } : {}),
+    ...(game === 'sketch' ? { rounds: s.rounds, scores: s.scores } : {}),
   };
   const result = db.run('INSERT INTO playground_records(host_id,game,finished_at,summary_json) VALUES(?,?,?,?)', room.host_id, game, finishedAt, JSON.stringify(summary));
   s.recordId = result.lastInsertRowid;
+  require('./harvestService').party(s.recordId, s, players);
   for (const p of players) db.run('INSERT INTO playground_record_members(record_id,user_id) VALUES(?,?)', s.recordId, p.id);
 }
 function list(user, query = {}) {
-  const game = requireEnum(query.game || 'all', '游戏类型', ['all', 'avalon', 'undercover', 'uno']);
+  const game = requireEnum(query.game || 'all', '游戏类型', ['all', 'avalon', 'undercover', 'uno', 'sketch']);
   const page = requireInt(query.page ?? 1, '页码', { min: 1, max: 100000 });
   const where = "m.user_id=? AND (?='all' OR r.game=?)";
   const rows = db.all(`SELECT r.id,r.host_id,r.summary_json FROM playground_records r JOIN playground_record_members m ON m.record_id=r.id WHERE ${where} ORDER BY r.id DESC LIMIT 20 OFFSET ?`, user.id, game, game, (page - 1) * 20);
@@ -32,7 +34,7 @@ function list(user, query = {}) {
 function get(id, user) {
   const row = db.get('SELECT r.* FROM playground_records r JOIN playground_record_members m ON m.record_id=r.id WHERE r.id=? AND m.user_id=?', id, user.id);
   if (!row) throw notFound('游戏记录不存在或你未参与');
-  return { id: row.id, ...JSON.parse(row.summary_json), canDelete: row.host_id === user.id };
+  return { id: row.id, ...JSON.parse(row.summary_json), reward: require('./harvestService').receipt(user.id, `party:${row.id}`), canDelete: row.host_id === user.id };
 }
 function remove(id, user) {
   const row = db.get('SELECT r.host_id FROM playground_records r JOIN playground_record_members m ON m.record_id=r.id WHERE r.id=? AND m.user_id=?', id, user.id);

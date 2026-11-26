@@ -18,7 +18,11 @@ const CATEGORIES = ['chat', 'feedback', 'share', 'poll'];
 const isSuperAdmin = user => user.role === ROLES.SUPER_ADMIN;
 const participantSelect = `SELECT author_id FROM discussion_topics WHERE id=?
   UNION SELECT author_id FROM discussion_replies WHERE topic_id=?`;
-const topicSelect = `SELECT t.id, t.category, t.title, t.content, t.article_url AS articleUrl,
+const categorySql = `CASE WHEN EXISTS (SELECT 1 FROM playground_wishes wish WHERE wish.topic_id=t.id) THEN 'wish' ELSE t.category END`;
+const topicSelect = `SELECT t.id, ${categorySql} AS category,
+    CASE WHEN EXISTS (SELECT 1 FROM playground_wishes wish WHERE wish.topic_id=t.id) THEN 'playground' END AS wishOrigin,
+    (SELECT cost FROM playground_wishes wish WHERE wish.topic_id=t.id) AS wishCost,
+    (SELECT content FROM playground_wishes wish WHERE wish.topic_id=t.id) AS wishContent, t.title, t.content, t.article_url AS articleUrl,
     t.created_at AS createdAt, t.is_anonymous AS anonymous, t.poll_mode AS pollMode, t.poll_closes_at AS pollClosesAt,
     CASE WHEN t.is_anonymous = 0 THEN u.display_name END AS authorName,
     a.name AS anonymousName,
@@ -106,14 +110,14 @@ router.get('/', (req, res) => {
   const page = getPage(req.query);
   const pageSize = optionalInt(req.query.pageSize, '每页条数', { min: 1, max: PAGE_SIZE }) ?? PAGE_SIZE;
   const sort = requireEnum(req.query.sort ?? 'recent', '话题排序', ['recent', 'hot']);
-  const category = req.query.category == null ? null : requireEnum(req.query.category, '话题分类', CATEGORIES);
+  const category = req.query.category == null ? null : requireEnum(req.query.category, '话题分类', [...CATEGORIES, 'wish']);
   const anonymous = req.query.anonymous == null ? null : requireEnum(req.query.anonymous, '匿名筛选', ['true', 'false']) === 'true';
   const before = optionalInt(req.query.before, '话题游标', { min: 1, max: Number.MAX_SAFE_INTEGER });
   if (before != null && (page !== 1 || sort !== 'recent')) throw badRequest('话题游标仅支持按最新顺序加载');
   const order = sort === 'hot' ? '(likeCount + replyCount) DESC, t.id DESC' : 't.id DESC';
   const filters = [];
   const params = [];
-  if (category) { filters.push('t.category = ?'); params.push(category); }
+  if (category) { filters.push(`${categorySql} = ?`); params.push(category); }
   if (anonymous != null) { filters.push('t.is_anonymous = ?'); params.push(anonymous); }
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
   const pageWhere = before == null ? where : `${where ? `${where} AND` : 'WHERE'} t.id < ?`;
@@ -153,6 +157,7 @@ router.get('/unread-likes', (req, res) => {
 
 router.post('/', (req, res) => {
   const body = req.body || {};
+  if (body.category === 'wish') throw forbidden('许愿话题只能从游乐场兑换后发起');
   const category = requireEnum(body.category, '话题分类', CATEGORIES);
   const title = requireString(body.title, '话题标题', { max: 80 });
   const anonymous = body.anonymous === undefined ? false : requireBoolean(body.anonymous, '匿名发布');

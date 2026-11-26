@@ -8,7 +8,7 @@
 const db = require('./db');
 const { ensureAlias } = require('../repositories/discussionAliasRepo');
 
-const CURRENT_VERSION = 38;
+const CURRENT_VERSION = 43;
 
 function migrate() {
   db.open();
@@ -27,7 +27,25 @@ function migrate() {
         if (rebuildAnnouncements) db.exec('ALTER TABLE announcements RENAME TO announcements_legacy');
         const rebuildVotes = db.all('PRAGMA table_info(discussion_poll_votes)').some(column => column.name === 'position' && !column.pk);
         if (rebuildVotes) db.exec('ALTER TABLE discussion_poll_votes RENAME TO discussion_poll_votes_legacy');
+        const wishesSql = db.pluck("SELECT sql FROM sqlite_master WHERE name='playground_wishes'");
+        const rebuildWishes = wishesSql && /CHECK\s*\(\s*cost\s*=\s*10\s*\)/i.test(wishesSql);
+        if (rebuildWishes) db.exec('ALTER TABLE playground_wishes RENAME TO playground_wishes_legacy');
         db.exec(db.readSchemaSql());
+        if (rebuildWishes) {
+          db.exec(`INSERT INTO playground_wishes SELECT * FROM playground_wishes_legacy;
+            DROP TABLE playground_wishes_legacy;
+            CREATE INDEX IF NOT EXISTS idx_playground_wishes_user ON playground_wishes(user_id,created_at DESC);`);
+        }
+        if (fromVersion < 42) {
+          for (const lesson of db.all('SELECT id,state_json FROM playground_lessons')) {
+            const state = JSON.parse(lesson.state_json);
+            state.results = state.results.map(result => result ? { ...result, score: result.score / 10 } : result);
+            if (state.score != null) state.score /= 10;
+            if (state.maximum != null) state.maximum /= 10;
+            db.run('UPDATE playground_lessons SET state_json=? WHERE id=?', JSON.stringify(state), lesson.id);
+          }
+          db.exec('UPDATE playground_progress SET best_score=best_score/10,last_score=last_score/10,max_score=max_score/10');
+        }
         if (!db.all('PRAGMA table_info(playground_records)').some(column => column.name === 'host_id')) {
           db.exec('ALTER TABLE playground_records ADD COLUMN host_id INTEGER REFERENCES users(id) ON DELETE SET NULL');
           // v37 房主始终首先入房；记录的参与人按入房顺序保存，房主退出会结束房间。
@@ -206,6 +224,12 @@ function migrateLegacySchema() {
 /** 删除全部业务数据（保留表结构），用于 reset */
 function truncateAll() {
   const tables = [
+    'calendar_people',
+    'calendar_works',
+    'playground_wishes',
+    'playground_progress',
+    'playground_harvest',
+    'playground_lessons',
     'playground_record_members',
     'playground_records',
     'playground_members',

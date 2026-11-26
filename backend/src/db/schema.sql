@@ -552,3 +552,70 @@ CREATE TABLE IF NOT EXISTS playground_record_members (
   PRIMARY KEY (record_id,user_id)
 );
 CREATE INDEX IF NOT EXISTS idx_playground_record_user ON playground_record_members(user_id,record_id);
+
+-- 游戏收获独立于可删除的游戏记录，防重复发放与删除后重新领取。
+CREATE TABLE IF NOT EXISTS playground_harvest (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  source_key TEXT NOT NULL,
+  game TEXT NOT NULL,
+  amount INTEGER NOT NULL CHECK (amount > 0),
+  reason TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE (user_id, source_key)
+);
+CREATE INDEX IF NOT EXISTS idx_playground_harvest_user ON playground_harvest(user_id,id DESC);
+CREATE TABLE IF NOT EXISTS playground_lessons (
+  id TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  game TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('active','completed','abandoned')),
+  state_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_playground_lesson_active ON playground_lessons(user_id,game) WHERE status='active';
+CREATE INDEX IF NOT EXISTS idx_playground_lessons_completed ON playground_lessons(user_id,game,updated_at) WHERE status='completed';
+CREATE TABLE IF NOT EXISTS playground_progress (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  game TEXT NOT NULL,
+  level_id TEXT NOT NULL,
+  best_score INTEGER NOT NULL,
+  last_score INTEGER NOT NULL,
+  max_score INTEGER NOT NULL,
+  cleared INTEGER NOT NULL DEFAULT 0 CHECK (cleared IN (0,1)),
+  attempts INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (user_id,game,level_id)
+);
+
+-- 许愿兑换记录独立保留；话题删除后仍保留消费和请求去重。
+CREATE TABLE IF NOT EXISTS playground_wishes (
+  id TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  request_key TEXT NOT NULL,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  cost INTEGER NOT NULL DEFAULT 30 CHECK (cost IN (10, 30)),
+  topic_id INTEGER UNIQUE REFERENCES discussion_topics(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE (user_id, request_key)
+);
+CREATE INDEX IF NOT EXISTS idx_playground_wishes_user ON playground_wishes(user_id,created_at DESC);
+
+-- 不依赖周期的日历安排；与周期生效排班共同展示。
+CREATE TABLE IF NOT EXISTS calendar_works (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  work_date TEXT NOT NULL,
+  shift_id INTEGER NOT NULL REFERENCES shifts(id),
+  work_type_id INTEGER NOT NULL REFERENCES work_types(id),
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE(work_date,shift_id,work_type_id)
+);
+CREATE TABLE IF NOT EXISTS calendar_people (
+  work_id INTEGER NOT NULL REFERENCES calendar_works(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  duty_role TEXT NOT NULL CHECK(duty_role IN ('member','primary','deputy')),
+  PRIMARY KEY(work_id,user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_calendar_people_user ON calendar_people(user_id,work_id);

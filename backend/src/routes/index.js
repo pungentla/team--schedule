@@ -82,6 +82,7 @@ router.delete('/playground/records/:id', requireAuth, (req, res) => {
   require('../services/gameRecordService').remove(intParam(req.params.id, '记录编号'), req.user);
   res.status(204).end();
 });
+router.use('/playground', require('./playground'));
 router.use('/admin', requireAuth, requireAdmin, adminRoutes);
 
 module.exports = router;

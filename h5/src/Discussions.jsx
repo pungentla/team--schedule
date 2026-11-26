@@ -21,11 +21,11 @@ import { TopicShare } from './TopicShare';
 import { API, Blank, Heading, Load, ProfileDisplayContext, discussionName, option, timeText, useAction, useLoad, usePageLoad } from './shared';
 import { usePullRefresh } from './PullToRefresh';
 
-const categories = { chat: '闲聊', feedback: '吐槽', share: '文章分享', poll: '投票' };
+const categories = { chat: '闲聊', feedback: '吐槽', share: '文章分享', poll: '投票', wish: '许愿' };
 const categoryTabs = [{ key: 'all', label: '全部' }, ...Object.entries(categories).map(([key, label]) => ({ key, label }))];
 const topicOrders = [option('recent', '最新'), option('hot', '最热')];
 const pollModeLabels = { single: '单选', multiple: '多选' };
-const colors = { chat: 'blue', feedback: 'orange', share: 'green', poll: 'purple' };
+const colors = { chat: 'blue', feedback: 'orange', share: 'green', poll: 'purple', wish: 'gold' };
 const filled = message => ({ required: true, whitespace: true, message });
 const maxImageBytes = 480 * 1024;
 const acceptedImages = ['image/jpeg', 'image/png', 'image/webp'];
@@ -255,7 +255,7 @@ function NewTopic({ close, saved }) {
         const pollClosesAt = values.pollClosesAt ? new Date(values.pollClosesAt).toISOString() : undefined;
         return API.createTopic({ ...values, images, pollClosesAt });
       }, '话题已发布', saved)}>
-      <Form.Item name="category" label="分类"><Select options={Object.entries(categories).map(([key, label]) => option(key, label))} /></Form.Item>
+      <Form.Item name="category" label="分类"><Select options={Object.entries(categories).filter(([key]) => key !== 'wish').map(([key, label]) => option(key, label))} /></Form.Item>
       <Form.Item name="title" label="话题标题" rules={[filled('请输入话题标题')]}><Input maxLength={80} /></Form.Item>
       <Form.Item name="anonymous" valuePropName="checked"><Checkbox>匿名发布（话题内使用随机昵称）</Checkbox></Form.Item>
       {category === 'poll' && <Form.Item name="pollMode" label="投票方式">
@@ -313,7 +313,8 @@ function TopicCard({ topic, replyId, now, open, updated, deleted, loading, expan
   function openCard(event) {
     if (!event.target.closest('button, a')) open();
   }
-  return <><Card className={open ? 'topic-card topic-card-clickable' : 'topic-card'} onClick={open ? openCard : undefined}>
+  return <><Card className={`topic-card${open ? ' topic-card-clickable' : ''}${topic.category === 'wish' ? ' topic-wish' : ''}`} onClick={open ? openCard : undefined}>
+    {topic.category === 'wish' && <div className="wish-topic-banner"><span className="wish-topic-icon" aria-hidden="true">🌠</span><div><strong>一份来自游乐场的心愿</strong><small>{topic.wishCost} 禾穗许愿 · 仅可从游乐场发起</small></div><span className="wish-topic-stars" aria-hidden="true"><i>✦</i><i>✧</i><i>✦</i></span></div>}
     <div className="inline topic-card-heading">
       <h3>{open ? <button type="button" className="topic-title-button" onClick={open}>{topic.title}</button> : topic.title}</h3>
       <Tag color={colors[topic.category]}>{categories[topic.category]}</Tag>
@@ -322,7 +323,8 @@ function TopicCard({ topic, replyId, now, open, updated, deleted, loading, expan
       <TopicHeat rank={heatRank} />
     </div>
     <div className="muted">{discussionName(topic)} · {timeText(topic.createdAt)}</div>
-    {topic.content && <p className={`discussion-text${open ? ' topic-preview' : ''}`}>{topic.content}</p>}
+    {topic.content && <p className={`discussion-text${open ? ' topic-preview' : ''}`}>{topic.category === 'wish' ? topic.wishContent || topic.content : topic.content}</p>}
+    {topic.category === 'wish' && <div className="wish-topic-note">✨ 愿望不保证实现，大家可自愿回应。</div>}
     {topic.articleUrl && <a className="article-link" href={topic.articleUrl} target="_blank" rel="noopener noreferrer">打开文章 ↗</a>}
     {topic.imageCount > 0 && <TopicImages topicId={topic.id} count={topic.imageCount} compact={!!open} />}
     {topic.poll && <TopicPoll topicId={topic.id} poll={topic.poll} anonymous={topic.anonymous}

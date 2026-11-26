@@ -16,6 +16,11 @@ const { badRequest } = require('../utils/errors');
 
 const router = express.Router();
 const ctx = (req) => ({ user: req.user, requestId: req.requestId });
+const calendar = require('../services/calendarScheduleService');
+router.get('/calendar', requireAuth, (req,res)=>res.set('Cache-Control','no-store').json({data:calendar.view(req.query.startDate,req.query.endDate,req.user)}));
+router.get('/calendar/people', requireAuth, requireAdmin, (req,res)=>res.set('Cache-Control','no-store').json({data:db.all("SELECT id,display_name AS name FROM users WHERE status='active' AND role<>'super_admin' ORDER BY display_name,id")}));
+router.post('/calendar', requireAuth, requireAdmin, (req,res)=>res.status(201).json({data:calendar.create(req.body||{},ctx(req))}));
+router.delete('/calendar/:id', requireAuth, requireAdmin, (req,res)=>res.json({data:calendar.remove(intParam(req.params.id,'id'),ctx(req))}));
 
 router.post('/reassign', requireAuth, requireAdmin, (req, res) => {
   const b = req.body || {};

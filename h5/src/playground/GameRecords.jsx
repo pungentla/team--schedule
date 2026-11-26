@@ -7,9 +7,11 @@ import Select from 'antd/es/select';
 import Space from 'antd/es/space';
 import Tag from 'antd/es/tag';
 import { API, Blank, Heading, Load, personName, timeText, useAction, usePageLoad } from '../shared';
-const games = { avalon: '圣经版阿瓦隆', undercover: '圣经版谁是卧底', uno: '圣经版 UNO' };
+import { RewardReceipt } from './Harvest';
+const games = { avalon: '圣经版阿瓦隆', undercover: '圣经版谁是卧底', uno: '圣经版 UNO', sketch: '圣经你画我猜' };
 function outcome(record) {
   if (record.status === 'abandoned') return '提前结束';
+  if (record.game === 'sketch') return `优胜：${record.winner.map(id => record.players.find(p => p.id === id)?.name || '玩家').join('、')}`;
   if (record.game === 'uno') return `${record.players.find(p => p.id === record.winner)?.name || '玩家'}获胜`;
   return `${({ light: '光明阵营', shadow: '暗影阵营', civilian: '平民', undercover: '卧底' })[record.winner]}获胜`;
 }
@@ -40,7 +42,8 @@ function RecordDetail({ id, user, close, deleted }) {
   </div>} width={720}><Load query={query}>{record => {
     const name = id => { const p = record.players.find(p => p.id === id); return p ? personName(p, user.id) : '玩家'; };
     return <div className="stack game-record-detail"><h2>{games[record.game]}</h2><Tag color={record.status === 'completed' ? 'green' : 'default'}>{outcome(record)}</Tag><p>{record.reason}</p><p className="muted">{timeText(record.startedAt)} 至 {timeText(record.finishedAt)} · 房间 {record.roomCode}</p>
-      <h3>参与成员</h3><div className="avalon-players">{record.players.map(p => <div key={p.id} className="row-between"><strong>{personName(p, user.id)}</strong><Space wrap>{p.role && <Tag>{p.role}</Tag>}{p.word && <Tag color="blue">{p.word}</Tag>}{p.cardCount != null && <Tag>剩 {p.cardCount} 张</Tag>}</Space></div>)}</div>
+      {record.reward?.amount > 0 && <RewardReceipt reward={record.reward} />}<h3>参与成员</h3><div className="avalon-players">{record.players.map(p => <div key={p.id} className="row-between"><strong>{personName(p, user.id)}</strong><Space wrap>{p.role && <Tag>{p.role}</Tag>}{p.word && <Tag color="blue">{p.word}</Tag>}{p.cardCount != null && <Tag>剩 {p.cardCount} 张</Tag>}{record.scores && <Tag>{record.scores[p.id] || 0} 分</Tag>}</Space></div>)}</div>
+      {record.rounds && <><h3>绘画猜词记录</h3>{record.rounds.map(r => <div key={r.round}><strong>第 {r.round} 轮 · {name(r.drawerId)} · {r.answer}</strong><p className="muted">猜中：{r.correct.map(name).join('、') || '无人猜中'}</p><a href={r.url} target="_blank" rel="noreferrer">{r.ref} ↗</a></div>)}</>}
       {record.missions && <><h3>使命结果</h3><Space wrap>{record.missions.map((m, i) => <Tag key={i} color={m.success ? 'green' : 'red'}>使命 {i + 1} · {m.success ? '成功' : '失败'} · {m.fails} 张破坏</Tag>)}</Space></>}
       {record.clues?.length > 0 && <><h3>描述记录</h3>{record.clues.map((clue, i) => <div key={i}><small className="muted">第 {clue.round} 轮{clue.runoff ? '加赛' : ''} · {name(clue.userId)}</small><p>{clue.text}</p></div>)}</>}
       {record.history?.length > 0 && <><h3>投票记录</h3>{record.history.map((entry, i) => <div key={i} className="game-record-vote"><strong>{record.game === 'avalon' ? `使命 ${entry.round + 1} · ${entry.approved ? '组队通过' : '组队未通过'}` : `第 ${entry.round} 轮${entry.runoff ? '加赛' : ''}`}</strong>{entry.team && <p className="muted">队伍：{entry.team.map(name).join('、')}</p>}<Space wrap>{Object.entries(entry.votes).map(([id, value]) => <Tag key={id}>{name(Number(id))} → {record.game === 'avalon' ? value ? '赞成' : '反对' : name(value)}</Tag>)}</Space></div>)}</>}

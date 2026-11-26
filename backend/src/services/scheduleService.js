@@ -37,6 +37,8 @@ function loadHistory(periodStartDate, historyPeriods = config.historyPeriods) {
     periodStartDate, periodStartDate
   );
 
+  rows.push(...db.all(`SELECT cp.user_id,cw.work_type_id,cw.work_date FROM calendar_people cp JOIN calendar_works cw ON cw.id=cp.work_id WHERE cw.work_date<?`,periodStartDate));
+  rows.sort((a,b)=>a.work_date.localeCompare(b.work_date));
   const map = new Map();
   for (const r of rows) {
     if (!map.has(r.user_id)) {
@@ -633,7 +635,9 @@ function getRecentSchedule(userId, range) {
     });
     if (row.peer_id) assignments.get(row.id).coworkers.push({ userId: row.peer_id, name: row.peer_name, dutyRole: row.peer_role });
   }
-  return { startDate, endDate, assignments: [...assignments.values()] };
+  const manual = require('./calendarScheduleService').assignments(startDate,endDate);
+  const mine = manual.filter(a=>a.userId===userId).map(a=>({...a,coworkers:manual.filter(p=>p.calendarId===a.calendarId && p.userId!==userId).map(p=>({userId:p.userId,name:p.name,dutyRole:p.dutyRole}))}));
+  return { startDate, endDate, assignments: [...assignments.values(),...mine].sort((a,b)=>a.workDate.localeCompare(b.workDate)||a.startTime.localeCompare(b.startTime)) };
 }
 
 function getTeamSchedule(range) {
@@ -648,11 +652,11 @@ function getTeamSchedule(range) {
     JOIN work_types w ON w.id=a.work_type_id
     WHERE a.status='active' AND a.work_date BETWEEN ? AND ?
     ORDER BY a.work_date,name,a.user_id,s.seq,w.sort_order,a.id`, startDate, endDate);
-  return { startDate, endDate, assignments: rows.map((r) => ({
+  return { startDate, endDate, assignments: [...rows.map((r) => ({
     id: r.id, userId: r.user_id, name: r.name, workDate: r.work_date, dutyRole: r.duty_role,
     periodName: r.period_name, shiftName: r.shift_name, startTime: r.start_time.slice(0, 5),
     endTime: r.end_time.slice(0, 5), workTypeId: r.work_type_id, workTypeName: r.work_type_name,
-  })) };
+  })),...require('./calendarScheduleService').assignments(startDate,endDate)].sort((a,b)=>a.workDate.localeCompare(b.workDate)||a.startTime.localeCompare(b.startTime)) };
 }
 
 /** 管理员总览 */

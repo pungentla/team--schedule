@@ -17,9 +17,12 @@ import EyeOutlined from '@ant-design/icons/es/icons/EyeOutlined';
 import { API, Heading, personName, useAction } from '../shared';
 import { UndercoverStage, UndercoverRules } from './Undercover';
 import { UnoStage, UnoRules } from './Uno';
+import { SketchStage, SketchRules } from './Sketch';
+import { RewardReceipt } from './Harvest';
 
-const stages = { waiting: '等待加入', identity: '领取秘密', team: '队长组队', vote: '全员投票', voteResult: '投票结果', mission: '执行使命', missionResult: '使命结果', accusation: '最终指认', finished: '本局结束', describe: '轮流描述', playing: '出牌进行中' };
+const stages = { waiting: '等待加入', identity: '领取秘密', team: '队长组队', vote: '全员投票', voteResult: '投票结果', mission: '执行使命', missionResult: '使命结果', accusation: '最终指认', finished: '本局结束', describe: '轮流描述', playing: '出牌进行中', drawing: '绘画猜词', drawingResult: '本轮揭晓' };
 const gameInfo = {
+  sketch: { name: '圣经你画我猜', title: '🎨 画里有故事', min: 2, copy: '一人画线索，大家猜故事，揭晓后一起认识经文。' },
   avalon: { name: '圣经版阿瓦隆', title: '🕯️ 守望之旅', min: 5, copy: '各用一部手机，共赴一场关于信任与辨识的旅程。' },
   undercover: { name: '圣经版谁是卧底', title: '🕊️ 同词异心', min: 4, copy: '一样的故事，不一样的词语。用一句描述，寻找隐藏的不同。' },
   uno: { name: '圣经版 UNO', title: '🌈 彩约对局', min: 2, copy: '让色彩与数字接续旅程，别忘了最后一张前喊 UNO！' },
@@ -57,11 +60,11 @@ export default function PartyGame({ user, game, openGame, openRecords }) {
         }
       } finally { pending = false; }
     }
-    const timer = setInterval(refresh, 5000);
+    const timer = setInterval(refresh, game === 'sketch' && room.players.length < 6 ? 2000 : 5000);
     window.addEventListener('focus', refresh);
     document.addEventListener('visibilitychange', refresh);
     return () => { active = false; clearInterval(timer); window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
-  }, [room?.id]);
+  }, [room?.id, room?.players.length, game]);
   useEffect(() => {
     const hide = () => setPrivateOpen(false);
     window.addEventListener('blur', hide);
@@ -71,12 +74,13 @@ export default function PartyGame({ user, game, openGame, openRecords }) {
   async function action(type, values = {}, question) {
     if (question && !await confirm(question, '提交后不能修改，请确认选择。')) return;
     epoch.current++;
-    await run(() => API.partyAction(room.id, { action: type, turn: room.turn, ...values }), null,
+    const success = await run(() => API.partyAction(room.id, { action: type, turn: room.turn, ...values }), null,
       data => { accept(data); setSyncError(''); if (!data) setPrivateOpen(false); });
     // A simultaneous action may have advanced the phase; reconcile even after a conflict.
-    if (type !== 'leave') {
+    if (type !== 'leave' && !(success && game === 'sketch')) {
       try { accept(await API.partyRoom(room.id)); } catch (e) { if (e.status === 404) setRoom(null); }
     }
+    return success;
   }
   async function leave() {
     const text = room.hostId === user.id ? '解散房间？其他成员也将退出。' : !['waiting', 'finished'].includes(room.phase) ? '退出房间？当前对局将结束。' : '退出房间？';
@@ -90,8 +94,9 @@ export default function PartyGame({ user, game, openGame, openRecords }) {
   return <>
     <Card className="avalon-intro"><div className="row-between"><div><span className="playground-eyebrow">{info.name} · 多人联机</span><h2>{info.title}</h2></div><Space wrap>{room && <Tag color="gold">{stages[room.phase]}</Tag>}<Button size="small" onClick={() => openRecords(game)}>游戏记录</Button></Space></div>
       <p className="muted">{info.copy}</p>
-      {game === 'avalon' ? <Rules /> : game === 'undercover' ? <UndercoverRules /> : <UnoRules />}
+      {game === 'avalon' ? <Rules /> : game === 'undercover' ? <UndercoverRules /> : game === 'sketch' ? <SketchRules /> : <UnoRules />}
     </Card>
+    {room?.phase === 'finished' && <RewardReceipt reward={room.reward} />}
     {syncError && <Alert type="warning" showIcon message={syncError} action={!room && !loading ? <Button size="small" onClick={() => { setLoading(true); run(API.partyCurrent, null, data => { accept(data); setSyncError(''); }).finally(() => setLoading(false)); }}>重试</Button> : undefined} />}
     {loading ? <div className="loading"><Spin /></div> : !room ? <Card><Heading>开启一场旅程</Heading><div className="stack">
       <Button type="primary" block loading={busy} onClick={() => run(() => API.partyCreate(game), null, data => { accept(data); setSyncError(''); })}>创建房间</Button><div className="avalon-or">或加入朋友的房间</div>
@@ -101,7 +106,7 @@ export default function PartyGame({ user, game, openGame, openRecords }) {
       </Form><p className="muted">需要 {info.min}–10 位玩家，使用各自的时禾账号。离开页面后可回来继续，房间 24 小时无操作自动失效。</p>
     </div></Card> : <>
       <Card><div className="row-between avalon-room-heading"><div><small className="muted">房间号</small><strong className="avalon-code">{room.code}</strong></div><Space wrap><Button size="small" icon={<CopyOutlined />} onClick={copyCode}>复制</Button><Button size="small" onClick={leave} disabled={busy}>{room.hostId === user.id ? '解散' : '退出'}</Button></Space></div>
-        <p className="muted avalon-sync" role="status">{syncError ? '正在重连…' : '已连接 · 每 5 秒同步进度'}</p>
+        <p className="muted avalon-sync" role="status">{syncError ? '正在重连…' : `已连接 · 每 ${game === 'sketch' && room.players.length < 6 ? 2 : 5} 秒同步进度`}</p>
         {room.phase === 'waiting' ? <div className="stack"><div className="avalon-players">{room.players.map(player => <div key={player.id} className="row-between"><strong>{personName(player, user.id)}{player.id === room.hostId && <small className="muted"> · 房主</small>}</strong><Tag color={player.ready ? 'green' : 'default'}>{player.ready ? '已准备' : '待准备'}</Tag></div>)}</div>
           <p className="muted">{room.players.length}/10 人 · 至少 {info.min} 人，所有人准备后由房主开始。</p>
           <Space wrap><Button type={room.players.find(p => p.id === user.id)?.ready ? 'default' : 'primary'} disabled={busy} onClick={() => action('ready', { ready: !room.players.find(p => p.id === user.id)?.ready })}>{room.players.find(p => p.id === user.id)?.ready ? '取消准备' : '我准备好了'}</Button>
@@ -111,7 +116,7 @@ export default function PartyGame({ user, game, openGame, openRecords }) {
             <small>使命 {i + 1}</small><strong>{room.missions[i] ? room.missions[i].success ? '✓' : '✕' : room.teamSizes[i] || '—'}</strong><small>{room.missions[i] ? room.missions[i].success ? '成功' : '失败' : '人'}</small>
           </div>)}</div>}
           {(room.me.role || room.me.word) && room.phase !== 'finished' && <Button icon={<EyeOutlined />} onClick={() => setPrivateOpen(true)}>{game === 'undercover' ? '私密查看我的词语' : '私密查看我的身份'}</Button>}
-          {game === 'avalon' ? <GameStage key={room.turn} room={room} user={user} action={action} busy={busy} /> : game === 'undercover' ? <UndercoverStage key={room.turn} room={room} user={user} action={action} busy={busy} /> : <UnoStage key={room.turn} room={room} user={user} action={action} busy={busy} />}
+          {game === 'avalon' ? <GameStage key={room.turn} room={room} user={user} action={action} busy={busy} /> : game === 'undercover' ? <UndercoverStage key={room.turn} room={room} user={user} action={action} busy={busy} /> : game === 'sketch' ? <SketchStage key={room.turn} room={room} user={user} action={action} busy={busy} /> : <UnoStage key={room.turn} room={room} user={user} action={action} busy={busy} />}
         </div>}
       </Card>
       {game === 'avalon' && room.history.length > 0 && <Card className="avalon-history"><Collapse ghost items={[{ key: 'history', label: `旅程记录 · ${room.history.length} 次组队`, children: <div className="stack">{room.history.map((entry, i) => <div key={i} className="avalon-history-entry"><strong>使命 {entry.round + 1} · 第 {i + 1} 次组队 <Tag color={entry.approved ? 'green' : 'default'}>{entry.approved ? '通过' : '未通过'}</Tag></strong>

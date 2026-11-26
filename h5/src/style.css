@@ -160,7 +160,9 @@ button, input { font: inherit; }
 .bottom-nav [aria-current=page] { background: #eaf0fc; color: #214c9c; font-weight: 700; }
 .personal-schedule-tabs .ant-segmented { width: 100%; }
 .playground-back.ant-btn { align-self: flex-start; padding-inline: 4px; }
+.playground-controls { position: sticky; z-index: 9; background: #f2f5f9; padding-bottom: 8px; }
 .playground-welcome.ant-card { background: linear-gradient(120deg, #edf1ff, #fff7e7); border-color: #e2e7f4; }
+.playground-welcome .ant-card-body { padding: 16px 20px; }
 .playground-eyebrow { display: block; color: #7c622d; font-size: 12px; letter-spacing: 1px; margin-bottom: 6px; }
 .playground-welcome h1 { font-size: 28px; margin-bottom: 8px; }
 .playground-welcome h1 span { color: #bf8c30; }
@@ -542,3 +544,121 @@ button.uno-card:focus-visible { outline: 3px solid #1f3b6c; outline-offset: 3px;
   .schedule-range-row { flex-wrap: wrap; justify-content: flex-end; }
   .schedule-range-row > .ant-picker { flex-basis: 100%; }
 }
+
+/* Bible learning: large tap targets, compact feedback and optional drag controls. */
+.playground-categories { max-width: 100%; }
+.bible-learning { max-width: 900px; margin-inline: auto; }
+.bible-learning .ant-card-body > p { margin-block: 12px; }
+.bible-setup-label { display: flex; align-items: center; gap: 16px; }
+.bible-setup-label .ant-select { flex: 1; min-width: 0; }
+.bible-question { margin: 0; font-size: clamp(19px, 3vw, 25px); line-height: 1.5; }
+.bible-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.bible-options .ant-btn { height: auto; min-height: 56px; justify-content: flex-start; white-space: normal; text-align: left; padding: 12px 16px; }
+.bible-correct.ant-btn { color: #237747 !important; background: #edf8ef !important; border-color: #7ac398 !important; }
+.bible-clues { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+.bible-clues li { display: flex; gap: 12px; align-items: flex-start; padding: 16px; border-radius: 12px; background: #f3f6fc; }
+.bible-clues li > span, .bible-order-number { display: inline-flex; justify-content: center; align-items: center; width: 28px; height: 28px; border-radius: 50%; background: #e2eaff; color: #3159aa; flex-shrink: 0; }
+.bible-answer-form { display: flex; gap: 8px; align-items: flex-start; }
+.bible-answer-form > .ant-input { min-width: 0; }
+.bible-timeline { margin: 0; padding: 0; display: grid; gap: 10px; list-style: none; }
+.bible-timeline li { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid #dde5f0; background: #fbfcff; border-radius: 12px; }
+.bible-timeline li[draggable=true] { cursor: grab; }
+.bible-timeline strong { flex: 1; font-weight: 500; min-width: 0; overflow-wrap: anywhere; }
+.bible-timeline .ant-btn { padding-inline: 10px; }
+.bible-verse-line, .bible-word-bank { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.bible-verse-line { min-height: 100px; border: 1px dashed #8eabd2; background: #f6f9ff; padding: 16px; border-radius: 12px; }
+.bible-word-bank .ant-btn { background: #fff8e9; border-color: #eddbaa; }
+.bible-word-bank .ant-btn:disabled { opacity: .4; }
+.bible-match-columns { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: 16px; }
+.bible-match-columns > div { display: grid; grid-auto-rows: 1fr; gap: 10px; }
+.bible-match-columns .ant-btn { white-space: normal; height: 100%; min-height: 60px; padding: 10px; }
+.bible-matched-notes, .bible-review { border-top: 1px solid #e4e9f2; padding-top: 16px; text-align: left; }
+.bible-matched-notes > div + div { margin-top: 16px; }
+.bible-matched-notes p, .bible-review p { margin-block: 8px; }
+.bible-summary { text-align: center; }
+.bible-summary .ant-space { align-self: center; }
+.bible-summary-icon { font-size: 50px; }
+.bible-summary h2 { margin: 0; }
+.bible-score { font-size: 42px; color: #3159aa; }
+.bible-score small { font-size: 17px; color: #64748b; }
+.bible-map svg { display: block; width: 100%; height: auto; }
+.bible-map-marker { cursor: pointer; }
+.bible-map-choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.bible-source { font-size: 12px; line-height: 1.8; padding-inline: 4px; }
+.sketch-board { display: block; width: 100%; height: auto; border: 1px solid #d9e2ee; border-radius: 12px; overflow: hidden; }
+.sketch-board.editable { cursor: crosshair; touch-action: none; user-select: none; }
+.sketch-guesses { max-height: 220px; overflow-y: auto; border: 1px solid #e4e9f2; padding: 12px; border-radius: 12px; }
+.sketch-guesses p { margin: 0 0 6px; overflow-wrap: anywhere; }
+.sketch-guess-correct { color: #26804b; }
+@media (max-width: 560px) {
+  .bible-options { grid-template-columns: minmax(0, 1fr); }
+  .bible-map-choices { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bible-match-columns { gap: 10px; }
+  .bible-timeline li { gap: 8px; padding: 10px; }
+  .bible-clues li { padding: 12px; }
+  .bible-learning .ant-alert-description { overflow-wrap: anywhere; }
+}
+.bible-verse-line .ant-btn:disabled { color: #43526b; background: #eaf0fc; border-color: #cbd8ef; }
+.harvest-summary { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #e5ddc8; }
+.harvest-summary .playground-eyebrow { margin-bottom: 0; }
+.harvest-summary .harvest-balance > strong { font-size: 26px; }
+.harvest-summary .harvest-balance > span:first-child { font-size: 22px; }
+.harvest-balance { display: flex; align-items: baseline; gap: 10px; color: #876318; }
+.harvest-balance > strong { font-size: 34px; line-height: 1.4; }
+.harvest-balance > span:first-child { font-size: 28px; }
+.harvest-receipt { text-align: left; }
+.harvest-receipt-total { display: block; margin-top: 8px; }
+.harvest-ledger { max-height: 45vh; overflow-y: auto; }
+.harvest-entry { padding: 12px 0; border-bottom: 1px solid #ece9df; }
+.harvest-entry p { margin: 6px 0; color: #66758b; }
+.bible-levels { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.bible-level { display: flex; flex-direction: column; gap: 10px; padding: 18px; background: #fff; border: 1px solid #dbe4f1; border-radius: 14px; text-align: left; font: inherit; cursor: pointer; color: #24344d; }
+.bible-level:hover:not(:disabled) { border-color: #3159aa; background: #f8faff; }
+.bible-level.cleared { background: #f3faf5; border-color: #bcdcc7; }
+.bible-level:disabled { cursor: default; background: #f5f6f8; color: #8390a3; }
+.bible-level .ant-tag { margin: 0; }
+.bible-level-action { margin-top: auto; font-size: 13px; color: #3159aa; }
+.bible-level:disabled .bible-level-action { color: #8390a3; }
+@media(max-width:560px) { .bible-levels { grid-template-columns: minmax(0,1fr); } }
+
+.wish-launch.ant-btn { background: #9b6a24; border-color: #9b6a24; box-shadow: 0 2px 0 #9b6a2420; }
+.wish-launch.ant-btn:hover { background: #82561a !important; border-color: #82561a !important; }
+.wish-presets { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; width: 100%; }
+.wish-presets .ant-radio-button-wrapper { height: auto; min-height: 60px; display: flex; align-items: center; gap: 10px; white-space: normal; line-height: 1.6; padding: 12px; margin: 0; border: 1px solid #e4d7b9; border-radius: 12px; }
+.wish-presets .ant-radio-button-wrapper::before { display: none; }
+.wish-presets .ant-radio-button-wrapper-checked { background: #fff7df; }
+.wish-disclaimer { margin-bottom: 12px; }
+.wish-current-balance { margin: 12px 0; }
+.wish-preset-copy { padding: 14px; margin: 0 0 16px; border-radius: 12px; color: #755933; background: #fff9eb; line-height: 1.8; }
+.wish-note.ant-form-item { margin-bottom: 32px; }
+.wish-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-top: 16px; border-top: 1px solid #ece5d6; }
+.wish-actions > small { flex: 1 1 180px; line-height: 1.7; }
+.wish-actions > .ant-btn { flex: none; }
+@media (max-width: 480px) { .wish-actions { flex-direction: column; align-items: stretch; } .wish-actions > small { flex: none; } .wish-actions > .ant-btn { width: 100%; } }
+.wish-success { text-align: center; padding-top: 10px; }
+.wish-success .ant-space { align-self: center; }
+.wish-bloom { font-size: 48px; position: relative; width: 150px; margin: 0 auto; padding: 20px; }
+.wish-bloom span { position: absolute; color: #bf8e34; font-size: 24px; animation: wish-bloom 1.6s ease-out both; }
+.wish-bloom span:nth-child(1) { left: 14px; top: 5px; }
+.wish-bloom span:nth-child(2) { right: 12px; top: 15px; animation-delay: .15s; }
+.wish-bloom span:nth-child(3) { right: 35px; bottom: 0; animation-delay: .3s; }
+.topic-wish.ant-card { position: relative; isolation: isolate; border: 1px solid #e6ce9d; background: linear-gradient(135deg,#fffcf2 0%,#fff7e9 58%,#f8f1fc 100%); animation: wish-arrive .5s ease-out both; }
+.topic-wish.ant-card::before { content: ''; position: absolute; inset: 0; pointer-events: none; border-radius: inherit; box-shadow: inset 0 0 0 1px #d9ae62,0 3px 16px #d1ad6328; opacity: .35; animation: wish-glow 5s ease-in-out infinite; }
+.wish-topic-banner { position: relative; display: flex; align-items: center; gap: 10px; margin-bottom: 16px; padding: 0 34px 14px 0; border-bottom: 1px solid #e6d7b780; color: #85632f; }
+.wish-topic-icon { font-size: 27px; display: grid; place-items: center; flex: none; width: 46px; height: 46px; border-radius: 14px; background: #f8eac8; }
+.wish-topic-banner strong { display: block; font-size: 13px; letter-spacing: 1px; }
+.wish-topic-banner small { display: block; margin-top: 4px; font-size: 12px; color: #9d8052; }
+.wish-topic-stars { position: absolute; right: 0; top: 0; width: 34px; height: 50px; pointer-events: none; color: #bc8a2f; }
+.wish-topic-stars i { position: absolute; font-style: normal; animation: wish-twinkle 4s ease-in-out infinite; }
+.wish-topic-stars i:nth-child(1) { top: 0; right: 2px; font-size: 21px; }
+.wish-topic-stars i:nth-child(2) { top: 22px; left: 0; font-size: 15px; animation-delay: 1.2s; }
+.wish-topic-stars i:nth-child(3) { top: 37px; right: 3px; font-size: 10px; animation-delay: 2.4s; }
+.topic-wish .topic-card-heading h3 { color: #77562d; }
+.topic-wish .discussion-text { color: #705c44; line-height: 1.9; }
+.wish-topic-note { font-size: 12px; color: #9a7d4d; padding: 10px 12px; margin-top: 14px; border: 1px dashed #dcc79c; border-radius: 10px; background: #fffdf580; }
+@keyframes wish-arrive { from { opacity: .5; } to { opacity: 1; } }
+@keyframes wish-glow { 0%,100% { opacity: .2; } 50% { opacity: .65; } }
+@keyframes wish-twinkle { 0%,100% { transform: translateY(0) rotate(0); opacity: .35; } 50% { transform: translateY(-5px) rotate(8deg); opacity: .9; } }
+@keyframes wish-bloom { from { transform: translateY(18px) scale(.4); opacity: 0; } 50% { opacity: 1; } to { transform: translateY(-7px) scale(1); opacity: .75; } }
+@media (max-width: 360px) { .wish-presets { grid-template-columns: minmax(0,1fr); } .harvest-actions { gap: 4px; } .harvest-actions .ant-btn { padding-inline: 10px; } }
+@media (prefers-reduced-motion: reduce) { .topic-wish.ant-card, .topic-wish.ant-card::before, .wish-topic-stars i, .wish-bloom span { animation: none; } }

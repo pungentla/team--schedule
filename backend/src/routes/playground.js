@@ -1,0 +1,16 @@
+'use strict';
+const express = require('express');
+const { requireAuth } = require('../middleware/auth');
+const harvest = require('../services/harvestService');
+const learning = require('../services/learningService');
+const wishes = require('../services/wishService');
+const router = express.Router();
+router.use(requireAuth, (req, res, next) => { harvest.participant(req.user); res.set('Cache-Control', 'no-store'); next(); });
+router.get('/wishes', (req, res) => res.json({ data: wishes.metadata(req.user) }));
+router.post('/wishes', (req, res) => { const wish = wishes.create(req.user, req.body); res.status(wish.replayed ? 200 : 201).json({ data: wish }); });
+router.get('/harvest', (req, res) => res.json({ data: harvest.list(req.user, req.query) }));
+router.get('/learning/meta', (req, res) => res.json({ data: learning.metadata(req.user) }));
+router.post('/learning', (req, res) => res.status(201).json({ data: learning.start(req.user, req.body) }));
+router.get('/learning/:id', (req, res) => res.json({ data: learning.get(req.params.id, req.user) }));
+router.post('/learning/:id/actions', (req, res) => res.json({ data: learning.act(req.params.id, req.user, req.body) }));
+module.exports = router;

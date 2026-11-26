@@ -12,9 +12,11 @@ import Select from 'antd/es/select';
 import Space from 'antd/es/space';
 import Spin from 'antd/es/spin';
 import Tag from 'antd/es/tag';
+import ShareAltOutlined from '@ant-design/icons/es/icons/ShareAltOutlined';
+import ScheduleShare from './ScheduleShare';
 import { ScheduleOverview } from './ScheduleOverview';
 import { MonthCalendar } from './MonthCalendar';
-import { API, Blank, DutyTag, Field, Heading, Load, dateText, dayjs, group, isAdmin, iso, monthOf, option, periodOptions, personLabel, roleLabels, shiftText, today, usePageLoad, weekdays } from './shared';
+import { API, Blank, DutyTag, Field, Heading, Load, dateText, dayjs, group, isAdmin, iso, monthOf, option, periodOptions, personLabel, personName, required, roleLabels, shiftText, today, useAction, useLoad, usePageLoad, weekdays } from './shared';
 
 const Table = lazy(() => import('antd/es/table'));
 const rangePickerTheme = { components: { DatePicker: { cellWidth: 34, cellHeight: 28 } } };
@@ -107,7 +109,7 @@ export function Schedule({ user, periods, period, scope, changeScope, filters, u
   const allWeekdaysSelected = selectedWeekdays.length === weekdayOrder.length;
   const [custom, setCustom] = useState(() => dates?.map(date => dayjs(date)) ?? [dayjs(today()), dayjs(today()).add(6, 'day')]);
   const viewOptions = [option('recent', '近期安排')];
-  if (scope !== 'work') viewOptions.push(option('calendar', '月历'));
+  viewOptions.push(option('calendar', '日历看板'));
   if (scope === 'team') {
     viewOptions.push(option('matrix', '排班矩阵'));
     if (isAdmin(user)) viewOptions.push(option('daily', '按人员日表'));
@@ -117,13 +119,13 @@ export function Schedule({ user, periods, period, scope, changeScope, filters, u
     () => API.recentSchedule(recentParams(range, dates), scope));
   const works = usePageLoad(scope === 'work' ? 'works' : null, API.workTypes);
   const waitingForWorks = scope === 'work' && (works.error || (works.loading && works.data === undefined));
-  const schedule = usePageLoad(view !== 'recent' ? period?.id : null, () => API.schedule(period.id, 'published'));
+  const schedule = usePageLoad(!['recent','calendar'].includes(view) ? period?.id : null, () => API.schedule(period.id, 'published'));
   const assignments = recent.data?.assignments || [];
   const usedWorks = new Set(assignments.map(a => a.workTypeId));
   const choices = (works.data || []).filter(w => w.active || usedWorks.has(w.id));
   const workId = choices.some(w => w.id === work) ? work : choices[0]?.id;
   const list = assignments.filter(a => (scope !== 'work' || a.workTypeId === workId) && selectedWeekdays.includes(dayjs(a.workDate).day()));
-  const canFilterPerson = scope === 'team' && ['calendar', 'daily'].includes(view) && isAdmin(user);
+  const canFilterPerson = scope === 'team' && view === 'daily' && isAdmin(user);
   const people = canFilterPerson ? peopleOf(schedule.data) : [];
   const person = people.some(p => p.id === filters.person) ? filters.person : 'all';
   return <>
@@ -131,7 +133,7 @@ export function Schedule({ user, periods, period, scope, changeScope, filters, u
       <Segmented block value={scope} onChange={changeScope} options={scopeOptions} />
       <Form layout="vertical" className="filters">
         <div className={view === 'recent' ? 'schedule-filter-row' : undefined}>
-          {scope !== 'work' && <Field label="查看"><Select aria-label="查看" value={view} onChange={value => updateFilters({ view: value })} options={viewOptions} /></Field>}
+          <Field label="查看"><Select aria-label="查看" value={view} onChange={value => updateFilters({ view: value })} options={viewOptions} /></Field>
           {scope === 'work' && <Field label="工作类型"><Select aria-label="工作类型" loading={works.loading} value={workId} onChange={value => updateFilters({ work: value })} options={choices.map(w => option(w.id, w.name))} /></Field>}
           {view === 'recent' && <Field label="时间范围"><Select aria-label="时间范围" value={range} onChange={value => updateFilters({ range: value })} options={recentRangeOptions} /></Field>}
         </div>
@@ -152,7 +154,7 @@ export function Schedule({ user, periods, period, scope, changeScope, filters, u
                 onClick={() => updateFilters({ dates: custom.map(iso) })}>查看安排</Button>
             </div>
           </Form.Item>
-        ) : <Field label="排班周期"><Select aria-label="排班周期" value={period?.id} options={periodOptions(periods)} onChange={value => updateFilters({ periodId: value })} placeholder="暂无排班周期" /></Field>}
+        ) : view !== 'calendar' && <Field label="排班周期"><Select aria-label="排班周期" value={period?.id} options={periodOptions(periods)} onChange={value => updateFilters({ periodId: value })} placeholder="暂无排班周期" /></Field>}
         <Field label="仅查看"><Checkbox.Group className="schedule-weekdays" role="group" aria-label="仅查看星期"
           value={selectedWeekdays} onChange={value => updateFilters({ weekdays: value })}>
           <Checkbox skipGroup checked={allWeekdaysSelected} indeterminate={selectedWeekdays.length > 0 && !allWeekdaysSelected}
@@ -162,12 +164,13 @@ export function Schedule({ user, periods, period, scope, changeScope, filters, u
         {canFilterPerson && <Field label="人员"><Select aria-label="人员" showSearch optionFilterProp="label" value={person} onChange={value => updateFilters({ person: value })} options={[option('all', '所有人员'), ...people.map(p => option(p.id, personLabel(p, user.id)))]} /></Field>}
       </Form>
       {view === 'recent' && recent.data && !waitingForWorks && <div className="muted">{recent.data.startDate} 至 {recent.data.endDate} · {list.length} 项</div>}
-      {view !== 'recent' && period && <div className="muted">{period.startDate} 至 {period.endDate} · {schedule.data?.run ? `生效版本 #${schedule.data.run.id}` : '尚未发布'}</div>}
+      {!['recent','calendar'].includes(view) && period && <div className="muted">{period.startDate} 至 {period.endDate} · {schedule.data?.run ? `生效版本 #${schedule.data.run.id}` : '尚未发布'}</div>}
     </Card>
     {view === 'recent' ? waitingForWorks ? <Load query={works} /> : <Load query={recent}>{data => <>
       <ScheduleOverview assignments={list} startDate={data.startDate} endDate={data.endDate} scope={scope} weekdays={selectedWeekdays} />
       <RecentList list={list} mine={scope === 'mine'} user={user} empty={scope === 'work' ? '该工作暂无排班' : scope === 'mine' ? '这段时间暂无我的安排' : '这段时间暂无团队排班'} />
     </>}</Load>
+      : view === 'calendar' ? <CalendarBoard user={user} scope={scope} workId={workId} selectedWeekdays={selectedWeekdays} />
       : <Load query={schedule} empty="还没有排班周期">{data => <PeriodView key={data.period.id} data={data} user={user} scope={scope} view={view} person={person} selectedWeekdays={selectedWeekdays} />}</Load>}
   </>;
 }
@@ -254,6 +257,7 @@ export function ScheduleDetails({ data, user, view, setView, published = false, 
   const { startDate, endDate } = data.period;
   const [month, setMonth] = useState(monthOf(startDate));
   const [date, setDate] = useState(null);
+  const [sharing, setSharing] = useState(null);
   const days = new Map(data.matrix.map(day => [day.workDate, day]));
   const selectedDay = days.get(date);
   function dayInfo(day) {
@@ -272,28 +276,91 @@ export function ScheduleDetails({ data, user, view, setView, published = false, 
       {view === 'calendar' && '点击日期查看当天安排。'}
       {onAdjustWork && '点击工作旁的「调班」可调整安排。'}
     </div>}
-    {view === 'list' ? <Matrix data={data} user={user} onAdjustWork={onAdjustWork} /> : <>
+    {view === 'list' ? <Matrix data={data} user={user} onAdjustWork={onAdjustWork} onShareDay={published && data.run ? day=>setSharing(day) : undefined} /> : <>
       <MonthCalendar month={month} startDate={startDate} endDate={endDate} move={setMonth} selected={date} pick={setDate}
         blocked={day => iso(day) < startDate || iso(day) > endDate} dayInfo={dayInfo} />
       <Modal open={!!date} title={date && `${dateText(date)} · ${published ? '生效安排' : '草稿安排'}`} onCancel={() => setDate(null)}
         footer={<Space>
+          {published && data.run && <Button icon={<ShareAltOutlined />} onClick={()=>setSharing(selectedDay || {workDate:date,shifts:[]})}>分享</Button>}
           {onAdjustWork && <Button onClick={() => onAdjustWork({ workDate: date })}>新增工作</Button>}
           <Button onClick={() => setDate(null)}>关闭</Button>
         </Space>}>
         <Matrix data={{ matrix: selectedDay ? [selectedDay] : [] }} user={user} showDate={false} onAdjustWork={onAdjustWork} />
       </Modal>
     </>}
+    {sharing && <ScheduleShare date={sharing.workDate} day={sharing} period={data.period} close={()=>setSharing(null)}/>}
   </div>;
 }
 
-export function Matrix({ data, user, showDate = true, onAdjustWork }) {
-  return data?.matrix?.length ? data.matrix.map(d => <Card size="small" key={d.workDate} title={showDate ? dateText(d.workDate) : undefined}>
+export function CalendarBoard({user,scope='team',workId,selectedWeekdays=[0,1,2,3,4,5,6]}) {
+  const [month,setMonth]=useState(monthOf(today())),[date,setDate]=useState(null),[editor,setEditor]=useState(null),[sharing,setSharing]=useState(null),[person,setPerson]=useState('all');
+  const first=month+'-01',last=iso(dayjs(first).endOf('month'));
+  const query=usePageLoad(month,()=>API.calendarSchedule(first,last)),{run,busy,confirm}=useAction();
+  const admin=isAdmin(user), rows=query.data?.matrix||[];
+  const matrix=rows.map(d=>({...d,shifts:d.shifts.map(s=>({...s,workTypes:s.workTypes.filter(w=>(scope!=='work'||w.workTypeId===workId)
+    && (scope==='mine'?w.assigned.some(p=>p.userId===user.id):person==='all'||w.assigned.some(p=>p.userId===person)))})).filter(s=>s.workTypes.length)}));
+  const day=matrix.find(d=>d.workDate===date)||{workDate:date,shifts:[]};
+  const people=[...new Map((query.data?.assignments||[]).map(a=>[a.userId,{id:a.userId,name:a.name}])).values()];
+  async function remove(id) {
+    if(!await confirm('移除这项日历安排？','将移除此工作的全部人员安排，操作会记录在审计日志中。'))return;
+    await run(()=>API.removeCalendarWork(id),'已移除',query.refresh);
+  }
+  function saved(value) {setEditor(null);setMonth(monthOf(value.workDate));setDate(value.workDate);query.refresh();}
+  return <Card><div className="stack"><div className="row-between"><Heading>日历看板</Heading>{admin&&<Button type="primary" onClick={()=>setEditor(date||today())}>＋ 新增排班</Button>}</div>
+    <p className="muted">查看周期排班和日历新增安排。{admin?'无需排班周期，可补录过去或安排将来的工作。':'点击日期查看当天安排。'}</p>
+    <div className="inline"><DatePicker picker="month" aria-label="查看月份" allowClear={false} value={dayjs(first)} onChange={d=>d&&setMonth(monthOf(iso(d)))} disabledDate={d=>d.year()<1900||d.year()>2100}/>{admin&&scope==='team'&&<Select aria-label="日历查看人员" value={person} onChange={setPerson} style={{minWidth:160}} options={[option('all','所有人员'),...people.map(p=>option(p.id,personName(p,user.id)))]}/>}</div>
+    <Load query={query}>{()=> <MonthCalendar month={month} startDate="1900-01-01" endDate="2100-12-31" move={setMonth} selected={date} pick={setDate}
+      blocked={d=>!selectedWeekdays.includes(d.day())} dayInfo={value=>{const works=matrix.find(d=>d.workDate===value)?.shifts.flatMap(s=>s.workTypes)||[],count=works.reduce((sum,w)=>sum+w.filled,0);return{label:`${count}人次安排`,badge:count>0&&<small>{count} 人次</small>};}}/>}</Load>
+    {date&&<Modal open title={`${dayjs(date).format('YYYY年')}${dateText(date)} · 生效安排`} onCancel={()=>setDate(null)} footer={<Space wrap>{admin&&<Button disabled={busy} onClick={()=>setEditor(date)}>新增工作</Button>}<Button icon={<ShareAltOutlined/>} onClick={()=>setSharing(day)}>分享</Button><Button onClick={()=>setDate(null)}>关闭</Button></Space>}>
+      <Load query={query}>{()=>day.shifts.length?<Matrix data={{matrix:[day]}} user={user} showDate={false} onRemoveWork={admin?remove:undefined}/>:<Blank>当天暂无符合当前筛选的安排</Blank>}</Load>
+    </Modal>}
+    {editor&&<CalendarWorkEditor key={editor} date={editor} user={user} close={()=>setEditor(null)} saved={saved}/>}
+    {sharing&&<ScheduleShare date={sharing.workDate} day={sharing} close={()=>setSharing(null)}/>}
+  </div></Card>;
+}
+
+function CalendarWorkEditor({date,user,close,saved}) {
+  const query=useLoad('calendar-work-options',()=>Promise.all([API.shifts(),API.workTypes(),API.calendarPeople()])),[form]=Form.useForm();
+  const workId=Form.useWatch('workTypeId',form),{run,busy,confirm}=useAction();
+  async function submit(values) {
+    const work=query.data[1].find(w=>w.id===values.workTypeId);
+    const people=work.requiresRoles?[{userId:values.primary,dutyRole:'primary'},{userId:values.deputy,dutyRole:'deputy'}]:values.people.map(userId=>({userId,dutyRole:'member'}));
+    const body={workDate:iso(values.date),shiftId:values.shiftId,workTypeId:values.workTypeId,people};
+    if(!await confirm('确认新增排班？',`${body.workDate}，共安排 ${people.length} 人。保存后立即生效，成员可查看。`,false,'确认新增'))return;
+    await run(()=>API.addCalendarWork(body),'排班已新增',()=>saved(body));
+  }
+  return <Modal open title="新增日历排班" onCancel={()=>!busy&&close()} maskClosable={!busy} footer={null}><Load query={query}>{([shifts,works,people])=>{
+    const active=works.filter(w=>w.active),work=active.find(w=>w.id===workId),options=people.map(p=>option(p.id,personName(p,user.id)));
+    return <Form form={form} layout="vertical" disabled={busy} initialValues={{date:dayjs(date)}} onFinish={submit}>
+      <Alert type="info" showIcon message="直接安排，无需先创建周期或报名。" style={{marginBottom:16}}/>
+      <Form.Item name="date" label="日期" rules={required}><DatePicker allowClear={false} disabledDate={d=>d.year()<1900||d.year()>2100}/></Form.Item>
+      <Form.Item name="shiftId" label="班次" rules={required}><Select options={shifts.filter(s=>s.active).map(s=>option(s.id,s.name))}/></Form.Item>
+      <Form.Item name="workTypeId" label="工作" rules={required}><Select options={active.map(w=>option(w.id,w.name))}/></Form.Item>
+      {work?.requiresRoles?<><Form.Item name="primary" label="主负责人" rules={required}><Select showSearch optionFilterProp="label" options={options}/></Form.Item><Form.Item name="deputy" label="副负责人" rules={required}><Select showSearch optionFilterProp="label" options={options}/></Form.Item></>:<Form.Item name="people" label="安排人员" rules={required}><Select mode="multiple" optionFilterProp="label" options={options}/></Form.Item>}
+      <Space><Button onClick={close}>取消</Button><Button type="primary" htmlType="submit" loading={busy}>保存并生效</Button></Space>
+    </Form>;
+  }}</Load></Modal>;
+}
+
+export function SharedScheduleDay({target,user,close}) {
+  const [sharing,setSharing]=useState(false);
+  const query=useLoad(JSON.stringify(target),()=>target.periodId?API.schedule(target.periodId,'published'):API.calendarSchedule(target.date,target.date));
+  const day=query.data?.matrix.find(d=>d.workDate===target.date)||{workDate:target.date,shifts:[]};
+  return <><Modal open title={`${dayjs(target.date).format('YYYY年')}${dateText(target.date)} · 生效安排`} onCancel={close} footer={<Space><Button disabled={!query.data || target.periodId&&!query.data.run} icon={<ShareAltOutlined/>} onClick={()=>setSharing(true)}>分享</Button><Button onClick={close}>关闭</Button></Space>}>
+    <Load query={query}>{data=>target.periodId&&!data.run?<Blank>本周期暂无生效排班</Blank>:<Matrix data={{matrix:[day]}} user={user} showDate={false}/>}</Load>
+    <p className="muted">当前展示最新生效安排。</p>
+  </Modal>{sharing&&<ScheduleShare date={target.date} day={day} period={query.data?.period} close={()=>setSharing(false)}/>}</>;
+}
+
+export function Matrix({ data, user, showDate = true, onAdjustWork, onShareDay, onRemoveWork }) {
+  return data?.matrix?.length ? data.matrix.map(d => <Card size="small" key={d.workDate} title={showDate ? dateText(d.workDate) : undefined} extra={onShareDay && <Button type="link" icon={<ShareAltOutlined />} onClick={()=>onShareDay(d)}>分享</Button>}>
     {d.shifts.map(s => <div key={s.shiftId}><h3>{s.shiftName}</h3>
-      {s.workTypes.map(w => <div className={onAdjustWork ? 'matrix-row matrix-row-adjustable' : 'matrix-row'} key={w.workTypeId}><strong><i className="dot" style={{ background: w.workTypeColor }} />{w.workTypeName}</strong>
+      {s.workTypes.map(w => <div className={onAdjustWork ? 'matrix-row matrix-row-adjustable' : 'matrix-row'} key={w.key ?? w.workTypeId}><strong><i className="dot" style={{ background: w.workTypeColor }} />{w.workTypeName}</strong>
         <Space wrap size={[4, 4]}>{w.assigned.map(p => <Tag key={p.userId} color={p.source === 'swap' ? 'purple' : p.userId === user?.id ? 'blue' : 'default'}>{p.name}{p.isFixed ? '（固定）' : p.source === 'swap' ? '（换班）' : p.source === 'manual' ? '（调配）' : ''}{p.dutyRole !== 'member' && ` · ${roleLabels[p.dutyRole]}`}</Tag>)}
           {!w.assigned.length && <Tag>无人</Tag>}<Tag color={w.gap ? 'red' : 'green'}>{w.gap ? `缺 ${w.gap}` : w.fillAllEnrolled ? `已排 ${w.filled} · 最少 ${w.needCount}` : `${w.filled}/${w.needCount}`}</Tag>
           {w.roleGaps?.map(r => <Tag color="red" key={r}>缺{roleLabels[r]}</Tag>)}
         </Space>
+        {onRemoveWork && w.calendarId && <Button type="link" danger size="small" onClick={()=>onRemoveWork(w.calendarId)}>移除</Button>}
         {onAdjustWork && <Button type="link" size="small" aria-label={`${dateText(d.workDate)} ${s.shiftName} ${w.workTypeName} 调班`}
           onClick={() => onAdjustWork({ workDate: d.workDate, shiftId: s.shiftId, workTypeId: w.workTypeId })}>调班</Button>}
       </div>)}

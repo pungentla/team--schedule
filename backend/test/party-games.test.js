@@ -173,3 +173,58 @@ test('v37 记录安全补齐房主，迁移幂等且其他参与者没有删除�
   assert.equal(records.get(record.id, users[0]).canDelete, true);
   assert.equal(records.get(record.id, users[1]).canDelete, false);
 });
+
+test('绘画猜词只给绘画者答案，画布边界、权限和猜测保密由服务端校验', () => {
+  const r = setup('sketch', 3), s = raw(r), drawer = users.find(u => u.id === s.drawerId), others = users.slice(0, 3).filter(u => u.id !== s.drawerId);
+  assert.equal(view(r, drawer).game, 'sketch'); assert.ok(view(r, drawer).answer);
+  for (const u of others) { const v = view(r, u); assert.ok(!v.answer && !v.promptIndex && !v.prompts); assert.equal(v.rounds.length, 0); }
+  const stroke = { color: '#3159aa', width: 4, points: [[0, 0], [1, 1]] };
+  assert.throws(() => act(r, 'stroke', stroke, others[0]), e => e.status === 403);
+  assert.throws(() => act(r, 'stroke', { ...stroke, points: [[2, 0]] }, drawer), e => e.status === 400);
+  assert.throws(() => act(r, 'stroke', { ...stroke, points: [[NaN, 0]] }, drawer), e => e.status === 400);
+  assert.throws(() => act(r, 'stroke', { ...stroke, points: Array(201).fill([0, 0]) }, drawer), e => e.status === 400);
+  assert.throws(() => act(r, 'stroke', { ...stroke, color: 'url(https://evil.example)' }, drawer), e => e.status === 400);
+  act(r, 'stroke', stroke, drawer); assert.deepEqual(view(r, others[0]).strokes, [stroke]);
+  act(r, 'undoStroke', {}, drawer); assert.equal(view(r).strokes.length, 0);
+  act(r, 'stroke', stroke, drawer); act(r, 'clearCanvas', {}, drawer); assert.equal(view(r).strokes.length, 0);
+  assert.throws(() => act(r, 'describeDrawing', { text: view(r, drawer).answer }, drawer), e => e.status === 400);
+  act(r, 'describeDrawing', { text: '这是本轮的画面线索' }, drawer); assert.equal(view(r, others[0]).description, '这是本轮的画面线索');
+  assert.throws(() => act(r, 'guessDrawing', { text: view(r, drawer).answer }, drawer), e => e.status === 403);
+  act(r, 'guessDrawing', { text: '不是正确答案' }, others[0]);
+  act(r, 'guessDrawing', { text: view(r, drawer).answer }, others[0]);
+  const other = view(r, others[1]); assert.equal(other.phase, 'drawing'); assert.equal(other.guesses.at(-1).text, '猜对了！');
+  assert.ok(!JSON.stringify(other).includes(view(r, drawer).answer));
+  assert.equal(other.players.find(p => p.id === others[0].id).score, 100); assert.equal(other.players.find(p => p.id === drawer.id).score, 30);
+  assert.throws(() => act(r, 'guessDrawing', { text: '重复猜测' }, others[0]), e => e.code === 'ALREADY_SUBMITTED');
+  act(r, 'guessDrawing', { text: view(r, drawer).answer }, others[1]);
+  assert.equal(view(r).phase, 'drawingResult'); assert.ok(view(r, others[1]).answer);
+  assert.equal(view(r).players.find(p => p.id === others[1].id).score, 80); assert.equal(view(r).rounds.length, 1);
+});
+test('绘画猜词逐人轮值，结束留存记录，支持并列与房主删除', () => {
+  const r = setup('sketch', 2); const answers = [];
+  for (let round = 0; round < 2; round++) {
+    const v = view(r), drawer = users.find(u => u.id === v.drawerId), guesser = users.slice(0, 2).find(u => u.id !== v.drawerId), oldTurn = v.turn;
+    answers.push(view(r, drawer).answer); act(r, 'guessDrawing', { text: view(r, drawer).answer }, guesser);
+    assert.throws(() => game.act(r.id, { action: 'guessDrawing', turn: oldTurn, text: '旧猜测' }, guesser), e => e.code === 'GAME_CHANGED');
+    act(r, 'advance');
+  }
+  assert.equal(new Set(answers).size, 2); assert.equal(view(r).phase, 'finished'); assert.deepEqual(view(r).winner, users.slice(0, 2).map(u => u.id));
+  const result = records.list(users[0], { game: 'sketch' }); assert.equal(result.total, 1);
+  const record = records.get(result.items[0].id, users[1]); assert.equal(record.rounds.length, 2); assert.equal(record.scores[users[0].id], 130);
+  assert.ok(!record.strokes && !record.prompts); assert.throws(() => records.get(record.id, users[2]), e => e.status === 404);
+  assert.throws(() => records.remove(record.id, users[1]), e => e.status === 403);
+  act(r, 'restart'); assert.equal(view(r).phase, 'waiting'); assert.equal(view(r).rounds.length, 0);
+  records.remove(record.id, users[0]); assert.equal(records.list(users[0]).total, 0);
+});
+test('绘画猜词限制猜测次数和笔迹数量，非房主非绘画者不得提前揭晓', () => {
+  const r = setup('sketch', 3), drawer = users.find(u => u.id === view(r).drawerId), other = users[1];
+  for (let i = 0; i < 10; i++) act(r, 'guessDrawing', { text: '错误答案' }, other);
+  assert.throws(() => act(r, 'guessDrawing', { text: '错误答案' }, other), e => e.status === 400);
+  assert.throws(() => act(r, 'advance', {}, other), e => e.status === 403);
+  const s = raw(r); s.strokes = Array(200).fill({ color: '#3159aa', width: 4, points: [[0, 0]] }); put(r, s);
+  assert.throws(() => act(r, 'stroke', { color: '#3159aa', width: 4, points: [[0, 0]] }, drawer), e => e.status === 400);
+  act(r, 'advance'); assert.equal(view(r).phase, 'drawingResult'); act(r, 'advance');
+  assert.equal(view(r).round, 2); assert.equal(view(r).strokes.length, 0); assert.equal(view(r).guesses.length, 0);
+  act(r, 'leave'); const record = records.list(users[0], { game: 'sketch' }).items[0];
+  assert.equal(record.status, 'abandoned'); assert.equal(records.get(record.id, users[1]).rounds.length, 1);
+});
