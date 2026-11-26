@@ -65,6 +65,23 @@ router.use('/discussions', discussionRoutes);
 router.use('/reminders', reminderRoutes);
 router.use('/attendance', attendanceRoutes);
 router.use('/todos', require('./todos'));
+router.use('/playground/rooms', require('./party'));
+router.get('/playground/people', requireAuth, (req, res) => {
+  if (req.user.role === 'super_admin') return res.status(403).json({ error: { code: 'FORBIDDEN', message: '请使用成员或管理员账号参与游乐场' } });
+  res.set('Cache-Control', 'no-store').json({ data: db.all("SELECT id,display_name AS name FROM users WHERE status='active' AND role<>'super_admin' ORDER BY display_name,id") });
+});
+router.get('/playground/records', requireAuth, (req, res) => {
+  res.set('Cache-Control', 'no-store').json({ data: require('../services/gameRecordService').list(req.user, req.query) });
+});
+router.get('/playground/records/:id', requireAuth, (req, res) => {
+  const { intParam } = require('../utils/validate');
+  res.set('Cache-Control', 'no-store').json({ data: require('../services/gameRecordService').get(intParam(req.params.id, '记录编号'), req.user) });
+});
+router.delete('/playground/records/:id', requireAuth, (req, res) => {
+  const { intParam } = require('../utils/validate');
+  require('../services/gameRecordService').remove(intParam(req.params.id, '记录编号'), req.user);
+  res.status(204).end();
+});
 router.use('/admin', requireAuth, requireAdmin, adminRoutes);
 
 module.exports = router;

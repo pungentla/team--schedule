@@ -1,0 +1,13 @@
+'use strict';
+const express = require('express');
+const { requireAuth } = require('../middleware/auth');
+const { intParam } = require('../utils/validate');
+const party = require('../services/partyService');
+const router = express.Router();
+router.use(requireAuth, (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+router.get('/current', (req, res) => res.json({ data: party.current(req.user) }));
+router.post('/', (req, res) => res.status(201).json({ data: party.create(req.user, req.body?.game) }));
+router.post('/join', (req, res) => res.json({ data: party.join(req.body?.code, req.user) }));
+router.get('/:id', (req, res) => res.json({ data: party.get(intParam(req.params.id, '房间编号'), req.user) }));
+router.post('/:id/actions', (req, res) => res.json({ data: party.act(intParam(req.params.id, '房间编号'), req.body || {}, req.user) }));
+module.exports = router;

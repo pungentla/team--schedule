@@ -8,7 +8,7 @@
 const db = require('./db');
 const { ensureAlias } = require('../repositories/discussionAliasRepo');
 
-const CURRENT_VERSION = 36;
+const CURRENT_VERSION = 38;
 
 function migrate() {
   db.open();
@@ -28,6 +28,11 @@ function migrate() {
         const rebuildVotes = db.all('PRAGMA table_info(discussion_poll_votes)').some(column => column.name === 'position' && !column.pk);
         if (rebuildVotes) db.exec('ALTER TABLE discussion_poll_votes RENAME TO discussion_poll_votes_legacy');
         db.exec(db.readSchemaSql());
+        if (!db.all('PRAGMA table_info(playground_records)').some(column => column.name === 'host_id')) {
+          db.exec('ALTER TABLE playground_records ADD COLUMN host_id INTEGER REFERENCES users(id) ON DELETE SET NULL');
+          // v37 房主始终首先入房；记录的参与人按入房顺序保存，房主退出会结束房间。
+          db.run(`UPDATE playground_records SET host_id=(SELECT id FROM users WHERE id=json_extract(summary_json,'$.players[0].id'))`);
+        }
         if (!db.all('PRAGMA table_info(todos)').some(column => column.name === 'archived_at')) {
           db.exec('ALTER TABLE todos ADD COLUMN archived_at TEXT');
         }
@@ -201,6 +206,10 @@ function migrateLegacySchema() {
 /** 删除全部业务数据（保留表结构），用于 reset */
 function truncateAll() {
   const tables = [
+    'playground_record_members',
+    'playground_records',
+    'playground_members',
+    'playground_rooms',
     'todo_notices',
     'todo_reminders',
     'todo_items',

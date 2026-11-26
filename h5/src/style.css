@@ -158,6 +158,121 @@ button, input { font: inherit; }
   .discussion-nav-tab .anticon-message { font-size: 11px; }
 }
 .bottom-nav [aria-current=page] { background: #eaf0fc; color: #214c9c; font-weight: 700; }
+.personal-schedule-tabs .ant-segmented { width: 100%; }
+.playground-back.ant-btn { align-self: flex-start; padding-inline: 4px; }
+.playground-welcome.ant-card { background: linear-gradient(120deg, #edf1ff, #fff7e7); border-color: #e2e7f4; }
+.playground-eyebrow { display: block; color: #7c622d; font-size: 12px; letter-spacing: 1px; margin-bottom: 6px; }
+.playground-welcome h1 { font-size: 28px; margin-bottom: 8px; }
+.playground-welcome h1 span { color: #bf8c30; }
+.playground-welcome p { color: #58677e; line-height: 1.7; }
+.playground-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.playground-tile { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; min-height: 160px; padding: 18px; text-align: start; color: #263b59; background: white; border: 1px solid #e2e7f0; border-radius: 16px; cursor: pointer; transition: transform .15s, box-shadow .15s; }
+.playground-tile:hover { transform: translateY(-2px); box-shadow: 0 5px 18px #24375b0d; }
+.playground-tile:focus-visible { outline: 2px solid #2e59ae; outline-offset: 3px; }
+.playground-tile-icon { display: grid; place-items: center; font-size: 28px; width: 50px; height: 50px; border-radius: 14px; background: #eef2ff; }
+.playground-tile strong { font-size: 17px; }
+.playground-tile > span:last-of-type { font-size: 13px; line-height: 1.6; color: #657189; }
+.playground-gold { background: #fffcf2; border-color: #eadbb4; }
+.playground-gold .playground-tile-icon { background: #f6ebca; }
+.playground-purple .playground-tile-icon { background: #eee5ff; }
+.playground-cyan .playground-tile-icon { background: #e0f4f7; }
+.playground-green .playground-tile-icon { background: #e6f4ea; }
+.playground-orange .playground-tile-icon { background: #fff0de; }
+.playground-footnote { text-align: center; font-size: 12px; padding: 6px; }
+.playground-tool-copy { margin: -3px 0 20px; }
+.playground-names { gap: 8px; }
+.playground-names label { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+.playground-names small { font-size: 12px; }
+.playground-result { min-height: 68px; padding: 15px; background: #f5f7fc; border-radius: 12px; text-align: center; display: flex; flex-direction: column; justify-content: center; gap: 5px; overflow-wrap: anywhere; }
+.playground-result strong { font-size: 22px; color: #2e55a3; }
+.playground-result small { color: #657189; }
+.playground-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: 10px; }
+.playground-group { display: flex; flex-direction: column; gap: 10px; border: 1px solid #e6ebf3; border-radius: 12px; padding: 14px; overflow-wrap: anywhere; }
+.playground-group .ant-tag { margin: 0; white-space: normal; }
+.wheel-area { position: relative; margin: 18px auto 8px; width: 260px; height: 260px; }
+.lucky-wheel { position: relative; width: 100%; height: 100%; border-radius: 50%; border: 7px solid #fff; box-shadow: 0 0 0 2px #e3e6f1, 0 6px 18px #273d6215; transition: transform 1.8s cubic-bezier(.12,.72,.12,1); }
+.wheel-label { position: absolute; left: calc(50% - 36px); top: calc(50% - 10px); width: 72px; text-align: center; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wheel-pointer { position: absolute; top: -17px; left: calc(50% - 14px); font-size: 28px; color: #2e55a3; z-index: 1; }
+.wheel-center { position: absolute; left: calc(50% - 22px); top: calc(50% - 22px); display: grid; place-items: center; width: 44px; height: 44px; background: white; border-radius: 50%; color: #2e55a3; font-size: 24px; }
+.quick-random-result { display: flex; justify-content: center; flex-wrap: wrap; gap: 12px; padding: 26px 0; font-size: 72px; line-height: 1; animation: playground-pop .3s ease-out; }
+.playground-die { color: #2e55a3; }
+.playground-coin { display: grid; place-items: center; width: 100px; height: 100px; font-size: 40px; border-radius: 50%; color: #936724; border: 6px double #cfa652; background: #fff0bb; }
+.avalon-intro h2 { font-size: 24px; margin: 6px 0 10px; }
+.avalon-rules.ant-collapse > .ant-collapse-item > .ant-collapse-header { padding: 12px 0 0; }
+.avalon-rules .ant-collapse-content-box { padding: 12px 0 0 !important; }
+.avalon-rules ol { margin: 0; padding-left: 22px; }
+.avalon-rules li + li { margin-top: 8px; }
+.avalon-rules p, .avalon-stage p { line-height: 1.7; }
+.avalon-join { display: flex; gap: 8px; }
+.avalon-join .ant-input { min-width: 0; }
+.avalon-or { text-align: center; color: #758196; font-size: 13px; padding: 4px; }
+.avalon-code { display: block; font-size: 28px; letter-spacing: 4px; }
+.avalon-room-heading { flex-wrap: wrap; }
+.avalon-sync { font-size: 12px; margin: 8px 0 16px; }
+.avalon-players { display: grid; gap: 0; }
+.avalon-players > div { padding: 12px 0; gap: 12px; border-bottom: 1px solid #edf0f6; }
+.avalon-players strong { overflow-wrap: anywhere; }
+.avalon-players .ant-tag { flex: none; margin: 0; }
+.avalon-scoreboard { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 7px; }
+.avalon-mission { display: flex; flex-direction: column; align-items: center; gap: 4px; border-radius: 12px; padding: 10px 2px; background: #f3f5fa; border: 1px solid #e4e9f1; }
+.avalon-mission strong { font-size: 23px; }
+.avalon-mission small { font-size: 11px; white-space: nowrap; }
+.avalon-mission.current { border-color: #6e92d4; background: #edf2ff; }
+.avalon-mission.success { color: #297243; background: #edf7ef; border-color: #b7d9c0; }
+.avalon-mission.failure { color: #a44450; background: #fceff1; border-color: #ecc4cb; }
+.avalon-stage { padding-top: 6px; }
+.avalon-stage > h3 { margin: 0; font-size: 18px; }
+.avalon-team-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.avalon-team-options .ant-checkbox-wrapper { display: flex; padding: 12px; margin: 0; border: 1px solid #e2e8f1; border-radius: 10px; overflow-wrap: anywhere; }
+.avalon-team-options .ant-checkbox-wrapper-checked { border-color: #698acf; background: #eff4ff; }
+.avalon-proposed-team { display: flex; flex-direction: column; gap: 6px; padding: 14px; border-radius: 10px; background: #f5f7fb; overflow-wrap: anywhere; }
+.avalon-public-votes .ant-tag { margin: 0; white-space: normal; }
+.avalon-history-entry { display: grid; gap: 7px; padding-bottom: 12px; border-bottom: 1px solid #edf0f5; }
+.avalon-history .ant-card-body { padding: 4px; }
+.avalon-identity { display: flex; flex-direction: column; gap: 16px; padding: 18px; border-radius: 12px; background: #edf3ff; }
+.avalon-identity.shadow { background: #f3edfa; }
+.avalon-identity h2 { font-size: 28px; }
+.undercover-order { display: grid; gap: 8px; }
+.undercover-clues { display: grid; gap: 12px; max-height: 360px; overflow: auto; }
+.undercover-clues p { padding-top: 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.undercover-stage .avalon-players > div { align-items: flex-start; }
+.undercover-stage .avalon-players .ant-space { justify-content: flex-end; }
+.uno-player-strip { display: flex; flex-wrap: wrap; gap: 7px; }
+.uno-player-strip > div { display: flex; flex-direction: column; gap: 4px; padding: 10px; border: 1px solid #e2e8f1; background: #f6f8fc; border-radius: 10px; min-width: 90px; max-width: 100%; overflow-wrap: anywhere; }
+.uno-player-strip > .current { border-color: #5f86cb; background: #edf3ff; }
+.uno-player-strip span { color: #657189; font-size: 12px; }
+.uno-table { display: flex; justify-content: center; gap: 40px; padding-block: 12px; background: #f5f7fc; border-radius: 14px; }
+.uno-table > div { display: grid; gap: 8px; text-align: center; }
+.uno-card { width: 88px; min-height: 122px; display: flex; flex-direction: column; align-items: center; justify-content: space-between; gap: 6px; padding: 9px 5px; border: 3px solid #ffffffaa; border-radius: 12px; color: #fff; box-shadow: 0 2px 4px #21395718; overflow-wrap: anywhere; }
+.uno-card small { font-size: 10px; line-height: 1.5; }
+.uno-card strong { font-size: 31px; line-height: 1.1; }
+button.uno-card { cursor: pointer; }
+button.uno-card:disabled { opacity: .48; cursor: default; }
+button.uno-card:not(:disabled):hover, .uno-card.selected { outline: 3px solid #254e96; outline-offset: 2px; transform: translateY(-3px); }
+button.uno-card:focus-visible { outline: 3px solid #1f3b6c; outline-offset: 3px; }
+.uno-purple { background: #8750a6; }
+.uno-gold { background: #eac65e; color: #513900; }
+.uno-green { background: #3e865f; }
+.uno-blue { background: #3e76ae; }
+.uno-wild, .uno-back { background: linear-gradient(140deg, #8153a8, #367ab1 40%, #388461 65%, #c89530); }
+.uno-back { justify-content: center; font-size: 27px; }
+.uno-back strong { font-size: 20px; }
+.uno-hand { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 10px; max-height: 400px; overflow: auto; padding: 7px 5px; }
+.uno-hand .uno-card { width: 100%; min-width: 0; min-height: 115px; }
+.uno-events { padding-left: 20px; max-height: 220px; overflow: auto; margin: 0; }
+.uno-events li + li { margin-top: 6px; }
+.game-record-open { color: #2e59ae; text-align: right; }
+.game-record-detail { overflow-wrap: anywhere; }
+.game-record-detail .ant-tag { white-space: normal; }
+.game-record-detail .avalon-players > div { align-items: flex-start; }
+.game-record-vote { display: grid; gap: 7px; padding-bottom: 12px; border-bottom: 1px solid #edf0f5; }
+@keyframes playground-pop { from { transform: scale(.85); opacity: .4; } to { transform: scale(1); opacity: 1; } }
+@media (min-width: 700px) { .playground-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 360px) {
+  .playground-tile { padding: 14px; }
+  .bottom-nav .ant-btn { gap: 2px; font-size: 12px; }
+}
+@media (prefers-reduced-motion: reduce) { .lucky-wheel { transition: none; } .quick-random-result { animation: none; } .playground-tile { transition: none; } }
 .login { display: grid; place-items: center; min-height: 100dvh; padding: 18px; }
 .login-card { width: min(100%, 420px); }
 .login h1 { font-size: 26px; }

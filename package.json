@@ -18,6 +18,7 @@
     "reset": "npm run reset --workspace backend",
     "migrate": "npm run migrate --workspace backend",
     "test": "npm run test --workspace backend",
+    "test:h5": "npm run test --workspace h5",
     "verify": "npm run verify --workspace backend",
     "verify:mp": "npm run verify:mp --workspace backend",
     "test:mp": "node miniprogram/test/env.test.js",

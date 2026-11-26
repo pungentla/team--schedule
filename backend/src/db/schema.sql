@@ -523,3 +523,32 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 CREATE INDEX IF NOT EXISTS idx_audit_period ON audit_logs(period_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_logs(actor_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_logs(action, created_at);
+
+-- 联机游乐场：身份和任务票仅存服务器，响应按当前玩家裁剪。
+CREATE TABLE IF NOT EXISTS playground_rooms (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL UNIQUE,
+  host_id INTEGER NOT NULL REFERENCES users(id),
+  state_json TEXT NOT NULL,
+  revision INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_avalon_updated ON playground_rooms(updated_at);
+CREATE TABLE IF NOT EXISTS playground_members (
+  room_id INTEGER NOT NULL REFERENCES playground_rooms(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL UNIQUE REFERENCES users(id),
+  PRIMARY KEY (room_id,user_id)
+);
+CREATE TABLE IF NOT EXISTS playground_records (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  host_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  game TEXT NOT NULL,
+  finished_at TEXT NOT NULL,
+  summary_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS playground_record_members (
+  record_id INTEGER NOT NULL REFERENCES playground_records(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  PRIMARY KEY (record_id,user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_playground_record_user ON playground_record_members(user_id,record_id);

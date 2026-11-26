@@ -6,6 +6,7 @@
   "type": "commonjs",
   "main": "server.js",
   "scripts": {
+    "test": "node --test test/*.test.mjs",
     "dev": "vite",
     "build": "vite build",
     "prestart": "npm run build",

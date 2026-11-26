@@ -9,9 +9,11 @@ import Dropdown from 'antd/es/dropdown';
 import Form from 'antd/es/form';
 import Input from 'antd/es/input';
 import Modal from 'antd/es/modal';
+import Segmented from 'antd/es/segmented';
 import Spin from 'antd/es/spin';
 import zhCN from 'antd/es/locale/zh_CN';
 import MessageOutlined from '@ant-design/icons/es/icons/MessageOutlined';
+import RocketOutlined from '@ant-design/icons/es/icons/RocketOutlined';
 import 'dayjs/locale/zh-cn';
 import 'antd/dist/reset.css';
 import { API, Heading, Load, ProfileDisplayContext, accountRoles, dayjs, isAdmin, required, timeText, useAction, useLoad } from './shared';
@@ -33,6 +35,7 @@ const Attendance = lazy(() => import('./Attendance'));
 const WorkbenchAttendance = lazy(() => import('./Attendance').then(module => ({ default: module.WorkbenchAttendance })));
 const Todos = lazy(() => import('./Todos'));
 const WorkbenchTodos = lazy(() => import('./Todos').then(module => ({ default: module.WorkbenchTodos })));
+const Playground = lazy(() => import('./Playground'));
 
 const theme = {
   token: { colorPrimary: '#2e59ae', colorBgLayout: '#f2f5f9', colorText: '#1f2a3c', colorTextSecondary: '#58677e', borderRadius: 10, controlHeight: 42, fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif' },
@@ -109,6 +112,7 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
     return superAdmin && target.tab !== 'todos' ? { tab: 'workflow', notice: target.notice } : target;
   });
   const [tab, setTab] = useState(notificationTarget.tab);
+  const personalTab = useRef(notificationTarget.tab === 'swaps' ? 'swaps' : 'enrollment');
   const [messagesBackTab, setMessagesBackTab] = useState('schedule');
   const [settingsTab, setSettingsTab] = useState('worktypes');
   const [workflowPage, setWorkflowPage] = useState(null);
@@ -184,11 +188,13 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
   const [periods, current] = periodsQuery.data || [[], null];
   const period = periods.find(p => p.id === scheduleFilters.periodId) || current || periods.find(p => p.status !== 'archived') || periods[0];
   const tabs = superAdmin ? [['workflow', '安排排班'], ['settings', '基础设置']] : [
-    ['schedule', '工作台'], ['discussions', '互动区'], ['enrollment', '我的报名'], ['swaps', '我的换班'],
+    ['schedule', '工作台'], ['discussions', '互动区'], ['personal', '我的排班'], ['playground', '游乐场'],
     ...(isAdmin(user) ? [['workflow', '安排排班']] : []),
   ];
-  const activeNav = tab === 'todos' ? (superAdmin ? 'workflow' : 'schedule') : !superAdmin && tab === 'settings' ? 'workflow' : tab;
+  const activeNav = ['enrollment', 'swaps'].includes(tab) ? 'personal'
+    : tab === 'todos' ? (superAdmin ? 'workflow' : 'schedule') : !superAdmin && tab === 'settings' ? 'workflow' : tab;
   async function navigate(next, { returning = false } = {}) {
+    if (next === 'personal') next = personalTab.current;
     if (superAdmin && next !== 'todos' && !tabs.some(([id]) => id === next)) return false;
     if (next === tab) return true;
     if (dirty.current && !await confirm('放弃未保存的需求？')) return false;
@@ -196,6 +202,7 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
     setNotificationTarget({});
     if (next === 'workflow' && tab !== 'settings' && !returning) setWorkflowPage(null);
     if (next !== 'swaps' && next !== 'messages') setSwapDetail(null);
+    if (next === 'enrollment' || next === 'swaps') personalTab.current = next;
     setTab(next);
     window.scrollTo(0, 0);
     if (['workflow','enrollment'].includes(next)) periodsQuery.refresh();
@@ -285,6 +292,11 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
       {tab === 'schedule' && <DiscussionPreview openDiscussions={openDiscussions} hotTopicsQuery={hotTopicsQuery} hotTopicRanks={hotTopicRanks} />}
       {isAdmin(user) && (tab === 'workflow' || tab === 'settings') && <Alert type="info" showIcon message="仅管理员可见" />}
       <Suspense fallback={<div className="loading"><Spin /></div>}>
+        {['enrollment', 'swaps'].includes(tab) && <Card className="personal-schedule-tabs"><Heading>我的排班</Heading>
+          <Segmented block aria-label="我的排班分类" value={tab} onChange={navigate}
+            options={[{ value: 'enrollment', label: '我的报名' }, { value: 'swaps', label: '我的换班' }]} />
+        </Card>}
+        {tab === 'playground' && <Playground user={user} />}
         {tab === 'schedule' && <WorkbenchAttendance user={user} open={() => navigate('attendance')} />}
         {tab === 'schedule' && <WorkbenchTodos open={openTodos} />}
         {tab === 'schedule' && <Schedule key={scheduleScope} user={user} periods={periods} period={period}
@@ -312,7 +324,7 @@ function WorkspaceContent({ user, updateProfile, endSession, dirty }) {
     <nav className="bottom-nav" aria-label="主导航"><div className="bottom-nav-inner">
       {tabs.map(([id, label]) => <Button key={id} type="text" aria-current={activeNav === id ? 'page' : undefined}
         className={id === 'discussions' ? 'discussion-nav-tab' : undefined}
-        icon={id === 'discussions' ? <MessageOutlined aria-hidden="true" /> : undefined}
+        icon={id === 'discussions' ? <MessageOutlined aria-hidden="true" /> : id === 'playground' ? <RocketOutlined aria-hidden="true" /> : undefined}
         onClick={() => id === 'discussions' ? openDiscussions() : navigate(id)}>{label}</Button>)}
     </div></nav>
     {nicknameOpen && <Nickname user={user} close={() => setNicknameOpen(false)} saved={profile => {
