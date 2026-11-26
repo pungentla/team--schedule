@@ -1,7 +1,7 @@
 'use strict';
 const db = require('../db/db');
 const { forbidden } = require('../utils/errors');
-const { requireInt } = require('../utils/validate');
+const { requireInt, requireEnum } = require('../utils/validate');
 const rewardDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' });
 const names = { avalon: '守望之旅', undercover: '同词异心', uno: '彩约对局', sketch: '你画我猜', quiz: '圣经闯关', identity: '我是谁', timeline: '故事时间线', verse: '经文拼图', match: '人物关系连连看', map: '圣经地图寻踪' };
 function participant(user) { if (user.role === 'super_admin') throw forbidden('请使用成员或管理员账号参与游乐场'); }
@@ -46,4 +46,26 @@ function list(user, query = {}) {
     items: db.all(`SELECT * FROM (${entries}) ORDER BY createdAt DESC,id DESC LIMIT ?2 OFFSET ?3`, user.id, 20, (page - 1) * 20).map(row => ({ ...row, gameName: row.game === 'wish' ? '游乐场许愿' : names[row.game] || row.game })),
   };
 }
-module.exports = { participant, balance, receipt, party, lesson, list };
+function leaderboard(user, query = {}) {
+  participant(user);
+  const sort = requireEnum(query.sort ?? 'balance', '排行类型', ['balance', 'wishes']);
+  const page = requireInt(query.page ?? 1, '页码', { min: 1, max: 100000 });
+  const ranked = `WITH earned AS (
+    SELECT user_id,SUM(amount) AS amount FROM playground_harvest GROUP BY user_id
+  ), wishes AS (
+    SELECT user_id,COUNT(*) AS count,SUM(cost) AS spent FROM playground_wishes GROUP BY user_id
+  ), totals AS (
+    SELECT u.id,u.display_name AS name,COALESCE(earned.amount,0)-COALESCE(wishes.spent,0) AS balance,
+      COALESCE(wishes.count,0) AS wishCount
+    FROM users u LEFT JOIN earned ON earned.user_id=u.id LEFT JOIN wishes ON wishes.user_id=u.id
+    WHERE u.status='active' AND u.role IN ('employee','admin')
+  ), ranked AS (
+    SELECT *,ROW_NUMBER() OVER (ORDER BY ${sort === 'wishes' ? 'wishCount' : 'balance'} DESC,id) AS rank FROM totals
+  )`;
+  return { sort, page, pageSize: 20,
+    total: db.pluck(`${ranked} SELECT COUNT(*) FROM ranked`),
+    me: db.get(`${ranked} SELECT * FROM ranked WHERE id=?`, user.id) || null,
+    items: db.all(`${ranked} SELECT * FROM ranked ORDER BY rank LIMIT ? OFFSET ?`, 20, (page - 1) * 20),
+  };
+}
+module.exports = { participant, balance, receipt, party, lesson, list, leaderboard };

@@ -94,6 +94,7 @@ export const API = (() => {
     wishPresets: () => request('/playground/wishes'),
     makeWish: body => request('/playground/wishes', { method: 'POST', body }),
     harvest: (page = 1) => request(`/playground/harvest?page=${page}`),
+    playgroundLeaderboard: options => request(`/playground/leaderboard?${new URLSearchParams(options)}`),
     learningMeta: () => request('/playground/learning/meta'),
     learningStart: body => request('/playground/learning', { method: 'POST', body }),
     learningGet: id => request(`/playground/learning/${id}`),

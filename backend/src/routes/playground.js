@@ -9,6 +9,7 @@ router.use(requireAuth, (req, res, next) => { harvest.participant(req.user); res
 router.get('/wishes', (req, res) => res.json({ data: wishes.metadata(req.user) }));
 router.post('/wishes', (req, res) => { const wish = wishes.create(req.user, req.body); res.status(wish.replayed ? 200 : 201).json({ data: wish }); });
 router.get('/harvest', (req, res) => res.json({ data: harvest.list(req.user, req.query) }));
+router.get('/leaderboard', (req, res) => res.json({ data: harvest.leaderboard(req.user, req.query) }));
 router.get('/learning/meta', (req, res) => res.json({ data: learning.metadata(req.user) }));
 router.post('/learning', (req, res) => res.status(201).json({ data: learning.start(req.user, req.body) }));
 router.get('/learning/:id', (req, res) => res.json({ data: learning.get(req.params.id, req.user) }));

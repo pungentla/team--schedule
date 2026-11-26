@@ -1,21 +1,26 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import App from 'antd/es/app';
+import Alert from 'antd/es/alert';
 import Button from 'antd/es/button';
 import Card from 'antd/es/card';
 import Checkbox from 'antd/es/checkbox';
 import Input from 'antd/es/input';
 import InputNumber from 'antd/es/input-number';
 import Modal from 'antd/es/modal';
+import Progress from 'antd/es/progress';
 import Select from 'antd/es/select';
 import Segmented from 'antd/es/segmented';
 import Space from 'antd/es/space';
 import Tag from 'antd/es/tag';
 import ArrowLeftOutlined from '@ant-design/icons/es/icons/ArrowLeftOutlined';
 import ReloadOutlined from '@ant-design/icons/es/icons/ReloadOutlined';
-import { API, Heading, Load, personName, useLoad } from './shared';
+import TrophyOutlined from '@ant-design/icons/es/icons/TrophyOutlined';
+import { API, Heading, Load, personName, useLoad, usePageLoad } from './shared';
 import PartyGame from './playground/PartyGame';
 import GameRecords from './playground/GameRecords';
 import Harvest from './playground/Harvest';
+import Leaderboard from './playground/Leaderboard';
+import { levelProgress } from './playground/learning.mjs';
 import BibleLearning, { learningGames } from './playground/BibleLearning';
 import { draw, makeGroups, parseNames, randomInt } from './playground/random.mjs';
 
@@ -38,6 +43,7 @@ export default function Playground({ user, openTopic }) {
   const header = useRef(null);
   const [stickyTop, setStickyTop] = useState(0);
   const [recordsGame, setRecordsGame] = useState('all');
+  const learning = usePageLoad(selected == null ? `playground-progress-${user.id}` : null, API.learningMeta);
   function openRecords(game = 'all') { setRecordsGame(game); setSelected('records'); }
   useEffect(() => { window.scrollTo(0, 0); }, [selected]);
   useLayoutEffect(() => {
@@ -51,6 +57,7 @@ export default function Playground({ user, openTopic }) {
   }, [selected]);
   const tool = tools.find(item => item.id === selected);
   if (selected === 'records') return <GameRecords user={user} initialGame={recordsGame} back={() => setSelected(null)} />;
+  if (selected === 'leaderboard') return <Leaderboard user={user} back={() => setSelected(null)} />;
   return <div className="stack playground">
     {tool ? <>
       <Button type="text" className="playground-back" icon={<ArrowLeftOutlined />} onClick={() => setSelected(null)}>返回游乐场</Button>
@@ -61,16 +68,23 @@ export default function Playground({ user, openTopic }) {
       </Card>}
     </> : <>
       <div ref={header} className="stack playground-controls" style={{ top: stickyTop }}>
-        <Card className="playground-welcome"><div className="row-between"><h1>游乐场 <span aria-hidden="true">✦</span></h1><Button onClick={() => openRecords()}>游戏记录</Button></div><p>聚会的小帮手，也是忙碌间的一点小乐趣。</p><Harvest user={user} openTopic={openTopic} /></Card>
+        <Card className="playground-welcome"><div className="row-between"><h1>游乐场 <span aria-hidden="true">✦</span></h1><Space wrap><Button icon={<TrophyOutlined />} onClick={() => setSelected('leaderboard')}>排行榜</Button><Button onClick={() => openRecords()}>游戏记录</Button></Space></div><p>聚会的小帮手，也是忙碌间的一点小乐趣。</p><Harvest user={user} openTopic={openTopic} /></Card>
         <Segmented className="playground-categories" block aria-label="游乐场分类" value={category} onChange={setCategory} options={[{ value: 'all', label: '全部' }, { value: 'learn', label: '圣经学习' }, { value: 'online', label: '联机游戏' }, { value: 'tools', label: '小工具' }]} />
       </div>
+      {learning.error && <Alert type="warning" showIcon message="闯关进度暂时无法获取" action={<Button size="small" onClick={learning.refresh}>重试</Button>} />}
       <div className="playground-grid">{tools.filter(item => category === 'all' || (category === 'learn' ? learningGames.some(g => g.id === item.id) || item.id === 'sketch' : category === 'online' ? multiplayer.includes(item.id) : !learningGames.some(g => g.id === item.id) && !multiplayer.includes(item.id))).map(item => <button type="button" key={item.id} className={`playground-tile playground-${item.color}`} onClick={() => setSelected(item.id)}>
         <span className="playground-tile-icon" aria-hidden="true">{item.icon}</span><strong>{item.name}</strong><span>{item.copy}</span>
         {multiplayer.includes(item.id) ? <Tag color="gold">多人联机</Tag> : learningGames.some(g => g.id === item.id) && <Tag color="green">单人学习</Tag>}
+        {learningGames.some(g => g.id === item.id) && <LearningProgress levels={learning.data?.levels[item.id]} loading={learning.loading} />}
       </button>)}</div>
       <p className="muted playground-footnote">学习进度与禾穗跟随账号保存；小工具在本机运行，联机游戏使用各自账号加入。</p>
     </>}
   </div>;
+}
+function LearningProgress({ levels, loading }) {
+  const progress = levelProgress(levels);
+  if (!progress) return <small className="muted playground-level-progress">{loading ? '进度加载中…' : '进度暂不可用'}</small>;
+  return <div className="playground-level-progress"><span>已通关 <b>{progress.cleared} / {progress.total}</b> 关</span><Progress percent={progress.percent} showInfo={false} size="small" aria-label={`已通关 ${progress.cleared} / ${progress.total} 关`} /><small>{progress.cleared === progress.total ? '🎉 全部通关，可重玩刷新成绩' : `下一关 · 第 ${progress.next} 关`}</small></div>;
 }
 function Names({ value, setValue, disabled, label = '候选名单', placeholder, user, max = 50 }) {
   const [open, setOpen] = useState(false), [selected, setSelected] = useState([]);

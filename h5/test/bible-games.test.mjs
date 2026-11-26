@@ -1,8 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { projectPoint, moveItem } from '../src/playground/learning.mjs';
+import { projectPoint, moveItem, levelProgress } from '../src/playground/learning.mjs';
 const data = JSON.parse(fs.readFileSync(new URL('../../backend/src/content/bible-games.json', import.meta.url)));
+test('外层卡片按通关状态统计进度，未通过仍停留本关，重玩不降低进度，新增关卡可继续', () => {
+  assert.equal(levelProgress(undefined), null); assert.equal(levelProgress([]), null);
+  const levels = [{ number: 1, unlocked: true, cleared: false }, { number: 2, unlocked: false, cleared: false }];
+  assert.deepEqual(levelProgress(levels), { cleared: 0, total: 2, percent: 0, next: 1 });
+  levels[0].cleared = true; levels[0].lastScore = 0; levels[1].unlocked = true;
+  assert.deepEqual(levelProgress(levels), { cleared: 1, total: 2, percent: 50, next: 2 });
+  levels[1].cleared = true;
+  assert.deepEqual(levelProgress(levels), { cleared: 2, total: 2, percent: 100, next: null });
+  levels.push({ number: 3, unlocked: true, cleared: false });
+  assert.deepEqual(levelProgress(levels), { cleared: 2, total: 3, percent: 67, next: 3 });
+});
 test('学习题库有出处、选项唯一、所有地区有足够题目且坐标可投影', () => {
   for (const bank of ['quiz', 'identity', 'timelines', 'verses', 'relations', 'places']) {
     assert.ok(data[bank].length >= 6, bank);
